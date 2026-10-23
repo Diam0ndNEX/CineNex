@@ -189,6 +189,67 @@ final class MediaItemTests: XCTestCase {
         XCTAssertNil(details.numberOfEpisodes)
     }
 
+    func testTMDBDetailsDecodeCastCrewAndOfficialTrailer() throws {
+        let data = Data("""
+        {
+          "credits": {
+            "cast": [
+              {"id": 1, "name": "Actor One", "character": "Lead"},
+              {"id": 2, "name": "Actor Two", "character": "Friend"}
+            ],
+            "crew": [
+              {"name": "Director One", "job": "Director"},
+              {"name": "Writer One", "job": "Writer"}
+            ],
+            "created_by": [
+              {"name": "Creator One"},
+              {"name": "Creator One"}
+            ]
+          },
+          "videos": {
+            "results": [
+              {"key": "sampleClip", "site": "YouTube", "type": "Clip", "official": true},
+              {"key": "officialTrailer", "site": "YouTube", "type": "Trailer", "official": true},
+              {"key": "otherTrailer", "site": "YouTube", "type": "Trailer", "official": false}
+            ]
+          }
+        }
+        """.utf8)
+
+        let details = try JSONDecoder().decode(TMDBTitleDetails.self, from: data)
+
+        XCTAssertEqual(details.castMembers.map { $0.name ?? "" }, ["Actor One", "Actor Two"])
+        XCTAssertEqual(details.castMembers.first?.character, "Lead")
+        XCTAssertEqual(details.directorNames, ["Director One"])
+        XCTAssertEqual(details.creatorNames, ["Creator One"])
+        XCTAssertEqual(details.trailerURL?.absoluteString, "https://www.youtube.com/watch?v=officialTrailer")
+    }
+
+    func testTMDBDetailsIgnoreInvalidTrailerAndEmptyCastNames() throws {
+        let data = Data("""
+        {
+          "credits": {
+            "cast": [{"id": 1, "name": "  ", "character": "Unknown"}],
+            "crew": [],
+            "created_by": []
+          },
+          "videos": {
+            "results": [
+              {"key": "clip", "site": "YouTube", "type": "Clip", "official": true},
+              {"key": "trailer", "site": "Vimeo", "type": "Trailer", "official": true}
+            ]
+          }
+        }
+        """.utf8)
+
+        let details = try JSONDecoder().decode(TMDBTitleDetails.self, from: data)
+
+        XCTAssertTrue(details.castMembers.isEmpty)
+        XCTAssertTrue(details.directorNames.isEmpty)
+        XCTAssertTrue(details.creatorNames.isEmpty)
+        XCTAssertNil(details.trailerURL)
+    }
+
     func testTraktScrobblePayloadIncludesVerifiedTMDBIdentifier() {
         let item = MediaItem(
             id: "tmdb-movie-550",
