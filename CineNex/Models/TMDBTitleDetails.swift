@@ -158,7 +158,7 @@ struct TMDBTitleSeason: Decodable, Equatable, Identifiable {
     var displayName: String {
         if seasonNumber == 0 { return "Specials" }
         let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmedName.isEmpty ? "Season \\(seasonNumber)" : trimmedName
+        return trimmedName.isEmpty ? "Season \(seasonNumber)" : trimmedName
     }
 
     var airYear: Int? {
@@ -168,7 +168,7 @@ struct TMDBTitleSeason: Decodable, Equatable, Identifiable {
 
     var posterURL: URL? {
         guard let posterPath, posterPath.hasPrefix("/") else { return nil }
-        return URL(string: "https://image.tmdb.org/t/p/w342\\(posterPath)")
+        return URL(string: "https://image.tmdb.org/t/p/w342\(posterPath)")
     }
 
     var id: Int { tmdbID ?? seasonNumber }
