@@ -72,6 +72,26 @@ struct TMDBCatalogProvider: CatalogProvider {
         }
     }
 
+
+    func fetchSeasonEpisodes(for item: MediaItem, seasonNumber: Int) async throws -> [TMDBSeasonEpisode] {
+        guard item.kind == .series,
+              item.metadataProvider == "tmdb",
+              let id = item.externalID,
+              id > 0,
+              seasonNumber >= 0 else {
+            throw TMDBCatalogError.invalidURL
+        }
+        var components = URLComponents(string: "https://api.themoviedb.org/3/tv/\(id)/season/\(seasonNumber)")
+        components?.queryItems = [URLQueryItem(name: "language", value: "en-US")]
+        guard let url = components?.url else { throw TMDBCatalogError.invalidURL }
+        let data = try await fetchData(from: url)
+        do {
+            return try JSONDecoder().decode(TMDBSeasonDetails.self, from: data).episodeList
+        } catch {
+            throw TMDBCatalogError.invalidData
+        }
+    }
+
     private func fetchData(from url: URL) async throws -> Data {
         guard !readAccessToken.isEmpty else { throw TMDBCatalogError.missingToken }
         var request = URLRequest(url: url)
