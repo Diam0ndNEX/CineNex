@@ -61,7 +61,7 @@ struct TrackingView: View {
                         .font(.title2.bold())
                     Text(trakt.statusMessage)
                         .font(.subheadline)
-                        .foregroundStyle(trakt.isConnected ? .green : .secondary)
+                        .foregroundColor(trakt.isConnected ? .green : .secondary)
                 }
                 Spacer()
                 if trakt.isConnected {
