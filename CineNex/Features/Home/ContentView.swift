@@ -16,6 +16,10 @@ struct ContentView: View {
     @State private var catalog = MediaItem.demoCatalog
     @State private var catalogLoading = false
     @State private var catalogError: String?
+    @State private var remoteSearchResults: [MediaItem] = []
+    @State private var remoteSearchQuery = ""
+    @State private var remoteSearchLoading = false
+    @State private var remoteSearchError: String?
 
     private var filteredCatalog: [MediaItem] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -25,6 +29,14 @@ struct ContentView: View {
                 || $0.genre.localizedCaseInsensitiveContains(query)
                 || $0.kind.rawValue.localizedCaseInsensitiveContains(query)
         }
+    }
+
+    private var displayedSearchResults: [MediaItem] {
+        if !remoteSearchQuery.isEmpty,
+           remoteSearchQuery.caseInsensitiveCompare(searchText.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame {
+            return remoteSearchResults
+        }
+        return filteredCatalog
     }
 
     private var favoriteItems: [MediaItem] {
@@ -153,13 +165,38 @@ struct ContentView: View {
                     .padding(14)
                     .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14))
                     .accessibilityLabel("Search movies and series")
+                    .submitLabel(.search)
+                    .onSubmit { Task { await searchTMDB() } }
 
-                if filteredCatalog.isEmpty {
-                    ContentUnavailableView.search(text: searchText)
+                Button {
+                    Task { await searchTMDB() }
+                } label: {
+                    HStack {
+                        if remoteSearchLoading { ProgressView().tint(.white) } else { Image(systemName: "globe") }
+                        Text(remoteSearchLoading ? "Searching TMDB…" : "Search TMDB")
+                        Spacer()
+                        Image(systemName: "arrow.right")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .padding(14)
+                    .background(Color.cineNexAccent, in: RoundedRectangle(cornerRadius: 14))
+                    .foregroundStyle(.white)
+                }
+                .disabled(remoteSearchLoading || searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                if let remoteSearchError {
+                    Text(remoteSearchError)
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if displayedSearchResults.isEmpty {
+                    ContentUnavailableView(searchText.isEmpty ? "Search CineNex" : "No matching titles", systemImage: "magnifyingglass", description: Text(searchText.isEmpty ? "Search the local catalog or search TMDB for movies and series." : "Try another title or search TMDB for more results."))
                         .padding(.top, 40)
                 } else {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
-                        ForEach(filteredCatalog) { item in
+                        ForEach(displayedSearchResults) { item in
                             MediaPosterCard(item: item) {
                                 selectedItem = item
                             }
@@ -312,6 +349,35 @@ struct ContentView: View {
             if catalog.isEmpty {
                 catalog = MediaItem.demoCatalog
             }
+        }
+    }
+
+    @MainActor
+    private func searchTMDB() async {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
+        let token = UserDefaults.standard.string(forKey: "cinenex.tmdb.readAccessToken")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !token.isEmpty else {
+            remoteSearchError = "Add your TMDB Read Access Token in Tracking to search the full TMDB catalog."
+            remoteSearchQuery = ""
+            return
+        }
+        remoteSearchLoading = true
+        remoteSearchError = nil
+        defer { remoteSearchLoading = false }
+        do {
+            let results = try await TMDBCatalogProvider(readAccessToken: token).search(query: query)
+            guard !Task.isCancelled else { return }
+            remoteSearchResults = results
+            remoteSearchQuery = query
+            if results.isEmpty { remoteSearchError = "TMDB found no matching movies or series." }
+        } catch is CancellationError {
+            return
+        } catch {
+            remoteSearchError = error.localizedDescription
+            remoteSearchResults = []
+            remoteSearchQuery = ""
         }
     }
 
@@ -501,11 +567,24 @@ private struct MediaDetailView: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                    Image(systemName: item.symbol)
-                        .font(.system(size: 88, weight: .light))
-                        .foregroundStyle(.white.opacity(0.9))
+                    if let posterURL = item.posterURL {
+                        AsyncImage(url: posterURL) { phase in
+                            if let image = phase.image {
+                                image.resizable().scaledToFill()
+                            } else {
+                                Image(systemName: item.symbol)
+                                    .font(.system(size: 88, weight: .light))
+                                    .foregroundStyle(.white.opacity(0.9))
+                            }
+                        }
+                    } else {
+                        Image(systemName: item.symbol)
+                            .font(.system(size: 88, weight: .light))
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
                 }
                 .frame(height: 280)
+                .clipShape(RoundedRectangle(cornerRadius: 24))
 
                 VStack(alignment: .leading, spacing: 12) {
                     Text(item.title)
@@ -513,6 +592,11 @@ private struct MediaDetailView: View {
                     Text("\(item.year)  •  \(item.kind.rawValue)  •  \(item.genre)  •  \(item.runtime)")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                    if let rating = item.rating {
+                        Label(String(format: "%.1f / 10", rating), systemImage: "star.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color(red: 1.0, green: 0.78, blue: 0.28))
+                    }
                     Text(item.synopsis)
                         .font(.body)
                         .foregroundStyle(.white.opacity(0.84))

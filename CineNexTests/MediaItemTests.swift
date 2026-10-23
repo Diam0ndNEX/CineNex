@@ -113,4 +113,32 @@ final class MediaItemTests: XCTestCase {
         XCTAssertThrowsError(try TMDBCatalogProvider.mapResponse(Data("not-json".utf8)))
     }
 
+    func testTMDBSearchResponseMapsMoviesAndSeriesAndSkipsPeople() throws {
+        let data = Data("""
+        {"results":[
+          {"id":11,"media_type":"movie","title":"Arrival","release_date":"2016-11-11","genre_ids":[878],"vote_average":7.6},
+          {"id":12,"media_type":"tv","name":"Severance","first_air_date":"2022-02-18","genre_ids":[9648],"vote_average":8.7},
+          {"id":13,"media_type":"person","name":"Ignored"}
+        ]}
+        """.utf8)
+        let results = try TMDBCatalogProvider.mapResponse(data)
+        XCTAssertEqual(results.map(\.title), ["Arrival", "Severance"])
+        XCTAssertEqual(results.map(\.id), ["tmdb-movie-11", "tmdb-tv-12"])
+        XCTAssertEqual(results[0].genre, "Sci-Fi")
+        XCTAssertEqual(results[1].genre, "Mystery")
+        XCTAssertTrue(results.allSatisfy { $0.streamURL == nil })
+    }
+
+    func testTMDBResponseDeduplicatesRepeatedIDs() throws {
+        let data = Data("""
+        {"results":[
+          {"id":11,"media_type":"movie","title":"Arrival"},
+          {"id":11,"media_type":"movie","title":"Arrival duplicate"}
+        ]}
+        """.utf8)
+        let results = try TMDBCatalogProvider.mapResponse(data)
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results.first?.title, "Arrival")
+    }
+
 }

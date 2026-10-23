@@ -15,7 +15,7 @@ The first foundation is committed:
 - Unit tests for catalog identity and the playable sample.
 - GitHub Actions simulator build and test workflow.
 
-The catalog is currently local demo data. Most entries are illustrative and do not have playable sources. Big Buck Bunny is included as a sample playback target; it is not a catalog or streaming service.
+The app starts with local demo data. With a TMDB Read Access Token saved in Tracking, Home loads trending metadata and Search can query TMDB's movie/TV catalog. Metadata does not include playable streams. Big Buck Bunny is included as a sample playback target; it is not a catalog or streaming service.
 
 ## Build locally
 
@@ -42,9 +42,9 @@ See [Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md) and [Docs/ROADMAP.md](Docs/ROAD
 1. Create or open your TMDB account and visit [API settings](https://www.themoviedb.org/settings/api).
 2. Copy the TMDB API **Read Access Token**.
 3. In CineNex, open Tracking, enter the token in Live Catalog, and save it.
-4. Return to Home and pull down or tap the refresh icon to load trending metadata. Disconnecting TMDB returns CineNex to the demo catalog.
+4. Return to Home and pull down or tap the refresh icon to load trending metadata. In Search, enter a title and tap Search TMDB to find movies and series outside the trending list. Disconnecting TMDB disables remote search and returns Home to the demo catalog.
 
-The token is saved locally in app preferences. Do not share it or commit it to the repository. TMDB metadata access does not grant rights to stream, download, or redistribute any title. Follow TMDB attribution and API terms for distribution.
+The token is currently saved in local app preferences; moving it to Keychain is a planned security hardening step. Do not share it or commit it to the repository. TMDB metadata access does not grant rights to stream, download, or redistribute any title. Follow TMDB attribution and API terms for distribution.
 
 ## Content and rights
 

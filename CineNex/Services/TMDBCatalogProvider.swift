@@ -11,18 +11,30 @@ struct TMDBCatalogProvider: CatalogProvider {
     }
 
     func fetchCatalog() async throws -> [MediaItem] {
-        guard !readAccessToken.isEmpty else {
-            throw TMDBCatalogError.missingToken
-        }
-        guard let url = URL(string: "https://api.themoviedb.org/3/trending/all/week?language=en-US") else {
-            throw TMDBCatalogError.invalidURL
-        }
+        let url = URL(string: "https://api.themoviedb.org/3/trending/all/week?language=en-US")!
+        return try Self.mapResponse(await fetchData(from: url))
+    }
 
+    func search(query: String) async throws -> [MediaItem] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return [] }
+        var components = URLComponents(string: "https://api.themoviedb.org/3/search/multi")
+        components?.queryItems = [
+            URLQueryItem(name: "query", value: query),
+            URLQueryItem(name: "include_adult", value: "false"),
+            URLQueryItem(name: "language", value: "en-US"),
+            URLQueryItem(name: "page", value: "1")
+        ]
+        guard let url = components?.url else { throw TMDBCatalogError.invalidURL }
+        return try Self.mapResponse(await fetchData(from: url))
+    }
+
+    private func fetchData(from url: URL) async throws -> Data {
+        guard !readAccessToken.isEmpty else { throw TMDBCatalogError.missingToken }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(readAccessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 20
-
         let data: Data
         let response: URLResponse
         do {
@@ -32,21 +44,13 @@ struct TMDBCatalogProvider: CatalogProvider {
         } catch {
             throw TMDBCatalogError.network(error.localizedDescription)
         }
-
-        guard let http = response as? HTTPURLResponse else {
-            throw TMDBCatalogError.invalidResponse
-        }
+        guard let http = response as? HTTPURLResponse else { throw TMDBCatalogError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
-            if http.statusCode == 401 || http.statusCode == 403 {
-                throw TMDBCatalogError.unauthorized
-            }
-            if http.statusCode == 429 {
-                throw TMDBCatalogError.rateLimited
-            }
+            if http.statusCode == 401 || http.statusCode == 403 { throw TMDBCatalogError.unauthorized }
+            if http.statusCode == 429 { throw TMDBCatalogError.rateLimited }
             throw TMDBCatalogError.server(http.statusCode)
         }
-
-        return try Self.mapResponse(data)
+        return data
     }
 
     static func mapResponse(_ data: Data) throws -> [MediaItem] {
@@ -57,8 +61,11 @@ struct TMDBCatalogProvider: CatalogProvider {
             throw TMDBCatalogError.invalidData
         }
 
+        var seenIDs = Set<String>()
         return decoded.results.compactMap { result in
             guard result.mediaType == "movie" || result.mediaType == "tv" else { return nil }
+            let stableID = "tmdb-\(result.mediaType)-\(result.id)"
+            guard seenIDs.insert(stableID).inserted else { return nil }
             let isMovie = result.mediaType == "movie"
             let title = (isMovie ? result.title : result.name)?.trimmingCharacters(in: .whitespacesAndNewlines)
             guard let title, !title.isEmpty else { return nil }
@@ -70,7 +77,7 @@ struct TMDBCatalogProvider: CatalogProvider {
                 URL(string: "https://image.tmdb.org/t/p/w500\($0)")
             }
             return MediaItem(
-                id: "tmdb-\(result.mediaType)-\(result.id)",
+                id: stableID,
                 title: title,
                 kind: isMovie ? .movie : .series,
                 year: year,
