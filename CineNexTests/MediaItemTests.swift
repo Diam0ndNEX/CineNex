@@ -243,6 +243,30 @@ final class MediaItemTests: XCTestCase {
         XCTAssertNil(details.seasonSummaries[1].posterURL)
     }
 
+    func testTMDBSeasonEpisodesDecodeSortAndFilterSafely() throws {
+        let data = Data("""
+        {
+          "episodes": [
+            {"id": 103, "name": "Episode Three", "overview": "The finale.", "air_date": "2024-03-15", "episode_number": 3, "season_number": 1, "still_path": "/three.jpg", "vote_average": 8.4, "runtime": 51},
+            {"id": 101, "name": "Episode One", "air_date": "2024-01-15", "episode_number": 1, "season_number": 1, "still_path": "invalid"},
+            {"id": 102, "name": "Episode Two", "episode_number": 2, "season_number": 1},
+            {"id": 103, "name": "Duplicate episode", "episode_number": 4, "season_number": 1},
+            {"id": 104, "name": "Invalid number", "episode_number": 0, "season_number": 1},
+            {"id": 0, "name": "Invalid ID", "episode_number": 5, "season_number": 1}
+          ]
+        }
+        """.utf8)
+
+        let details = try JSONDecoder().decode(TMDBSeasonDetails.self, from: data)
+
+        XCTAssertEqual(details.episodeList.map(\.episodeNumber), [1, 2, 3])
+        XCTAssertEqual(details.episodeList.map(\.displayName), ["Episode One", "Episode Two", "Episode Three"])
+        XCTAssertEqual(details.episodeList.last?.airYear, 2024)
+        XCTAssertEqual(details.episodeList.last?.runtimeLabel, "51 min")
+        XCTAssertEqual(details.episodeList.last?.stillURL?.absoluteString, "https://image.tmdb.org/t/p/w300/three.jpg")
+        XCTAssertNil(details.episodeList.first?.stillURL)
+    }
+
     func testTMDBDetailsHandleMissingOptionalFields() throws {
         let details = try JSONDecoder().decode(TMDBTitleDetails.self, from: Data("{}".utf8))
 
