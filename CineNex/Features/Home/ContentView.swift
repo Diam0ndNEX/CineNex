@@ -840,7 +840,7 @@ private struct MediaDetailView: View {
                                             .font(.subheadline.weight(.semibold))
                                         HStack(spacing: 8) {
                                             if let episodeCount = season.episodeCount, episodeCount > 0 {
-                                                Text("\\(episodeCount) episodes")
+                                                Text("\(episodeCount) episodes")
                                             }
                                             if let airYear = season.airYear {
                                                 Text(String(airYear))
