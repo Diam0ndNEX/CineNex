@@ -170,7 +170,7 @@ struct TrackingView: View {
             if let tmdbMessage {
                 Text(tmdbMessage)
                     .font(.footnote)
-                    .foregroundStyle(tmdbMessage.localizedCaseInsensitiveContains("could not") || tmdbMessage.localizedCaseInsensitiveContains("rejected") || tmdbMessage.localizedCaseInsensitiveContains("failed") ? .red : .secondary)
+                    .foregroundColor(tmdbMessage.localizedCaseInsensitiveContains("could not") || tmdbMessage.localizedCaseInsensitiveContains("rejected") || tmdbMessage.localizedCaseInsensitiveContains("failed") ? .red : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
