@@ -40,7 +40,7 @@ Acceptance: integrations are opt-in, can be disconnected, and report partial fai
 - Completed: Keychain storage for TMDB credentials with legacy migration, cached poster artwork, verified TMDB identifiers in Trakt movie scrobbles, and TMDB attribution notice.
 - Completed: TV season summaries on title detail pages, including episode counts, air years, artwork, and overviews when TMDB provides them.
 - Completed: per-season episode listings fetched on demand from TMDB and shown in a dedicated sheet, with episode stills, air dates, runtimes, and safe handling of malformed/duplicate records.
-- Completed: fetch Trakt movie watchlists, review individual entries, and import selected movies into a separate persistent local watchlist with duplicate-safe merging. Remaining: broader Trakt history and ratings synchronization.
+- Completed: fetch Trakt movie watchlists and watched-movie history, review individual entries, and import selected records into separate persistent local lists with duplicate-safe merging. Remaining: Trakt ratings synchronization.
 
 Acceptance: search and details show live metadata and recover from network/API failures.
 

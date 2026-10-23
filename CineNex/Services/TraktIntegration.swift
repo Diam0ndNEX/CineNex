@@ -180,6 +180,22 @@ final class TraktIntegration: ObservableObject {
         return movies
     }
 
+    func fetchMovieHistory() async throws -> [TraktHistoryMovie] {
+        guard isConnected else {
+            throw IntegrationError.message("Connect your Trakt account before importing its watch history.")
+        }
+        let token = try await validAccessToken()
+        let data = try await get(
+            path: "/sync/history/movies",
+            clientID: savedClientID,
+            bearerToken: token.accessToken
+        )
+        let movies = try TraktHistoryMovie.decodeList(data)
+        statusMessage = "Loaded history for \(movies.count) movies from Trakt"
+        lastError = nil
+        return movies
+    }
+
     func scrobbleStart(for item: MediaItem) async {
         await sendScrobble("start", for: item, position: 0, duration: 0)
     }

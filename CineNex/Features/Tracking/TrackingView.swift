@@ -19,6 +19,11 @@ struct TrackingView: View {
     @State private var showingTraktWatchlistReview = false
     @State private var loadingTraktWatchlist = false
     @State private var watchlistMessage: String?
+    @StateObject private var traktHistory = TraktHistoryStore.shared
+    @State private var remoteHistory: [TraktHistoryMovie] = []
+    @State private var showingTraktHistoryReview = false
+    @State private var loadingTraktHistory = false
+    @State private var historyMessage: String?
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -34,6 +39,7 @@ struct TrackingView: View {
                 tmdbCard
                 traktCard
                 traktWatchlistCard
+                traktHistoryCard
                 letterboxdCard
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -374,6 +380,95 @@ struct TrackingView: View {
         .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 22))
         .sheet(isPresented: $showingTraktWatchlistReview) {
             TraktWatchlistReviewView(movies: remoteWatchlist, store: traktWatchlist)
+        }
+    }
+
+    private var traktHistoryCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.seal")
+                    .font(.title2)
+                    .foregroundStyle(Color.cineNexAccent)
+                    .frame(width: 46, height: 46)
+                    .background(Color.cineNexAccent.opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Trakt Watch History")
+                        .font(.title2.bold())
+                    Text("\(traktHistory.entries.count) watched locally")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text("Fetch your watched movies from Trakt, review the history, and import selected records into CineNex’s separate local watched history. This does not alter Trakt or playback resume progress.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            if !traktHistory.entries.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(traktHistory.entries.prefix(5)) { entry in
+                        HStack(alignment: .center, spacing: 10) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Color.cineNexAccent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.title)
+                                    .font(.subheadline.weight(.medium))
+                                Text([entry.year.map(String.init), entry.watchedAt.map { String($0.prefix(10)) }, entry.plays > 1 ? "\(entry.plays) plays" : nil].compactMap { $0 }.joined(separator: " · "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button(role: .destructive) {
+                                traktHistory.remove(id: entry.id)
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Remove \(entry.title) from local watched history")
+                        }
+                    }
+                }
+            }
+
+            Button {
+                loadingTraktHistory = true
+                historyMessage = nil
+                Task {
+                    do {
+                        remoteHistory = try await trakt.fetchMovieHistory()
+                        if remoteHistory.isEmpty {
+                            historyMessage = "Your Trakt movie history is empty."
+                        } else {
+                            showingTraktHistoryReview = true
+                        }
+                    } catch {
+                        historyMessage = error.localizedDescription
+                    }
+                    loadingTraktHistory = false
+                }
+            } label: {
+                if loadingTraktHistory {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Label("Fetch and review Trakt history", systemImage: "arrow.down.to.line")
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!trakt.isConnected || loadingTraktHistory)
+
+            if let historyMessage {
+                Text(historyMessage)
+                    .font(.footnote)
+                    .foregroundStyle(historyMessage.localizedCaseInsensitiveContains("failed") || historyMessage.localizedCaseInsensitiveContains("error") ? .red : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(18)
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 22))
+        .sheet(isPresented: $showingTraktHistoryReview) {
+            TraktHistoryReviewView(movies: remoteHistory, store: traktHistory)
         }
     }
 
