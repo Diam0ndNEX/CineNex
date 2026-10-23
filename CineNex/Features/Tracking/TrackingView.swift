@@ -14,6 +14,11 @@ struct TrackingView: View {
     @State private var letterboxdMessage: String?
     @State private var tmdbToken = TMDBTokenStore.load() ?? ""
     @State private var tmdbMessage: String?
+    @StateObject private var traktWatchlist = TraktWatchlistStore.shared
+    @State private var remoteWatchlist: [TraktWatchlistMovie] = []
+    @State private var showingTraktWatchlistReview = false
+    @State private var loadingTraktWatchlist = false
+    @State private var watchlistMessage: String?
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -28,6 +33,7 @@ struct TrackingView: View {
 
                 tmdbCard
                 traktCard
+                traktWatchlistCard
                 letterboxdCard
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -281,6 +287,94 @@ struct TrackingView: View {
         }
         .padding(18)
         .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 22))
+    }
+
+    private var traktWatchlistCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "list.star")
+                    .font(.title2)
+                    .foregroundStyle(Color.cineNexAccent)
+                    .frame(width: 46, height: 46)
+                    .background(Color.cineNexAccent.opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Trakt Watchlist")
+                        .font(.title2.bold())
+                    Text("\(traktWatchlist.entries.count) saved locally")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text("Fetch your Trakt movie watchlist, review the entries, and import selected titles into a separate CineNex watchlist stored on this device. Importing never edits your Trakt account or your favorites.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            if !traktWatchlist.entries.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(traktWatchlist.entries.prefix(5)) { entry in
+                        HStack(alignment: .center, spacing: 10) {
+                            Image(systemName: "bookmark.fill")
+                                .foregroundStyle(Color.cineNexAccent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.title)
+                                    .font(.subheadline.weight(.medium))
+                                Text([entry.year.map(String.init), entry.tmdbID.map { "TMDB \($0)" }].compactMap { $0 }.joined(separator: " · "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button(role: .destructive) {
+                                traktWatchlist.remove(id: entry.id)
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Remove \(entry.title) from local watchlist")
+                        }
+                    }
+                }
+            }
+
+            Button {
+                loadingTraktWatchlist = true
+                watchlistMessage = nil
+                Task {
+                    do {
+                        remoteWatchlist = try await trakt.fetchMovieWatchlist()
+                        showingTraktWatchlistReview = true
+                        if remoteWatchlist.isEmpty {
+                            watchlistMessage = "Your Trakt movie watchlist is empty."
+                        }
+                    } catch {
+                        watchlistMessage = error.localizedDescription
+                    }
+                    loadingTraktWatchlist = false
+                }
+            } label: {
+                if loadingTraktWatchlist {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Label("Fetch and review Trakt watchlist", systemImage: "arrow.down.to.line")
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!trakt.isConnected || loadingTraktWatchlist)
+
+            if let watchlistMessage {
+                Text(watchlistMessage)
+                    .font(.footnote)
+                    .foregroundStyle(watchlistMessage.localizedCaseInsensitiveContains("failed") ? .red : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(18)
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 22))
+        .sheet(isPresented: $showingTraktWatchlistReview) {
+            TraktWatchlistReviewView(movies: remoteWatchlist, store: traktWatchlist)
+        }
     }
 
     private var letterboxdCard: some View {
