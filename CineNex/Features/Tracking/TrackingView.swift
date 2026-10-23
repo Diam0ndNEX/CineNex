@@ -14,6 +14,7 @@ struct TrackingView: View {
     @State private var letterboxdMessage: String?
     @State private var tmdbToken = TMDBTokenStore.load() ?? ""
     @State private var tmdbMessage: String?
+    @State private var testingTMDBConnection = false
     @StateObject private var traktWatchlist = TraktWatchlistStore.shared
     @State private var remoteWatchlist: [TraktWatchlistMovie] = []
     @State private var showingTraktWatchlistReview = false
@@ -149,10 +150,27 @@ struct TrackingView: View {
                 .buttonStyle(.bordered)
             }
 
+            Button {
+                Task { await testTMDBConnection() }
+            } label: {
+                HStack(spacing: 8) {
+                    if testingTMDBConnection {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "checkmark.shield")
+                    }
+                    Text(testingTMDBConnection ? "Testing connection…" : "Test connection")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(testingTMDBConnection || tmdbToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .accessibilityHint("Checks whether the entered TMDB Read Access Token can load catalog metadata.")
+
             if let tmdbMessage {
                 Text(tmdbMessage)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(tmdbMessage.localizedCaseInsensitiveContains("could not") || tmdbMessage.localizedCaseInsensitiveContains("rejected") || tmdbMessage.localizedCaseInsensitiveContains("failed") ? .red : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -665,6 +683,30 @@ struct TrackingView: View {
         }
         .padding(18)
         .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 22))
+    }
+
+    @MainActor
+    private func testTMDBConnection() async {
+        let token = tmdbToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else {
+            tmdbMessage = "Enter a TMDB Read Access Token before testing the connection."
+            return
+        }
+
+        testingTMDBConnection = true
+        tmdbMessage = nil
+        defer { testingTMDBConnection = false }
+
+        do {
+            let items = try await TMDBCatalogProvider(readAccessToken: token).fetchCatalog()
+            if items.isEmpty {
+                tmdbMessage = "TMDB accepted the token, but returned no usable trending titles."
+            } else {
+                tmdbMessage = "Connection successful. TMDB returned \(items.count) trending titles. Save the token to use the live catalog."
+            }
+        } catch {
+            tmdbMessage = "Connection test failed: \(error.localizedDescription)"
+        }
     }
 
     private func importLetterboxdFiles(_ result: Result<[URL], Error>) {
