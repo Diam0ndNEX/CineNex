@@ -64,13 +64,31 @@ struct TraktRatingEntry: Codable, Identifiable, Hashable {
     let ratedAt: String?
     let rating: Int
 
+    init(
+        id: String,
+        title: String,
+        year: Int?,
+        tmdbID: Int?,
+        ratedAt: String?,
+        rating: Int
+    ) {
+        self.id = id
+        self.title = title
+        self.year = year
+        self.tmdbID = tmdbID
+        self.ratedAt = ratedAt
+        self.rating = rating
+    }
+
     init(movie: TraktRatingMovie) {
-        id = movie.id
-        title = movie.title
-        year = movie.year
-        tmdbID = movie.tmdbID
-        ratedAt = movie.ratedAt
-        rating = movie.rating
+        self.init(
+            id: movie.id,
+            title: movie.title,
+            year: movie.year,
+            tmdbID: movie.tmdbID,
+            ratedAt: movie.ratedAt,
+            rating: movie.rating
+        )
     }
 }
 
