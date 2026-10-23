@@ -35,7 +35,10 @@ struct TMDBCatalogProvider: CatalogProvider {
         }
         let mediaType = item.kind == .movie ? "movie" : "tv"
         var components = URLComponents(string: "https://api.themoviedb.org/3/\(mediaType)/\(id)")
-        components?.queryItems = [URLQueryItem(name: "language", value: "en-US")]
+        components?.queryItems = [
+            URLQueryItem(name: "language", value: "en-US"),
+            URLQueryItem(name: "append_to_response", value: "credits,videos")
+        ]
         guard let url = components?.url else { throw TMDBCatalogError.invalidURL }
         let data = try await fetchData(from: url)
         do {
