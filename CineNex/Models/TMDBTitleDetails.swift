@@ -12,6 +12,7 @@ struct TMDBTitleDetails: Decodable, Equatable {
     let videos: TMDBTitleVideos?
     let createdBy: [TMDBTitleCreator]?
     let recommendations: TMDBTitleRecommendations?
+    let seasons: [TMDBTitleSeason]?
 
     enum CodingKeys: String, CodingKey {
         case tagline
@@ -21,10 +22,23 @@ struct TMDBTitleDetails: Decodable, Equatable {
         case credits
         case videos
         case recommendations
+        case seasons
         case createdBy = "created_by"
         case episodeRunTime = "episode_run_time"
         case numberOfSeasons = "number_of_seasons"
         case numberOfEpisodes = "number_of_episodes"
+    }
+
+    var seasonSummaries: [TMDBTitleSeason] {
+        var seenNumbers = Set<Int>()
+        return (seasons ?? []).filter { season in
+            guard season.seasonNumber >= 0,
+                  !(season.name?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
+                  seenNumbers.insert(season.seasonNumber).inserted else {
+                return false
+            }
+            return true
+        }.sorted { $0.seasonNumber < $1.seasonNumber }
     }
 
     var runtimeMinutes: Int? {
@@ -120,6 +134,47 @@ struct TMDBTitleDetails: Decodable, Equatable {
         components.queryItems = [URLQueryItem(name: "v", value: key)]
         return components.url
     }
+}
+
+struct TMDBTitleSeason: Decodable, Equatable, Identifiable {
+    let id: Int?
+    let name: String?
+    let overview: String?
+    let airDate: String?
+    let episodeCount: Int?
+    let seasonNumber: Int
+    let posterPath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case overview
+        case airDate = "air_date"
+        case episodeCount = "episode_count"
+        case seasonNumber = "season_number"
+        case posterPath = "poster_path"
+    }
+
+    var identifiableID: String { "season-\\(seasonNumber)" }
+
+    var displayName: String {
+        if seasonNumber == 0 { return "Specials" }
+        let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmedName.isEmpty ? "Season \\(seasonNumber)" : trimmedName
+    }
+
+    var airYear: Int? {
+        guard let airDate, airDate.count >= 4 else { return nil }
+        return Int(airDate.prefix(4))
+    }
+
+    var posterURL: URL? {
+        guard let posterPath, posterPath.hasPrefix("/") else { return nil }
+        return URL(string: "https://image.tmdb.org/t/p/w342\\(posterPath)")
+    }
+
+    var idValue: Int { id ?? seasonNumber }
+    var id: Int { idValue }
 }
 
 struct TMDBTitleGenre: Decodable, Equatable {
