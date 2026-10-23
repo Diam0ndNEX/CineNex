@@ -224,38 +224,36 @@ struct ContentView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                HStack(spacing: 10) {
+                    Picker("Media type", selection: $selectedSearchKind) {
+                        ForEach(SearchKind.allCases) { kind in
+                            Text(kind.title).tag(kind)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityLabel("Filter search results by media type")
+
+                    Picker("Sort", selection: $selectedSearchSort) {
+                        ForEach(SearchSort.allCases) { sort in
+                            Text(sort.title).tag(sort)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .accessibilityLabel("Sort search results")
+                }
+
+                Text("\(displayedSearchResults.count) titles")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+
                 if displayedSearchResults.isEmpty {
-                    ContentUnavailableView(searchText.isEmpty ? "Search CineNex" : "No matching titles", systemImage: "magnifyingglass", description: Text(searchText.isEmpty ? "Search the local catalog or search TMDB for movies and series." : "Try another title or search TMDB for more results."))
+                    ContentUnavailableView(searchText.isEmpty ? "Search CineNex" : "No matching titles", systemImage: "magnifyingglass", description: Text(searchText.isEmpty ? "Search the local catalog or search TMDB for movies and series." : "Try another title or change the media type filter."))
                         .padding(.top, 40)
                 } else {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 10) {
-                            Picker("Media type", selection: $selectedSearchKind) {
-                                ForEach(SearchKind.allCases) { kind in
-                                    Text(kind.title).tag(kind)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .accessibilityLabel("Filter search results by media type")
-
-                            Picker("Sort", selection: $selectedSearchSort) {
-                                ForEach(SearchSort.allCases) { sort in
-                                    Text(sort.title).tag(sort)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .accessibilityLabel("Sort search results")
-                        }
-
-                        Text("\(displayedSearchResults.count) titles")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
-                            ForEach(displayedSearchResults) { item in
-                                MediaPosterCard(item: item) {
-                                    selectedItem = item
-                                }
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
+                        ForEach(displayedSearchResults) { item in
+                            MediaPosterCard(item: item) {
+                                selectedItem = item
                             }
                         }
                     }
