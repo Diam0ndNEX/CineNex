@@ -16,7 +16,8 @@ struct TMDBCatalogProvider: CatalogProvider {
     }
 
     func search(query: String) async throws -> [MediaItem] {
-        try await searchPage(query: query, page: 1).items
+        let page = try await searchPage(query: query, page: 1)
+        return page.items
     }
 
     func searchPage(query: String, page: Int) async throws -> TMDBSearchPage {
@@ -32,12 +33,23 @@ struct TMDBCatalogProvider: CatalogProvider {
         ]
         guard let url = components?.url else { throw TMDBCatalogError.invalidURL }
         let data = try await fetchData(from: url)
-        let items = try Self.mapResponse(data)
-        let response = try JSONDecoder().decode(SearchPaginationResponse.self, from: data)
+        return try Self.mapSearchPage(data, requestedPage: page)
+    }
+
+    static func mapSearchPage(_ data: Data, requestedPage: Int) throws -> TMDBSearchPage {
+        guard requestedPage > 0 else { throw TMDBCatalogError.invalidURL }
+        let items = try mapResponse(data)
+        let response: SearchPaginationResponse
+        do {
+            response = try JSONDecoder().decode(SearchPaginationResponse.self, from: data)
+        } catch {
+            throw TMDBCatalogError.invalidData
+        }
+        let totalPages = max(1, response.totalPages ?? requestedPage)
         return TMDBSearchPage(
             items: items,
-            page: max(1, response.page ?? page),
-            totalPages: max(1, response.totalPages ?? page)
+            page: min(totalPages, max(1, response.page ?? requestedPage)),
+            totalPages: totalPages
         )
     }
 
