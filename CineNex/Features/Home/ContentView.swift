@@ -734,6 +734,7 @@ private struct MediaDetailView: View {
     @State private var extendedDetails: TMDBTitleDetails?
     @State private var detailsLoading = false
     @State private var detailsError: String?
+    @State private var selectedSeason: TMDBTitleSeason?
 
     var body: some View {
         ScrollView {
@@ -826,7 +827,10 @@ private struct MediaDetailView: View {
                             Text("Seasons")
                                 .font(.title3.bold())
                             ForEach(details.seasonSummaries) { season in
-                                HStack(alignment: .top, spacing: 12) {
+                                Button {
+                                    selectedSeason = season
+                                } label: {
+                                    HStack(alignment: .top, spacing: 12) {
                                     CachedPosterImage(
                                         url: season.posterURL,
                                         fallbackSymbol: "tv",
@@ -859,7 +863,11 @@ private struct MediaDetailView: View {
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 }
-                                .padding(.vertical, 5)
+                                    .padding(.vertical, 5)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityElement(children: .combine)
+                                .accessibilityHint("Shows episodes in \(season.displayName)")
                             }
                         }
                         .padding(16)
@@ -977,6 +985,9 @@ private struct MediaDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: item.id) {
             await loadExtendedDetails()
+        }
+        .sheet(item: $selectedSeason) { season in
+            SeasonEpisodesView(item: item, season: season)
         }
     }
 
