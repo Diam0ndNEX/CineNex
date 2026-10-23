@@ -499,22 +499,11 @@ private struct MediaPosterCard: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                    if let posterURL = item.posterURL {
-                        AsyncImage(url: posterURL) { phase in
-                            if let image = phase.image {
-                                image.resizable().scaledToFill()
-                            } else {
-                                Image(systemName: item.symbol)
-                                    .font(.system(size: 38, weight: .light))
-                                    .foregroundStyle(.white.opacity(0.9))
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            }
-                        }
-                    } else {
-                        Image(systemName: item.symbol)
-                            .font(.system(size: 38, weight: .light))
-                            .foregroundStyle(.white.opacity(0.9))
-                    }
+                    CachedPosterImage(
+                        url: item.posterURL,
+                        fallbackSymbol: item.symbol,
+                        symbolSize: 38
+                    )
                     VStack {
                         HStack {
                             Text(item.kind.rawValue.uppercased())
@@ -567,21 +556,11 @@ private struct MediaDetailView: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                    if let posterURL = item.posterURL {
-                        AsyncImage(url: posterURL) { phase in
-                            if let image = phase.image {
-                                image.resizable().scaledToFill()
-                            } else {
-                                Image(systemName: item.symbol)
-                                    .font(.system(size: 88, weight: .light))
-                                    .foregroundStyle(.white.opacity(0.9))
-                            }
-                        }
-                    } else {
-                        Image(systemName: item.symbol)
-                            .font(.system(size: 88, weight: .light))
-                            .foregroundStyle(.white.opacity(0.9))
-                    }
+                    CachedPosterImage(
+                        url: item.posterURL,
+                        fallbackSymbol: item.symbol,
+                        symbolSize: 88
+                    )
                 }
                 .frame(height: 280)
                 .clipShape(RoundedRectangle(cornerRadius: 24))
