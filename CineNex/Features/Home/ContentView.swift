@@ -721,6 +721,58 @@ private struct MediaDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                if let details = extendedDetails {
+                    if !details.castMembers.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Cast")
+                                .font(.title3.bold())
+                            ForEach(Array(details.castMembers.enumerated()), id: \.offset) { _, member in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(member.name ?? "Unknown performer")
+                                        .font(.subheadline.weight(.semibold))
+                                    if let character = member.character?.trimmingCharacters(in: .whitespacesAndNewlines),
+                                       !character.isEmpty {
+                                        Text(character)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
+                    }
+
+                    if !details.directorNames.isEmpty || !details.creatorNames.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Crew")
+                                .font(.title3.bold())
+                            if !details.directorNames.isEmpty {
+                                detailRow("Director", value: details.directorNames.joined(separator: ", "), symbol: "megaphone")
+                            }
+                            if !details.creatorNames.isEmpty {
+                                detailRow("Created by", value: details.creatorNames.joined(separator: ", "), symbol: "person.2")
+                            }
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
+                    }
+
+                    if let trailerURL = details.trailerURL {
+                        Link(destination: trailerURL) {
+                            Label("Watch trailer on YouTube", systemImage: "play.rectangle.fill")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 15)
+                                .background(Color.cineNexAccent, in: RoundedRectangle(cornerRadius: 14))
+                                .foregroundStyle(.white)
+                        }
+                        .accessibilityHint("Opens the selected official or first available TMDB trailer in YouTube")
+                    }
+                }
+
                 HStack(spacing: 12) {
                     Button(action: onPlay) {
                         Label(item.streamURL == nil ? "Source unavailable" : "Play now", systemImage: "play.fill")
