@@ -141,6 +141,54 @@ final class MediaItemTests: XCTestCase {
         XCTAssertEqual(results.first?.title, "Arrival")
     }
 
+    func testTMDBMovieDetailsDecodeRuntimeGenresAndStatus() throws {
+        let data = Data("""
+        {
+          "tagline": "A test tagline",
+          "runtime": 139,
+          "status": "Released",
+          "genres": [{"name": "Drama"}, {"name": "Thriller"}]
+        }
+        """.utf8)
+
+        let details = try JSONDecoder().decode(TMDBTitleDetails.self, from: data)
+
+        XCTAssertEqual(details.tagline, "A test tagline")
+        XCTAssertEqual(details.runtimeMinutes, 139)
+        XCTAssertEqual(details.runtimeLabel, "2 hr 19 min")
+        XCTAssertEqual(details.status, "Released")
+        XCTAssertEqual(details.genreNames, ["Drama", "Thriller"])
+    }
+
+    func testTMDBSeriesDetailsDecodeEpisodeRuntimeAndCounts() throws {
+        let data = Data("""
+        {
+          "episode_run_time": [52, 48],
+          "number_of_seasons": 4,
+          "number_of_episodes": 39,
+          "genres": [{"name": "Mystery"}]
+        }
+        """.utf8)
+
+        let details = try JSONDecoder().decode(TMDBTitleDetails.self, from: data)
+
+        XCTAssertEqual(details.runtimeMinutes, 52)
+        XCTAssertEqual(details.runtimeLabel, "52 min")
+        XCTAssertEqual(details.numberOfSeasons, 4)
+        XCTAssertEqual(details.numberOfEpisodes, 39)
+        XCTAssertEqual(details.genreNames, ["Mystery"])
+    }
+
+    func testTMDBDetailsHandleMissingOptionalFields() throws {
+        let details = try JSONDecoder().decode(TMDBTitleDetails.self, from: Data("{}".utf8))
+
+        XCTAssertNil(details.runtimeMinutes)
+        XCTAssertNil(details.runtimeLabel)
+        XCTAssertTrue(details.genreNames.isEmpty)
+        XCTAssertNil(details.numberOfSeasons)
+        XCTAssertNil(details.numberOfEpisodes)
+    }
+
     func testTraktScrobblePayloadIncludesVerifiedTMDBIdentifier() {
         let item = MediaItem(
             id: "tmdb-movie-550",
