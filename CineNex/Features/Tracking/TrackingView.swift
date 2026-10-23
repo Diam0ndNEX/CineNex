@@ -1,11 +1,17 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct TrackingView: View {
     @StateObject private var trakt = TraktIntegration.shared
     @State private var clientID = TraktIntegration.shared.savedClientID
     @State private var scrobblingEnabled = UserDefaults.standard.bool(forKey: "cinenex.traktScrobbleEnabled")
     @State private var showingSetupHelp = false
+    @StateObject private var letterboxd = LetterboxdLibraryStore.shared
+    @State private var importingLetterboxd = false
+    @State private var exportingLetterboxd = false
+    @State private var exportDocument = LetterboxdCSVDocument()
+    @State private var letterboxdMessage: String?
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -40,6 +46,19 @@ struct TrackingView: View {
         .onChange(of: scrobblingEnabled) { _, newValue in
             UserDefaults.standard.set(newValue, forKey: "cinenex.traktScrobbleEnabled")
         }
+        .fileImporter(
+            isPresented: $importingLetterboxd,
+            allowedContentTypes: [.commaSeparatedText, .plainText],
+            allowsMultipleSelection: true,
+            onCompletion: importLetterboxdFiles
+        )
+        .fileExporter(
+            isPresented: $exportingLetterboxd,
+            document: exportDocument,
+            contentType: .commaSeparatedText,
+            defaultFilename: "diary",
+            onCompletion: finishLetterboxdExport
+        )
         .alert("Set up Trakt", isPresented: $showingSetupHelp) {
             Button("Open Trakt Developer", action: openTraktDeveloper)
             Button("Done", role: .cancel) {}
@@ -189,9 +208,64 @@ struct TrackingView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            Label("Planned: import/export your Letterboxd diary and ratings using Letterboxd’s official data export, with duplicate-safe matching.", systemImage: "arrow.left.arrow.right")
+            Label("Import your official Letterboxd CSV exports, keep a local copy of your diary, and export diary.csv for reuse. Direct account sync requires Letterboxd API access.", systemImage: "arrow.left.arrow.right")
                 .font(.footnote)
                 .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 10) {
+                Label("\(letterboxd.records.count) imported rows", systemImage: "tray.full")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(letterboxd.diaryRecords.count) diary entries")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+
+            if !letterboxd.diaryRecords.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(letterboxd.diaryRecords.prefix(4)) { record in
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .foregroundStyle(Color(red: 0.45, green: 0.78, blue: 0.45))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(record.title)
+                                    .font(.subheadline.weight(.semibold))
+                                Text([record.year.map(String.init), record.watchedDate, record.rating.map { "\(String(format: "%g", $0)) ★" }].compactMap { $0 }.joined(separator: " · "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    importingLetterboxd = true
+                } label: {
+                    Label("Import CSV", systemImage: "square.and.arrow.down")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    exportDocument = LetterboxdCSVDocument(data: letterboxd.makeDiaryExport())
+                    exportingLetterboxd = true
+                } label: {
+                    Label("Export diary.csv", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            if let letterboxdMessage {
+                Text(letterboxdMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Button {
                 openURL(URL(string: "https://letterboxd.com/")!)
@@ -211,6 +285,47 @@ struct TrackingView: View {
         }
         .padding(18)
         .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 22))
+    }
+
+    private func importLetterboxdFiles(_ result: Result<[URL], Error>) {
+        switch result {
+        case .failure(let error):
+            letterboxdMessage = "Import cancelled or failed: \(error.localizedDescription)"
+        case .success(let urls):
+            var importedRows = 0
+            var skippedFiles: [String] = []
+            for url in urls {
+                let hasAccess = url.startAccessingSecurityScopedResource()
+                defer {
+                    if hasAccess {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+                do {
+                    let data = try Data(contentsOf: url)
+                    guard let text = String(data: data, encoding: .utf8) else {
+                        throw LetterboxdCSVError.unreadableText
+                    }
+                    importedRows += try letterboxd.importCSV(text, filename: url.lastPathComponent)
+                } catch {
+                    skippedFiles.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                }
+            }
+            if skippedFiles.isEmpty {
+                letterboxdMessage = "Import complete. Added \(importedRows) new rows; duplicate rows were merged."
+            } else {
+                letterboxdMessage = "Added \(importedRows) new rows. Some files could not be imported: " + skippedFiles.joined(separator: " · ")
+            }
+        }
+    }
+
+    private func finishLetterboxdExport(_ result: Result<URL, Error>) {
+        switch result {
+        case .success:
+            letterboxdMessage = "Diary CSV exported. Import it into Letterboxd using its official import tools."
+        case .failure(let error):
+            letterboxdMessage = "Export failed: \(error.localizedDescription)"
+        }
     }
 
     private func openTraktDeveloper() {

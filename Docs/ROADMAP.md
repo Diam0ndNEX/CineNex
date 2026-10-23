@@ -25,15 +25,15 @@ Acceptance: progress survives app relaunches, completed playback no longer appea
 
 - Trakt device authorization, Keychain token storage, token refresh, and movie scrobbling.
 - Trakt history, ratings, and watchlist import/sync with duplicate-safe conflict handling.
-- Letterboxd CSV import/export based on official user exports.
+- Letterboxd CSV import/export for diary, watched, ratings, and watchlist files.
 - Explicit review screen before importing, adding, or changing watched entries.
-- Keep local progress available when integrations are disconnected.
+- Keep local playback progress available when integrations are disconnected.
 
 Acceptance: integrations are opt-in, can be disconnected, and report partial failures without interrupting playback.
 
 ## Milestone 4 — Catalog integration
 
-- Select a documented metadata provider.
+- Select a documented metadata provider such as TMDB.
 - Implement network loading, decoding, cancellation, and clear loading/error/empty states.
 - Add artwork loading with caching and accessible fallback artwork.
 - Map catalog entries to verified TMDB, IMDb, and Trakt IDs where available.
