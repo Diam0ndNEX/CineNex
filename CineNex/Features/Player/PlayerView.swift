@@ -119,6 +119,9 @@ struct PlayerView: View {
             get: { playbackError != nil },
             set: { if !$0 { playbackError = nil } }
         )) {
+            Button("Retry") {
+                retryPlayback()
+            }
             Button("Close", role: .cancel) {
                 playbackError = nil
                 dismiss()
@@ -130,6 +133,17 @@ struct PlayerView: View {
 
     private func startPlayback() {
         guard let url = item.streamURL else { return }
+        if let timeObserver {
+            player.removeTimeObserver(timeObserver)
+            self.timeObserver = nil
+        }
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        audioGroup = nil
+        subtitleGroup = nil
+        audioOptions = []
+        subtitleOptions = []
+
         let playerItem = AVPlayerItem(url: url)
         player.replaceCurrentItem(with: playerItem)
         timeObserver = player.addPeriodicTimeObserver(
@@ -177,6 +191,11 @@ struct PlayerView: View {
                 playbackError = "The source took too long to become ready. Check your connection and try again."
             }
         }
+    }
+
+    private func retryPlayback() {
+        playbackError = nil
+        startPlayback()
     }
 
     @MainActor
