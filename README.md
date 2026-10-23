@@ -9,7 +9,7 @@ The first foundation is committed:
 - Native dark SwiftUI interface with Home, Search, and My List tabs.
 - Demo movie and series catalog with title details.
 - Search by title, genre, and media type.
-- In-memory favorites.
+- Persistent favorites stored on the device.
 - AVPlayer screen for a compatible HTTPS sample video.
 - Catalog provider protocol for future metadata integrations.
 - Unit tests for catalog identity and the playable sample.
@@ -44,7 +44,7 @@ See [Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md) and [Docs/ROADMAP.md](Docs/ROAD
 3. In CineNex, open Tracking, enter the token in Live Catalog, and save it.
 4. Return to Home and pull down or tap the refresh icon to load trending metadata. In Search, enter a title and tap Search TMDB to find movies and series outside the trending list. Disconnecting TMDB disables remote search and returns Home to the demo catalog.
 
-The token is currently saved in local app preferences; moving it to Keychain is a planned security hardening step. Do not share it or commit it to the repository. TMDB metadata access does not grant rights to stream, download, or redistribute any title. Follow TMDB attribution and API terms for distribution.
+The TMDB Read Access Token is stored in iOS Keychain, with automatic migration from the older local-preferences key. Do not share it or commit it to the repository. CineNex displays TMDB's required non-endorsement notice in Tracking. TMDB metadata access does not grant rights to stream, download, or redistribute any title. Follow TMDB attribution and API terms for distribution.
 
 ## Content and rights
 

@@ -145,6 +145,19 @@ struct TrackingView: View {
                     .font(.footnote.weight(.medium))
                     .frame(maxWidth: .infinity)
             }
+
+            Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                openURL(URL(string: "https://www.themoviedb.org/")!)
+            } label: {
+                Label("About TMDB", systemImage: "info.circle")
+                    .font(.footnote.weight(.medium))
+                    .frame(maxWidth: .infinity)
+            }
         }
         .padding(18)
         .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 22))
