@@ -247,7 +247,7 @@ final class TraktIntegration: ObservableObject {
         clientID: String,
         bearerToken: String
     ) async throws -> Data {
-        guard let url = URL(string: "https://api.trakt.tv\\(path)") else {
+        guard let url = URL(string: "https://api.trakt.tv\(path)") else {
             throw IntegrationError.message("The Trakt API URL is invalid.")
         }
         var request = URLRequest(url: url)
@@ -255,7 +255,7 @@ final class TraktIntegration: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(clientID, forHTTPHeaderField: "trakt-api-key")
         request.setValue("2", forHTTPHeaderField: "trakt-api-version")
-        request.setValue("Bearer \\(bearerToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {

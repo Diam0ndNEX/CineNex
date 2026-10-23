@@ -6,6 +6,7 @@ struct TraktWatchlistReviewView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedIDs: Set<String>
     @State private var resultMessage: String?
+    @State private var didImport = false
 
     init(movies: [TraktWatchlistMovie], store: TraktWatchlistStore) {
         self.movies = movies
@@ -84,15 +85,20 @@ struct TraktWatchlistReviewView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button(didImport ? "Done" : "Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Import \(selectedIDs.count)") {
-                        let added = store.importMovies(selectedMovies)
-                        resultMessage = "Imported \(selectedMovies.count) selected movies; added \(added) new entries. Existing entries were updated without creating duplicates."
-                        dismiss()
+                    Button(didImport ? "Done" : "Import \\(selectedIDs.count)") {
+                        if didImport {
+                            dismiss()
+                        } else {
+                            let selectedCount = selectedMovies.count
+                            let added = store.importMovies(selectedMovies)
+                            resultMessage = "Imported \\(selectedCount) selected movies; added \\(added) new entries. Existing entries were updated without creating duplicates."
+                            didImport = true
+                        }
                     }
-                    .disabled(selectedIDs.isEmpty)
+                    .disabled(!didImport && selectedIDs.isEmpty)
                 }
             }
         }
