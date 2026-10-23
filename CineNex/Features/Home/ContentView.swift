@@ -14,7 +14,7 @@ struct ContentView: View {
     @State private var activePlayerItem: MediaItem?
     @State private var showingUnavailableSource = false
 
-    @State private var catalog = MediaItem.demoCatalog
+    @State private var catalog = CatalogCacheStore.shared.load()?.items ?? MediaItem.demoCatalog
     @State private var catalogLoading = false
     @State private var catalogError: String?
     @State private var remoteSearchResults: [MediaItem] = []
@@ -394,7 +394,6 @@ struct ContentView: View {
         let token = TMDBTokenStore.load()?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !token.isEmpty else {
-            catalog = MediaItem.demoCatalog
             catalogError = nil
             return
         }
@@ -405,14 +404,19 @@ struct ContentView: View {
         do {
             let liveCatalog = try await TMDBCatalogProvider(readAccessToken: token).fetchCatalog()
             guard !Task.isCancelled else { return }
-            catalog = liveCatalog.isEmpty ? MediaItem.demoCatalog : liveCatalog
-            catalogError = liveCatalog.isEmpty ? "TMDB returned no trending titles. Showing the demo catalog instead." : nil
+            guard !liveCatalog.isEmpty else {
+                catalogError = "TMDB returned no trending titles. Showing the last saved catalog."
+                return
+            }
+            catalog = liveCatalog
+            CatalogCacheStore.shared.save(liveCatalog)
+            catalogError = nil
         } catch is CancellationError {
             return
         } catch {
             catalogError = error.localizedDescription
             if catalog.isEmpty {
-                catalog = MediaItem.demoCatalog
+                catalog = CatalogCacheStore.shared.load()?.items ?? MediaItem.demoCatalog
             }
         }
     }
