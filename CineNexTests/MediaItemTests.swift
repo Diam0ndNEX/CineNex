@@ -113,6 +113,47 @@ final class MediaItemTests: XCTestCase {
         XCTAssertThrowsError(try TMDBCatalogProvider.mapResponse(Data("not-json".utf8)))
     }
 
+    func testTMDBSearchPageDecodesPaginationMetadata() throws {
+        let data = Data("""
+        {
+          "page": 2,
+          "total_pages": 7,
+          "results": [
+            {"id": 11, "media_type": "movie", "title": "Arrival"}
+          ]
+        }
+        """.utf8)
+
+        let page = try TMDBCatalogProvider.mapSearchPage(data, requestedPage: 2)
+
+        XCTAssertEqual(page.page, 2)
+        XCTAssertEqual(page.totalPages, 7)
+        XCTAssertTrue(page.hasMorePages)
+        XCTAssertEqual(page.items.map(\\.id), ["tmdb-movie-11"])
+    }
+
+    func testTMDBSearchPageClampsInvalidPaginationMetadata() throws {
+        let data = Data("""
+        {
+          "page": 0,
+          "total_pages": 0,
+          "results": []
+        }
+        """.utf8)
+
+        let page = try TMDBCatalogProvider.mapSearchPage(data, requestedPage: 3)
+
+        XCTAssertEqual(page.page, 1)
+        XCTAssertEqual(page.totalPages, 1)
+        XCTAssertFalse(page.hasMorePages)
+    }
+
+    func testTMDBSearchPageRejectsInvalidRequestedPage() {
+        XCTAssertThrowsError(
+            try TMDBCatalogProvider.mapSearchPage(Data("{\"results\":[]}".utf8), requestedPage: 0)
+        )
+    }
+
     func testTMDBSearchResponseMapsMoviesAndSeriesAndSkipsPeople() throws {
         let data = Data("""
         {"results":[
