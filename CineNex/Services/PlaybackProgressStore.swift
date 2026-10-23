@@ -34,8 +34,8 @@ final class PlaybackProgressStore: ObservableObject {
     func progress(for itemID: String) -> PlaybackProgress? { entries[itemID] }
 
     func record(itemID: String, position: Double, duration: Double) {
-        guard !itemID.isEmpty, position.isFinite, duration.isFinite,
-              position >= 0, duration >= 0 else { return }
+        guard !itemID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              position.isFinite, duration.isFinite, position >= 0, duration >= 0 else { return }
         let effectiveDuration = duration > 0 ? duration : (entries[itemID]?.duration ?? 0)
         if effectiveDuration > 0, position >= effectiveDuration - 30 {
             entries.removeValue(forKey: itemID)
@@ -43,7 +43,12 @@ final class PlaybackProgressStore: ObservableObject {
             return
         }
         guard position >= 5 else { return }
-        entries[itemID] = PlaybackProgress(itemID: itemID, position: position, duration: effectiveDuration, updatedAt: Date())
+        entries[itemID] = PlaybackProgress(
+            itemID: itemID,
+            position: position,
+            duration: effectiveDuration,
+            updatedAt: Date()
+        )
         persist()
     }
 
@@ -58,9 +63,23 @@ final class PlaybackProgressStore: ObservableObject {
             entries = [:]
             return
         }
+
         entries = decoded.filter { key, value in
-            key == value.itemID && value.position.isFinite && value.duration.isFinite
-                && value.position >= 0 && value.duration >= 0
+            let normalizedID = value.itemID.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard key == value.itemID,
+                  !normalizedID.isEmpty,
+                  value.position.isFinite,
+                  value.duration.isFinite,
+                  value.position >= 0,
+                  value.duration >= 0 else {
+                return false
+            }
+
+            if value.duration > 0, value.position >= value.duration - 30 {
+                return false
+            }
+
+            return true
         }
     }
 

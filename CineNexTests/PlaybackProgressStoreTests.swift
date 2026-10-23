@@ -24,6 +24,7 @@ final class PlaybackProgressStoreTests: XCTestCase {
         store.record(itemID: "sample", position: 4.9, duration: 100)
         store.record(itemID: "invalid", position: .nan, duration: 100)
         store.record(itemID: "negative", position: -2, duration: 100)
+        store.record(itemID: "   ", position: 20, duration: 100)
         XCTAssertTrue(store.entries.isEmpty)
         defaults.removePersistentDomain(forName: suite)
     }
@@ -51,5 +52,80 @@ final class PlaybackProgressStoreTests: XCTestCase {
         let restored = PlaybackProgressStore(defaults: defaults, storageKey: "progress")
         XCTAssertNil(restored.progress(for: "sample"))
         defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testLoadingSanitizesInvalidAndCompletedStoredRecords() throws {
+        let (store, defaults, suite) = makeStore()
+        let storedRecords: [String: [String: Any]] = [
+            "valid": [
+                "itemID": "valid",
+                "position": 42.0,
+                "duration": 100.0,
+                "updatedAt": 1_750_000_000.0
+            ],
+            "empty-id": [
+                "itemID": "",
+                "position": 42.0,
+                "duration": 100.0,
+                "updatedAt": 1_750_000_000.0
+            ],
+            "whitespace-id": [
+                "itemID": "   ",
+                "position": 42.0,
+                "duration": 100.0,
+                "updatedAt": 1_750_000_000.0
+            ],
+            "negative-position": [
+                "itemID": "negative-position",
+                "position": -1.0,
+                "duration": 100.0,
+                "updatedAt": 1_750_000_000.0
+            ],
+            "negative-duration": [
+                "itemID": "negative-duration",
+                "position": 42.0,
+                "duration": -1.0,
+                "updatedAt": 1_750_000_000.0
+            ],
+            "completed": [
+                "itemID": "completed",
+                "position": 75.0,
+                "duration": 100.0,
+                "updatedAt": 1_750_000_000.0
+            ],
+            "beyond-duration": [
+                "itemID": "beyond-duration",
+                "position": 120.0,
+                "duration": 100.0,
+                "updatedAt": 1_750_000_000.0
+            ],
+            "mismatched-key": [
+                "itemID": "different-id",
+                "position": 42.0,
+                "duration": 100.0,
+                "updatedAt": 1_750_000_000.0
+            ]
+        ]
+        defaults.set(try JSONSerialization.data(withJSONObject: storedRecords), forKey: "progress")
+
+        let restored = PlaybackProgressStore(defaults: defaults, storageKey: "progress")
+
+        XCTAssertEqual(Set(restored.entries.keys), ["valid"])
+        XCTAssertEqual(restored.progress(for: "valid")?.position, 42)
+        XCTAssertNil(restored.progress(for: "completed"))
+        XCTAssertNil(restored.progress(for: "beyond-duration"))
+        defaults.removePersistentDomain(forName: suite)
+        _ = store
+    }
+
+    func testLoadingMalformedStoredDataProducesEmptyProgress() {
+        let (store, defaults, suite) = makeStore()
+        defaults.set(Data("{invalid-json".utf8), forKey: "progress")
+
+        let restored = PlaybackProgressStore(defaults: defaults, storageKey: "progress")
+
+        XCTAssertTrue(restored.entries.isEmpty)
+        defaults.removePersistentDomain(forName: suite)
+        _ = store
     }
 }
