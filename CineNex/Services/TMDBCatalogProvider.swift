@@ -29,6 +29,22 @@ struct TMDBCatalogProvider: CatalogProvider {
         return try Self.mapResponse(await fetchData(from: url))
     }
 
+    func fetchDetails(for item: MediaItem) async throws -> TMDBTitleDetails? {
+        guard item.metadataProvider == "tmdb", let id = item.externalID, id > 0 else {
+            return nil
+        }
+        let mediaType = item.kind == .movie ? "movie" : "tv"
+        var components = URLComponents(string: "https://api.themoviedb.org/3/\(mediaType)/\(id)")
+        components?.queryItems = [URLQueryItem(name: "language", value: "en-US")]
+        guard let url = components?.url else { throw TMDBCatalogError.invalidURL }
+        let data = try await fetchData(from: url)
+        do {
+            return try JSONDecoder().decode(TMDBTitleDetails.self, from: data)
+        } catch {
+            throw TMDBCatalogError.invalidData
+        }
+    }
+
     private func fetchData(from url: URL) async throws -> Data {
         guard !readAccessToken.isEmpty else { throw TMDBCatalogError.missingToken }
         var request = URLRequest(url: url)
