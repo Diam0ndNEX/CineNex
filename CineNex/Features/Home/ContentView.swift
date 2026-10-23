@@ -4,6 +4,7 @@ struct ContentView: View {
     @State private var selectedTab = AppTab.home
     @State private var searchText = ""
     @AppStorage("cinenex.favoriteIDs") private var favoriteIDsStorage = ""
+    @State private var favoriteSnapshots = FavoriteLibraryStore.shared.load()
     @StateObject private var playbackProgressStore = PlaybackProgressStore.shared
 
     private var favorites: Set<String> {
@@ -73,7 +74,13 @@ struct ContentView: View {
     }
 
     private var favoriteItems: [MediaItem] {
-        catalog.filter { favorites.contains($0.id) }
+        let savedIDs = favorites
+        let catalogFavorites = catalog.filter { savedIDs.contains($0.id) }
+        let catalogIDs = Set(catalogFavorites.map(\\.id))
+        let archivedFavorites = favoriteSnapshots.values
+            .filter { savedIDs.contains($0.id) && !catalogIDs.contains($0.id) }
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        return catalogFavorites + archivedFavorites
     }
 
     private var continueWatchingItems: [MediaItem] {
@@ -447,6 +454,12 @@ struct ContentView: View {
             updatedFavorites.insert(item.id)
         }
         favoriteIDsStorage = updatedFavorites.sorted().joined(separator: "\n")
+        if updatedFavorites.contains(item.id) {
+            FavoriteLibraryStore.shared.save(item)
+        } else {
+            FavoriteLibraryStore.shared.remove(itemID: item.id)
+        }
+        favoriteSnapshots = FavoriteLibraryStore.shared.load()
     }
 
     private func play(_ item: MediaItem) {
