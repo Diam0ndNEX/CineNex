@@ -137,7 +137,7 @@ struct TMDBTitleDetails: Decodable, Equatable {
 }
 
 struct TMDBTitleSeason: Decodable, Equatable, Identifiable {
-    let id: Int?
+    let tmdbID: Int?
     let name: String?
     let overview: String?
     let airDate: String?
@@ -146,7 +146,7 @@ struct TMDBTitleSeason: Decodable, Equatable, Identifiable {
     let posterPath: String?
 
     enum CodingKeys: String, CodingKey {
-        case id
+        case tmdbID = "id"
         case name
         case overview
         case airDate = "air_date"
@@ -173,8 +173,7 @@ struct TMDBTitleSeason: Decodable, Equatable, Identifiable {
         return URL(string: "https://image.tmdb.org/t/p/w342\\(posterPath)")
     }
 
-    var idValue: Int { id ?? seasonNumber }
-    var id: Int { idValue }
+    var id: Int { tmdbID ?? seasonNumber }
 }
 
 struct TMDBTitleGenre: Decodable, Equatable {
