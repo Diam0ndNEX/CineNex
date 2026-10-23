@@ -11,6 +11,8 @@ CineNex is an iPhone-first media discovery and playback app. It separates catalo
 - `CatalogProvider` defines the boundary for metadata providers.
 - `DemoCatalogProvider` supplies local sample entries.
 - `PlayerView` uses AVPlayer for compatible HTTPS media.
+- `PlaybackProgressStore` persists resume positions in local UserDefaults.
+- The Home screen presents unfinished playable titles in Continue Watching.
 - GitHub Actions generates the Xcode project with XcodeGen and builds/tests the iOS Simulator target.
 
 ## Planned boundaries
@@ -27,6 +29,7 @@ CineNex is an iPhone-first media discovery and playback app. It separates catalo
 - The first release uses local demo catalog data; no live catalog API key is required.
 - A catalog listing is not proof of streaming or download rights.
 - Only media sources that permit access and playback should be integrated.
+- Playback progress is stored locally on the device and is not synced between devices.
 - Secrets and signing credentials must not be committed to this public repository.
 - Some streaming formats, DRM systems, and subtitle formats require provider-specific support and cannot be assumed to work in AVPlayer.
 

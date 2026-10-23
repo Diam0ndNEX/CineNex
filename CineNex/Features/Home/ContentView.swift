@@ -4,6 +4,7 @@ struct ContentView: View {
     @State private var selectedTab = AppTab.home
     @State private var searchText = ""
     @AppStorage("cinenex.favoriteIDs") private var favoriteIDsStorage = ""
+    @StateObject private var playbackProgressStore = PlaybackProgressStore.shared
 
     private var favorites: Set<String> {
         Set(favoriteIDsStorage.split(separator: "\n").map(String.init))
@@ -26,6 +27,16 @@ struct ContentView: View {
 
     private var favoriteItems: [MediaItem] {
         catalog.filter { favorites.contains($0.id) }
+    }
+
+    private var continueWatchingItems: [MediaItem] {
+        playbackProgressStore.mostRecentlyWatched.compactMap { progress in
+            guard let item = catalog.first(where: { $0.id == progress.itemID }),
+                  item.streamURL != nil,
+                  let fraction = progress.completionFraction,
+                  fraction < 0.98 else { return nil }
+            return item
+        }
     }
 
     var body: some View {
@@ -74,7 +85,7 @@ struct ContentView: View {
         }
         .tint(Color.cineNexAccent)
         .fullScreenCover(item: $activePlayerItem) { item in
-            PlayerView(item: item)
+            PlayerView(item: item, progressStore: playbackProgressStore)
         }
         .alert("Playback unavailable", isPresented: $showingUnavailableSource) {
             Button("OK", role: .cancel) {}
@@ -94,6 +105,10 @@ struct ContentView: View {
                     } onPlay: {
                         play(featured)
                     }
+                }
+
+                if !continueWatchingItems.isEmpty {
+                    mediaSection(title: "Continue Watching", subtitle: "Pick up where you left off", items: continueWatchingItems, showProgress: true)
                 }
 
                 mediaSection(title: "Popular on CineNex", subtitle: "A first look at your next favorite", items: catalog)
@@ -196,7 +211,7 @@ struct ContentView: View {
         .padding(.top, 12)
     }
 
-    private func mediaSection(title: String, subtitle: String, items: [MediaItem]) -> some View {
+    private func mediaSection(title: String, subtitle: String, items: [MediaItem], showProgress: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
@@ -210,10 +225,28 @@ struct ContentView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 14) {
                     ForEach(items) { item in
-                        MediaPosterCard(item: item) {
-                            selectedItem = item
+                        VStack(alignment: .leading, spacing: 8) {
+                            MediaPosterCard(item: item) {
+                                if showProgress {
+                                    play(item)
+                                } else {
+                                    selectedItem = item
+                                }
+                            }
+                            .frame(width: 148)
+                            if showProgress,
+                               let progress = playbackProgressStore.progress(for: item.id),
+                               let fraction = progress.completionFraction {
+                                ProgressView(value: fraction)
+                                    .tint(Color.cineNexAccent)
+                                    .frame(width: 148)
+                                Text("Resume · \(Int(progress.position / 60)) min watched")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .frame(width: 148, alignment: .leading)
+                            }
                         }
-                        .frame(width: 148)
                     }
                 }
                 .padding(.horizontal, 20)
