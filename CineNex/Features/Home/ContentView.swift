@@ -76,7 +76,7 @@ struct ContentView: View {
     private var favoriteItems: [MediaItem] {
         let savedIDs = favorites
         let catalogFavorites = catalog.filter { savedIDs.contains($0.id) }
-        let catalogIDs = Set(catalogFavorites.map(\\.id))
+        let catalogIDs = Set(catalogFavorites.map { $0.id })
         let archivedFavorites = favoriteSnapshots.values
             .filter { savedIDs.contains($0.id) && !catalogIDs.contains($0.id) }
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
