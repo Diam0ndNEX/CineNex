@@ -58,4 +58,31 @@ final class LetterboxdCSVServiceTests: XCTestCase {
     func testUnknownCSVWithoutTitleColumnFailsClearly() {
         XCTAssertThrowsError(try LetterboxdCSVService.parse("Date,Rating\n2026-01-01,4", filename: "unknown.csv"))
     }
+    func testMalformedCSVWithUnfinishedQuotedFieldFailsClearly() {
+        let csv = """
+        Date,Name,Year
+        2026-01-01,"Unfinished film,2020
+        """
+
+        XCTAssertThrowsError(try LetterboxdCSVService.parse(csv, filename: "diary.csv")) { error in
+            guard case LetterboxdCSVError.malformedCSV = error else {
+                XCTFail("Expected malformedCSV, got \\(error)")
+                return
+            }
+        }
+    }
+
+    func testMalformedCSVWithQuoteInsideUnquotedFieldFailsClearly() {
+        let csv = """
+        Date,Name,Year
+        2026-01-01,Film "Title",2020
+        """
+
+        XCTAssertThrowsError(try LetterboxdCSVService.parse(csv, filename: "diary.csv")) { error in
+            guard case LetterboxdCSVError.malformedCSV = error else {
+                XCTFail("Expected malformedCSV, got \\(error)")
+                return
+            }
+        }
+    }
 }
