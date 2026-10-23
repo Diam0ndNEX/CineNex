@@ -16,17 +16,29 @@ struct TMDBCatalogProvider: CatalogProvider {
     }
 
     func search(query: String) async throws -> [MediaItem] {
+        try await searchPage(query: query, page: 1).items
+    }
+
+    func searchPage(query: String, page: Int) async throws -> TMDBSearchPage {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return [] }
+        guard !query.isEmpty else { return TMDBSearchPage(items: [], page: 1, totalPages: 1) }
+        guard page > 0 else { throw TMDBCatalogError.invalidURL }
         var components = URLComponents(string: "https://api.themoviedb.org/3/search/multi")
         components?.queryItems = [
             URLQueryItem(name: "query", value: query),
             URLQueryItem(name: "include_adult", value: "false"),
             URLQueryItem(name: "language", value: "en-US"),
-            URLQueryItem(name: "page", value: "1")
+            URLQueryItem(name: "page", value: String(page))
         ]
         guard let url = components?.url else { throw TMDBCatalogError.invalidURL }
-        return try Self.mapResponse(await fetchData(from: url))
+        let data = try await fetchData(from: url)
+        let items = try Self.mapResponse(data)
+        let response = try JSONDecoder().decode(SearchPaginationResponse.self, from: data)
+        return TMDBSearchPage(
+            items: items,
+            page: max(1, response.page ?? page),
+            totalPages: max(1, response.totalPages ?? page)
+        )
     }
 
     func fetchDetails(for item: MediaItem) async throws -> TMDBTitleDetails? {
@@ -121,6 +133,24 @@ struct TMDBCatalogProvider: CatalogProvider {
             if let genre = genres[id] { return genre }
         }
         return isMovie ? "Movie" : "Series"
+    }
+}
+
+struct TMDBSearchPage: Equatable {
+    let items: [MediaItem]
+    let page: Int
+    let totalPages: Int
+
+    var hasMorePages: Bool { page < totalPages }
+}
+
+private struct SearchPaginationResponse: Decodable {
+    let page: Int?
+    let totalPages: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case page
+        case totalPages = "total_pages"
     }
 }
 
