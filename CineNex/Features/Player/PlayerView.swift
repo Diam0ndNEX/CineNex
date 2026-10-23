@@ -8,6 +8,10 @@ struct PlayerView: View {
     @State private var player = AVPlayer()
     @State private var playbackError: String?
     @State private var timeObserver: Any?
+    @State private var audioGroup: AVMediaSelectionGroup?
+    @State private var subtitleGroup: AVMediaSelectionGroup?
+    @State private var audioOptions: [AVMediaSelectionOption] = []
+    @State private var subtitleOptions: [AVMediaSelectionOption] = []
 
     var body: some View {
         ZStack {
@@ -20,7 +24,7 @@ struct PlayerView: View {
                 ContentUnavailableView("No playable source", systemImage: "play.slash", description: Text("This title does not currently have a playable media URL."))
             }
             VStack {
-                HStack {
+                HStack(spacing: 10) {
                     Button {
                         saveCurrentProgress()
                         player.pause()
@@ -33,10 +37,49 @@ struct PlayerView: View {
                             .background(.black.opacity(0.55), in: Circle())
                     }
                     .accessibilityLabel("Close player")
-                    Spacer()
-                    Text(item.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                    Spacer()
-                    Color.clear.frame(width: 44, height: 44)
+
+                    Text(item.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+
+                    if audioOptions.count > 1, let audioGroup {
+                        Menu {
+                            ForEach(Array(audioOptions.enumerated()), id: \.offset) { entry in
+                                Button(entry.element.displayName) {
+                                    selectAudio(entry.element, in: audioGroup)
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "waveform")
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(.black.opacity(0.55), in: Circle())
+                        }
+                        .accessibilityLabel("Select audio track")
+                    }
+
+                    if !subtitleOptions.isEmpty, let subtitleGroup {
+                        Menu {
+                            Button("Off") {
+                                selectSubtitle(nil, in: subtitleGroup)
+                            }
+                            ForEach(Array(subtitleOptions.enumerated()), id: \.offset) { entry in
+                                Button(entry.element.displayName) {
+                                    selectSubtitle(entry.element, in: subtitleGroup)
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "captions.bubble")
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(.black.opacity(0.55), in: Circle())
+                        }
+                        .accessibilityLabel("Select subtitles")
+                    }
                 }
                 .padding(.horizontal, 18)
                 .padding(.top, 12)
@@ -62,6 +105,10 @@ struct PlayerView: View {
                 self.timeObserver = nil
             }
             player.replaceCurrentItem(with: nil)
+            audioGroup = nil
+            subtitleGroup = nil
+            audioOptions = []
+            subtitleOptions = []
         }
         .alert("Unable to play media", isPresented: Binding(
             get: { playbackError != nil },
@@ -94,6 +141,8 @@ struct PlayerView: View {
                 guard player.currentItem === playerItem else { return }
                 switch playerItem.status {
                 case .readyToPlay:
+                    await loadTrackOptions(for: playerItem)
+                    guard player.currentItem === playerItem else { return }
                     let position = progressStore.progress(for: item.id)?.position ?? 0
                     if position > 5 {
                         await player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
@@ -115,6 +164,29 @@ struct PlayerView: View {
                 playbackError = "The source took too long to become ready. Check your connection and try again."
             }
         }
+    }
+
+    @MainActor
+    private func loadTrackOptions(for playerItem: AVPlayerItem) async {
+        let asset = playerItem.asset
+        let loadedAudioGroup = try? await asset.loadMediaSelectionGroup(for: .audible)
+        let loadedSubtitleGroup = try? await asset.loadMediaSelectionGroup(for: .legible)
+        guard player.currentItem === playerItem else { return }
+
+        audioGroup = loadedAudioGroup
+        audioOptions = loadedAudioGroup?.options ?? []
+        subtitleGroup = loadedSubtitleGroup
+        subtitleOptions = loadedSubtitleGroup?.options ?? []
+    }
+
+    private func selectAudio(_ option: AVMediaSelectionOption, in group: AVMediaSelectionGroup) {
+        guard let currentItem = player.currentItem else { return }
+        currentItem.select(option, in: group)
+    }
+
+    private func selectSubtitle(_ option: AVMediaSelectionOption?, in group: AVMediaSelectionGroup) {
+        guard let currentItem = player.currentItem else { return }
+        currentItem.select(option, in: group)
     }
 
     private func saveCurrentProgress() {

@@ -47,7 +47,7 @@ Acceptance: search and details show live metadata and recover from network/API f
 ## Milestone 5 — Playback quality
 
 - Playback state and recoverable errors.
-- Subtitle and audio track discovery and selection where supported.
+- Completed: discover and select alternate audio tracks and subtitles when the stream exposes AVPlayer media-selection groups.
 - Picture in Picture and AirPlay behavior validation.
 - Support for series seasons and episodes.
 
