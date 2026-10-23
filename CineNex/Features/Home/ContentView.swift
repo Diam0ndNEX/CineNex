@@ -19,7 +19,10 @@ struct ContentView: View {
     @State private var catalogError: String?
     @State private var remoteSearchResults: [MediaItem] = []
     @State private var remoteSearchQuery = ""
+    @State private var remoteSearchPage = 0
+    @State private var remoteSearchTotalPages = 0
     @State private var remoteSearchLoading = false
+    @State private var remoteSearchLoadingMore = false
     @State private var remoteSearchError: String?
     @State private var selectedSearchKind = SearchKind.all
     @State private var selectedSearchSort = SearchSort.relevance
@@ -267,6 +270,29 @@ struct ContentView: View {
                             }
                         }
                     }
+
+                    if remoteSearchQuery.caseInsensitiveCompare(searchText.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame,
+                       remoteSearchPage > 0,
+                       remoteSearchPage < remoteSearchTotalPages {
+                        Button {
+                            Task { await loadMoreTMDBSearchResults() }
+                        } label: {
+                            HStack(spacing: 10) {
+                                if remoteSearchLoadingMore {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "plus.circle")
+                                }
+                                Text(remoteSearchLoadingMore ? "Loading more titles…" : "Load more results")
+                            }
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(14)
+                            .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14))
+                        }
+                        .disabled(remoteSearchLoading || remoteSearchLoadingMore)
+                        .accessibilityHint("Loads the next page of TMDB search results")
+                    }
                 }
             }
             .padding(20)
@@ -435,18 +461,73 @@ struct ContentView: View {
         remoteSearchLoading = true
         remoteSearchError = nil
         defer { remoteSearchLoading = false }
+        remoteSearchLoading = true
+        remoteSearchError = nil
+        defer { remoteSearchLoading = false }
         do {
-            let results = try await TMDBCatalogProvider(readAccessToken: token).search(query: query)
-            guard !Task.isCancelled else { return }
-            remoteSearchResults = results
+            let page = try await TMDBCatalogProvider(readAccessToken: token).searchPage(query: query, page: 1)
+            guard !Task.isCancelled,
+                  searchText.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(query) == .orderedSame else {
+                return
+            }
+            remoteSearchResults = page.items
             remoteSearchQuery = query
-            if results.isEmpty { remoteSearchError = "TMDB found no matching movies or series." }
+            remoteSearchPage = page.page
+            remoteSearchTotalPages = page.totalPages
+            if page.items.isEmpty { remoteSearchError = "TMDB found no matching movies or series." }
         } catch is CancellationError {
             return
         } catch {
             remoteSearchError = error.localizedDescription
             remoteSearchResults = []
             remoteSearchQuery = ""
+            remoteSearchPage = 0
+            remoteSearchTotalPages = 0
+        }
+    }
+
+    @MainActor
+    private func loadMoreTMDBSearchResults() async {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty,
+              query.caseInsensitiveCompare(remoteSearchQuery) == .orderedSame,
+              !remoteSearchLoading,
+              !remoteSearchLoadingMore,
+              remoteSearchPage > 0,
+              remoteSearchPage < remoteSearchTotalPages else {
+            return
+        }
+        guard let token = TMDBTokenStore.load()?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !token.isEmpty else {
+            remoteSearchError = "Connect TMDB in Tracking to load more results."
+            return
+        }
+
+        remoteSearchLoadingMore = true
+        remoteSearchError = nil
+        defer { remoteSearchLoadingMore = false }
+        do {
+            let nextPage = remoteSearchPage + 1
+            let page = try await TMDBCatalogProvider(readAccessToken: token).searchPage(query: query, page: nextPage)
+            guard !Task.isCancelled,
+                  searchText.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(query) == .orderedSame,
+                  remoteSearchQuery.caseInsensitiveCompare(query) == .orderedSame else {
+                return
+            }
+
+            var seenIDs = Set(remoteSearchResults.map(\\.id))
+            let uniqueItems = page.items.filter { seenIDs.insert($0.id).inserted }
+            remoteSearchResults.append(contentsOf: uniqueItems)
+            remoteSearchPage = page.page
+            remoteSearchTotalPages = page.totalPages
+            if uniqueItems.isEmpty && page.hasMorePages {
+                remoteSearchError = "No new titles on this page. You can load the next page to continue."
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            remoteSearchError = error.localizedDescription
         }
     }
 
