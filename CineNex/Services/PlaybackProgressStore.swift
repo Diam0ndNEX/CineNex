@@ -6,6 +6,7 @@ struct PlaybackProgress: Codable, Equatable, Identifiable {
     var position: Double
     var duration: Double
     var updatedAt: Date
+    var itemSnapshot: MediaItem? = nil
     var id: String { itemID }
 
     var completionFraction: Double? {
@@ -33,7 +34,7 @@ final class PlaybackProgressStore: ObservableObject {
 
     func progress(for itemID: String) -> PlaybackProgress? { entries[itemID] }
 
-    func record(itemID: String, position: Double, duration: Double) {
+    func record(itemID: String, position: Double, duration: Double, item: MediaItem? = nil) {
         guard !itemID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               position.isFinite, duration.isFinite, position >= 0, duration >= 0 else { return }
         let effectiveDuration = duration > 0 ? duration : (entries[itemID]?.duration ?? 0)
@@ -47,7 +48,8 @@ final class PlaybackProgressStore: ObservableObject {
             itemID: itemID,
             position: position,
             duration: effectiveDuration,
-            updatedAt: Date()
+            updatedAt: Date(),
+            itemSnapshot: item ?? entries[itemID]?.itemSnapshot
         )
         persist()
     }
@@ -77,6 +79,13 @@ final class PlaybackProgressStore: ObservableObject {
 
             if value.duration > 0, value.position >= value.duration - 30 {
                 return false
+            }
+
+            if let snapshot = value.itemSnapshot {
+                guard snapshot.id == key,
+                      !snapshot.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    return false
+                }
             }
 
             return true

@@ -19,6 +19,32 @@ final class PlaybackProgressStoreTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
     }
 
+    func testProgressRetainsItemSnapshotAcrossStoreRecreation() {
+        let (store, defaults, suite) = makeStore()
+        let item = MediaItem(
+            id: "tmdb-movie-550",
+            title: "Fight Club",
+            kind: .movie,
+            year: 1999,
+            genre: "Drama",
+            synopsis: "A saved title no longer present in trending results.",
+            symbol: "film",
+            runtime: "Movie",
+            streamURL: URL(string: "https://example.com/fight-club.mp4"),
+            posterURL: URL(string: "https://example.com/fight-club.jpg"),
+            rating: 8.4,
+            externalID: 550,
+            metadataProvider: "tmdb"
+        )
+
+        store.record(itemID: item.id, position: 42, duration: 100, item: item)
+
+        let restored = PlaybackProgressStore(defaults: defaults, storageKey: "progress")
+        XCTAssertEqual(restored.progress(for: item.id)?.itemSnapshot, item)
+        XCTAssertEqual(restored.progress(for: item.id)?.position, 42)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
     func testTinyAndInvalidPositionsAreIgnored() {
         let (store, defaults, suite) = makeStore()
         store.record(itemID: "sample", position: 4.9, duration: 100)
