@@ -513,7 +513,7 @@ struct ContentView: View {
                 return
             }
 
-            var seenIDs = Set(remoteSearchResults.map(\\.id))
+            var seenIDs = Set(remoteSearchResults.map(\.id))
             let uniqueItems = page.items.filter { seenIDs.insert($0.id).inserted }
             remoteSearchResults.append(contentsOf: uniqueItems)
             remoteSearchPage = page.page
