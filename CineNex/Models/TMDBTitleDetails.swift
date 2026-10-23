@@ -174,6 +174,72 @@ struct TMDBTitleSeason: Decodable, Equatable, Identifiable {
     var id: Int { tmdbID ?? seasonNumber }
 }
 
+
+struct TMDBSeasonDetails: Decodable, Equatable {
+    let episodes: [TMDBSeasonEpisode]?
+
+    var episodeList: [TMDBSeasonEpisode] {
+        var seenIDs = Set<Int>()
+        return (episodes ?? []).filter { episode in
+            guard episode.id > 0,
+                  episode.episodeNumber > 0,
+                  seenIDs.insert(episode.id).inserted else {
+                return false
+            }
+            return true
+        }.sorted {
+            if $0.episodeNumber != $1.episodeNumber {
+                return $0.episodeNumber < $1.episodeNumber
+            }
+            return $0.id < $1.id
+        }
+    }
+}
+
+struct TMDBSeasonEpisode: Decodable, Equatable, Identifiable {
+    let id: Int
+    let name: String?
+    let overview: String?
+    let airDate: String?
+    let episodeNumber: Int
+    let seasonNumber: Int?
+    let stillPath: String?
+    let voteAverage: Double?
+    let runtime: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case overview
+        case airDate = "air_date"
+        case episodeNumber = "episode_number"
+        case seasonNumber = "season_number"
+        case stillPath = "still_path"
+        case voteAverage = "vote_average"
+        case runtime
+    }
+
+    var displayName: String {
+        let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmedName.isEmpty ? "Episode \(episodeNumber)" : trimmedName
+    }
+
+    var airYear: Int? {
+        guard let airDate, airDate.count >= 4 else { return nil }
+        return Int(airDate.prefix(4))
+    }
+
+    var stillURL: URL? {
+        guard let stillPath, stillPath.hasPrefix("/") else { return nil }
+        return URL(string: "https://image.tmdb.org/t/p/w300\(stillPath)")
+    }
+
+    var runtimeLabel: String? {
+        guard let runtime, runtime > 0 else { return nil }
+        return "\(runtime) min"
+    }
+}
+
 struct TMDBTitleGenre: Decodable, Equatable {
     let name: String?
 }
