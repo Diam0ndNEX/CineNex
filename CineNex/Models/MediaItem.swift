@@ -7,7 +7,7 @@ enum MediaKind: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-struct MediaItem: Identifiable, Hashable {
+struct MediaItem: Codable, Identifiable, Hashable {
     let id: String
     let title: String
     let kind: MediaKind
