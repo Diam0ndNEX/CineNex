@@ -461,9 +461,6 @@ struct ContentView: View {
         remoteSearchLoading = true
         remoteSearchError = nil
         defer { remoteSearchLoading = false }
-        remoteSearchLoading = true
-        remoteSearchError = nil
-        defer { remoteSearchLoading = false }
         do {
             let page = try await TMDBCatalogProvider(readAccessToken: token).searchPage(query: query, page: 1)
             guard !Task.isCancelled,
