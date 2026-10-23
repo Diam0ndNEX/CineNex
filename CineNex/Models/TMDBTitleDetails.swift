@@ -155,8 +155,6 @@ struct TMDBTitleSeason: Decodable, Equatable, Identifiable {
         case posterPath = "poster_path"
     }
 
-    var identifiableID: String { "season-\\(seasonNumber)" }
-
     var displayName: String {
         if seasonNumber == 0 { return "Specials" }
         let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
