@@ -821,6 +821,52 @@ private struct MediaDetailView: View {
                 }
 
                 if let details = extendedDetails {
+                    if item.kind == .series, !details.seasonSummaries.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Seasons")
+                                .font(.title3.bold())
+                            ForEach(details.seasonSummaries) { season in
+                                HStack(alignment: .top, spacing: 12) {
+                                    CachedPosterImage(
+                                        url: season.posterURL,
+                                        fallbackSymbol: "tv",
+                                        symbolSize: 22
+                                    )
+                                    .frame(width: 68, height: 96)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text(season.displayName)
+                                            .font(.subheadline.weight(.semibold))
+                                        HStack(spacing: 8) {
+                                            if let episodeCount = season.episodeCount, episodeCount > 0 {
+                                                Text("\\(episodeCount) episodes")
+                                            }
+                                            if let airYear = season.airYear {
+                                                Text(String(airYear))
+                                            }
+                                        }
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+
+                                        if let overview = season.overview?.trimmingCharacters(in: .whitespacesAndNewlines),
+                                           !overview.isEmpty {
+                                            Text(overview)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(3)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .padding(.vertical, 5)
+                            }
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
+                    }
+
                     if !details.castMembers.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Cast")
