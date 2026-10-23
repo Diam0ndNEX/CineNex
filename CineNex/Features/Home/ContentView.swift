@@ -20,6 +20,8 @@ struct ContentView: View {
     @State private var remoteSearchQuery = ""
     @State private var remoteSearchLoading = false
     @State private var remoteSearchError: String?
+    @State private var selectedSearchKind = SearchKind.all
+    @State private var selectedSearchSort = SearchSort.relevance
 
     private var filteredCatalog: [MediaItem] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -32,11 +34,42 @@ struct ContentView: View {
     }
 
     private var displayedSearchResults: [MediaItem] {
+        let source: [MediaItem]
         if !remoteSearchQuery.isEmpty,
            remoteSearchQuery.caseInsensitiveCompare(searchText.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame {
-            return remoteSearchResults
+            source = remoteSearchResults
+        } else {
+            source = filteredCatalog
         }
-        return filteredCatalog
+
+        let kindFiltered = source.filter { item in
+            switch selectedSearchKind {
+            case .all: return true
+            case .movies: return item.kind == .movie
+            case .series: return item.kind == .series
+            }
+        }
+
+        switch selectedSearchSort {
+        case .relevance:
+            return kindFiltered
+        case .title:
+            return kindFiltered.sorted {
+                $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
+        case .newest:
+            return kindFiltered.sorted {
+                if $0.year != $1.year { return $0.year > $1.year }
+                return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
+        case .highestRated:
+            return kindFiltered.sorted {
+                let left = $0.rating ?? -1
+                let right = $1.rating ?? -1
+                if left != right { return left > right }
+                return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
+        }
     }
 
     private var favoriteItems: [MediaItem] {
@@ -195,10 +228,34 @@ struct ContentView: View {
                     ContentUnavailableView(searchText.isEmpty ? "Search CineNex" : "No matching titles", systemImage: "magnifyingglass", description: Text(searchText.isEmpty ? "Search the local catalog or search TMDB for movies and series." : "Try another title or search TMDB for more results."))
                         .padding(.top, 40)
                 } else {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
-                        ForEach(displayedSearchResults) { item in
-                            MediaPosterCard(item: item) {
-                                selectedItem = item
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 10) {
+                            Picker("Media type", selection: $selectedSearchKind) {
+                                ForEach(SearchKind.allCases) { kind in
+                                    Text(kind.title).tag(kind)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .accessibilityLabel("Filter search results by media type")
+
+                            Picker("Sort", selection: $selectedSearchSort) {
+                                ForEach(SearchSort.allCases) { sort in
+                                    Text(sort.title).tag(sort)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .accessibilityLabel("Sort search results")
+                        }
+
+                        Text("\(displayedSearchResults.count) titles")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
+                            ForEach(displayedSearchResults) { item in
+                                MediaPosterCard(item: item) {
+                                    selectedItem = item
+                                }
                             }
                         }
                     }
@@ -405,6 +462,40 @@ private enum AppTab: Hashable {
     case search
     case library
     case tracking
+}
+
+private enum SearchKind: String, CaseIterable, Identifiable {
+    case all
+    case movies
+    case series
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "All"
+        case .movies: return "Movies"
+        case .series: return "Series"
+        }
+    }
+}
+
+private enum SearchSort: String, CaseIterable, Identifiable {
+    case relevance
+    case title
+    case newest
+    case highestRated
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .relevance: return "Relevance"
+        case .title: return "Title"
+        case .newest: return "Newest"
+        case .highestRated: return "Top rated"
+        }
+    }
 }
 
 extension Color {
