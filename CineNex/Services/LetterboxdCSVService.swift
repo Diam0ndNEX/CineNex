@@ -27,6 +27,7 @@ enum LetterboxdCSVError: LocalizedError {
     case missingHeader
     case missingTitleColumn
     case unreadableText
+    case malformedCSV
 
     var errorDescription: String? {
         switch self {
@@ -36,6 +37,8 @@ enum LetterboxdCSVError: LocalizedError {
             return "This CSV does not have a Name or Title column, so CineNex cannot identify films."
         case .unreadableText:
             return "CineNex could not decode this file as UTF-8 text."
+        case .malformedCSV:
+            return "This CSV contains invalid quotation marks or an unfinished quoted field. Export the file again from Letterboxd and retry."
         }
     }
 }
@@ -43,7 +46,7 @@ enum LetterboxdCSVError: LocalizedError {
 enum LetterboxdCSVService {
     static func parse(_ text: String, filename: String) throws -> [LetterboxdRecord] {
         let cleanedText = text.replacingOccurrences(of: "\u{feff}", with: "")
-        let rows = parseRows(cleanedText)
+        let rows = try parseRows(cleanedText)
         guard let rawHeaders = rows.first, !rawHeaders.isEmpty else {
             throw LetterboxdCSVError.missingHeader
         }
@@ -146,45 +149,86 @@ enum LetterboxdCSVService {
         return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 
-    private static func parseRows(_ text: String) -> [[String]] {
+    private static func parseRows(_ text: String) throws -> [[String]] {
         let characters = Array(text)
         var rows: [[String]] = []
         var row: [String] = []
         var field = ""
         var insideQuotes = false
+        var closedQuotedField = false
         var index = 0
+
+        func finishField() {
+            row.append(field)
+            field = ""
+            closedQuotedField = false
+        }
+
+        func finishRow() {
+            finishField()
+            if row.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                rows.append(row)
+            }
+            row = []
+        }
 
         while index < characters.count {
             let character = characters[index]
 
-            if character == "\"", insideQuotes, index + 1 < characters.count, characters[index + 1] == "\"" {
-                field.append("\"")
-                index += 2
+            if insideQuotes {
+                if character == "\"" {
+                    if index + 1 < characters.count, characters[index + 1] == "\"" {
+                        field.append("\"")
+                        index += 2
+                        continue
+                    }
+                    insideQuotes = false
+                    closedQuotedField = true
+                } else {
+                    field.append(character)
+                }
+                index += 1
+                continue
+            }
+
+            if closedQuotedField {
+                if character == "," {
+                    finishField()
+                } else if character == "\n" || character == "\r" {
+                    if character == "\r", index + 1 < characters.count, characters[index + 1] == "\n" {
+                        index += 1
+                    }
+                    finishRow()
+                } else if character == " " || character == "\t" {
+                } else {
+                    throw LetterboxdCSVError.malformedCSV
+                }
+                index += 1
                 continue
             }
 
             if character == "\"" {
-                insideQuotes.toggle()
-            } else if character == ",", !insideQuotes {
-                row.append(field)
-                field = ""
-            } else if (character == "\n" || character == "\r"), !insideQuotes {
+                guard field.isEmpty else {
+                    throw LetterboxdCSVError.malformedCSV
+                }
+                insideQuotes = true
+            } else if character == "," {
+                finishField()
+            } else if character == "\n" || character == "\r" {
                 if character == "\r", index + 1 < characters.count, characters[index + 1] == "\n" {
                     index += 1
                 }
-                row.append(field)
-                if row.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
-                    rows.append(row)
-                }
-                row = []
-                field = ""
+                finishRow()
             } else {
                 field.append(character)
             }
             index += 1
         }
 
-        row.append(field)
+        guard !insideQuotes else {
+            throw LetterboxdCSVError.malformedCSV
+        }
+        finishField()
         if row.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
             rows.append(row)
         }
