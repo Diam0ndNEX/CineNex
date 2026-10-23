@@ -96,7 +96,6 @@ struct TMDBTitleCredits: Decodable, Equatable {
     let cast: [TMDBTitleCastMember]?
     let crew: [TMDBTitleCrewMember]?
 }
-}
 
 struct TMDBTitleCastMember: Decodable, Equatable, Identifiable {
     let id: Int?
