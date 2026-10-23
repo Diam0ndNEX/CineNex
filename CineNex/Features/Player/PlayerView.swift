@@ -157,7 +157,8 @@ struct PlayerView: View {
                 progressStore.record(
                     itemID: item.id,
                     position: position,
-                    duration: duration.isFinite ? duration : 0
+                    duration: duration.isFinite ? duration : 0,
+                    item: item
                 )
             }
         }
@@ -228,7 +229,8 @@ struct PlayerView: View {
         progressStore.record(
             itemID: item.id,
             position: position,
-            duration: duration.isFinite ? duration : 0
+            duration: duration.isFinite ? duration : 0,
+            item: item
         )
     }
 }

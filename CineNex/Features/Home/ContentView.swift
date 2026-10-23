@@ -88,10 +88,10 @@ struct ContentView: View {
 
     private var continueWatchingItems: [MediaItem] {
         playbackProgressStore.mostRecentlyWatched.compactMap { progress in
-            guard let item = catalog.first(where: { $0.id == progress.itemID }),
-                  item.streamURL != nil,
-                  let fraction = progress.completionFraction,
+            guard let fraction = progress.completionFraction,
                   fraction < 0.98 else { return nil }
+            let item = progress.itemSnapshot ?? catalog.first(where: { $0.id == progress.itemID })
+            guard let item, item.id == progress.itemID, item.streamURL != nil else { return nil }
             return item
         }
     }
