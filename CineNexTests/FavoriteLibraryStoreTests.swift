@@ -3,7 +3,7 @@ import XCTest
 
 final class FavoriteLibraryStoreTests: XCTestCase {
     private func makeStore() -> (FavoriteLibraryStore, UserDefaults, String) {
-        let suite = "CineNexFavoriteTests.\\(UUID().uuidString)"
+        let suite = "CineNexFavoriteTests." + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         return (FavoriteLibraryStore(defaults: defaults, storageKey: "favoriteSnapshots"), defaults, suite)
