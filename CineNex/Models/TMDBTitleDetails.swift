@@ -10,6 +10,7 @@ struct TMDBTitleDetails: Decodable, Equatable {
     let genres: [TMDBTitleGenre]?
     let credits: TMDBTitleCredits?
     let videos: TMDBTitleVideos?
+    let createdBy: [TMDBTitleCreator]?
 
     enum CodingKeys: String, CodingKey {
         case tagline
@@ -18,6 +19,7 @@ struct TMDBTitleDetails: Decodable, Equatable {
         case genres
         case credits
         case videos
+        case createdBy = "created_by"
         case episodeRunTime = "episode_run_time"
         case numberOfSeasons = "number_of_seasons"
         case numberOfEpisodes = "number_of_episodes"
@@ -65,7 +67,7 @@ struct TMDBTitleDetails: Decodable, Equatable {
     }
 
     var creatorNames: [String] {
-        (credits?.creators ?? []).compactMap { $0.name?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        (createdBy ?? []).compactMap { $0.name?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .uniqued()
     }
@@ -93,13 +95,7 @@ struct TMDBTitleGenre: Decodable, Equatable {
 struct TMDBTitleCredits: Decodable, Equatable {
     let cast: [TMDBTitleCastMember]?
     let crew: [TMDBTitleCrewMember]?
-    let creators: [TMDBTitleCreator]?
-
-    enum CodingKeys: String, CodingKey {
-        case cast
-        case crew
-        case creators = "created_by"
-    }
+}
 }
 
 struct TMDBTitleCastMember: Decodable, Equatable, Identifiable {
