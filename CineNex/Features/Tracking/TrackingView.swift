@@ -12,7 +12,7 @@ struct TrackingView: View {
     @State private var exportingLetterboxd = false
     @State private var exportDocument = LetterboxdCSVDocument()
     @State private var letterboxdMessage: String?
-    @State private var tmdbToken = UserDefaults.standard.string(forKey: "cinenex.tmdb.readAccessToken") ?? ""
+    @State private var tmdbToken = TMDBTokenStore.load() ?? ""
     @State private var tmdbMessage: String?
     @Environment(\.openURL) private var openURL
 
@@ -33,7 +33,7 @@ struct TrackingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Your data stays yours", systemImage: "lock.shield")
                         .font(.headline)
-                    Text("CineNex keeps local playback progress on this device. Trakt access tokens are stored in iOS Keychain. Disconnecting Trakt removes the saved token.")
+                    Text("CineNex keeps local playback progress on this device. Trakt and TMDB access tokens are stored in iOS Keychain. Disconnecting either service removes its saved token.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -101,11 +101,15 @@ struct TrackingView: View {
             HStack(spacing: 10) {
                 Button {
                     let token = tmdbToken.trimmingCharacters(in: .whitespacesAndNewlines)
-                    UserDefaults.standard.set(token, forKey: "cinenex.tmdb.readAccessToken")
-                    tmdbToken = token
-                    tmdbMessage = token.isEmpty
-                        ? "Live catalog disabled. CineNex will use its local demo catalog."
-                        : "Token saved. Return to Home and tap refresh to load trending titles."
+                    do {
+                        try TMDBTokenStore.save(token)
+                        tmdbToken = token
+                        tmdbMessage = token.isEmpty
+                            ? "Live catalog disabled. CineNex will use its local demo catalog."
+                            : "Token saved securely. Return to Home and tap refresh to load trending titles."
+                    } catch {
+                        tmdbMessage = "Could not securely save the TMDB token: \(error.localizedDescription)"
+                    }
                 } label: {
                     Label("Save token", systemImage: "checkmark")
                         .frame(maxWidth: .infinity)
@@ -113,9 +117,13 @@ struct TrackingView: View {
                 .buttonStyle(.borderedProminent)
 
                 Button {
-                    tmdbToken = ""
-                    UserDefaults.standard.removeObject(forKey: "cinenex.tmdb.readAccessToken")
-                    tmdbMessage = "TMDB disconnected. CineNex will use its local demo catalog."
+                    do {
+                        try TMDBTokenStore.delete()
+                        tmdbToken = ""
+                        tmdbMessage = "TMDB disconnected. CineNex will use its local demo catalog."
+                    } catch {
+                        tmdbMessage = "Could not remove the saved TMDB token: \(error.localizedDescription)"
+                    }
                 } label: {
                     Label("Disconnect", systemImage: "xmark")
                         .frame(maxWidth: .infinity)

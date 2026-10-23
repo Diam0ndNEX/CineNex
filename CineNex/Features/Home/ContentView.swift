@@ -326,7 +326,7 @@ struct ContentView: View {
 
     @MainActor
     private func loadCatalog(force: Bool = false) async {
-        let token = UserDefaults.standard.string(forKey: "cinenex.tmdb.readAccessToken")?
+        let token = TMDBTokenStore.load()?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !token.isEmpty else {
             catalog = MediaItem.demoCatalog
@@ -356,10 +356,10 @@ struct ContentView: View {
     private func searchTMDB() async {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
-        let token = UserDefaults.standard.string(forKey: "cinenex.tmdb.readAccessToken")?
+        let token = TMDBTokenStore.load()?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !token.isEmpty else {
-            remoteSearchError = "Add your TMDB Read Access Token in Tracking to search the full TMDB catalog."
+            remoteSearchError = "Connect TMDB in Tracking to search the full catalog."
             remoteSearchQuery = ""
             return
         }
