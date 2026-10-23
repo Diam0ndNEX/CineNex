@@ -17,12 +17,17 @@ struct PlayerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if item.streamURL != nil {
-                VideoPlayer(player: player)
+                NativePlaybackView(player: player)
                     .ignoresSafeArea()
                     .accessibilityLabel("Video player for \(item.title)")
             } else {
-                ContentUnavailableView("No playable source", systemImage: "play.slash", description: Text("This title does not currently have a playable media URL."))
+                ContentUnavailableView(
+                    "No playable source",
+                    systemImage: "play.slash",
+                    description: Text("This title does not currently have a playable media URL.")
+                )
             }
+
             VStack {
                 HStack(spacing: 10) {
                     Button {
@@ -114,7 +119,10 @@ struct PlayerView: View {
             get: { playbackError != nil },
             set: { if !$0 { playbackError = nil } }
         )) {
-            Button("Close", role: .cancel) { playbackError = nil; dismiss() }
+            Button("Close", role: .cancel) {
+                playbackError = nil
+                dismiss()
+            }
         } message: {
             Text(playbackError ?? "The media source could not be loaded.")
         }
@@ -132,7 +140,11 @@ struct PlayerView: View {
             let duration = player.currentItem?.duration.seconds ?? 0
             guard position.isFinite else { return }
             Task { @MainActor in
-                progressStore.record(itemID: item.id, position: position, duration: duration.isFinite ? duration : 0)
+                progressStore.record(
+                    itemID: item.id,
+                    position: position,
+                    duration: duration.isFinite ? duration : 0
+                )
             }
         }
 
@@ -151,7 +163,8 @@ struct PlayerView: View {
                     Task { await TraktIntegration.shared.scrobbleStart(for: item) }
                     return
                 case .failed:
-                    playbackError = playerItem.error?.localizedDescription ?? "The source may be unavailable or use an unsupported format."
+                    playbackError = playerItem.error?.localizedDescription
+                        ?? "The source may be unavailable or use an unsupported format."
                     return
                 case .unknown:
                     try? await Task.sleep(for: .milliseconds(100))
@@ -193,6 +206,10 @@ struct PlayerView: View {
         let position = player.currentTime().seconds
         let duration = player.currentItem?.duration.seconds ?? 0
         guard position.isFinite else { return }
-        progressStore.record(itemID: item.id, position: position, duration: duration.isFinite ? duration : 0)
+        progressStore.record(
+            itemID: item.id,
+            position: position,
+            duration: duration.isFinite ? duration : 0
+        )
     }
 }

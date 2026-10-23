@@ -48,7 +48,7 @@ Acceptance: search and details show live metadata and recover from network/API f
 
 - Playback state and recoverable errors.
 - Completed: discover and select alternate audio tracks and subtitles when the stream exposes AVPlayer media-selection groups.
-- Picture in Picture and AirPlay behavior validation.
+- Implemented: native AVPlayer controls expose Picture in Picture and AirPlay options when supported by the device and media source; physical-device validation remains.
 - Support for series seasons and episodes.
 
 Acceptance: supported streams play consistently and state persists across app launches.
