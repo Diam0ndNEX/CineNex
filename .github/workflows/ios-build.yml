@@ -38,12 +38,55 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Run unit tests on iPhone 17 Pro Max simulator
+      - name: Select an available iPhone simulator
+        id: simulator
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          import sys
+
+          result = subprocess.run(
+              ["xcrun", "simctl", "list", "devices", "available", "--json"],
+              check=True,
+              capture_output=True,
+              text=True,
+          )
+          device_data = json.loads(result.stdout)
+          devices = [
+              device
+              for runtime_devices in device_data.get("devices", {}).values()
+              for device in runtime_devices
+              if device.get("isAvailable", False)
+              and device.get("name", "").startswith("iPhone")
+          ]
+
+          if not devices:
+              print("No available iPhone simulator is installed on this runner.", file=sys.stderr)
+              sys.exit(1)
+
+          devices.sort(
+              key=lambda device: (
+                  0 if "Pro Max" in device["name"] else
+                  1 if "Pro" in device["name"] else
+                  2,
+                  device["name"],
+              )
+          )
+          selected = devices[0]
+          print(f"Selected simulator: {selected['name']} ({selected['udid']})")
+          with open("${GITHUB_OUTPUT}", "a", encoding="utf-8") as output:
+              output.write(f"device_id={selected['udid']}\n")
+              output.write(f"device_name={selected['name']}\n")
+          PY
+
+      - name: Run unit tests on available iPhone simulator
         run: |
           xcodebuild \
             -project CineNex.xcodeproj \
             -scheme CineNex \
-            -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.device_id }}" \
             -derivedDataPath DerivedData \
             CODE_SIGNING_ALLOWED=NO \
             test
