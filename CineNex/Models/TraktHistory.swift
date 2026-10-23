@@ -65,6 +65,22 @@ struct TraktHistoryEntry: Codable, Identifiable, Hashable {
     let watchedAt: String?
     let plays: Int
 
+    init(
+        id: String,
+        title: String,
+        year: Int?,
+        tmdbID: Int?,
+        watchedAt: String?,
+        plays: Int
+    ) {
+        self.id = id
+        self.title = title
+        self.year = year
+        self.tmdbID = tmdbID
+        self.watchedAt = watchedAt
+        self.plays = plays
+    }
+
     init(movie: TraktHistoryMovie) {
         id = movie.id
         title = movie.title
