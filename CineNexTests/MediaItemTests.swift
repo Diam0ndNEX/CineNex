@@ -129,7 +129,7 @@ final class MediaItemTests: XCTestCase {
         XCTAssertEqual(page.page, 2)
         XCTAssertEqual(page.totalPages, 7)
         XCTAssertTrue(page.hasMorePages)
-        XCTAssertEqual(page.items.map(\\.id), ["tmdb-movie-11"])
+        XCTAssertEqual(page.items.map(\.id), ["tmdb-movie-11"])
     }
 
     func testTMDBSearchPageClampsInvalidPaginationMetadata() throws {
