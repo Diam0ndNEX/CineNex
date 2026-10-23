@@ -3,7 +3,11 @@ import SwiftUI
 struct ContentView: View {
     @State private var selectedTab = AppTab.home
     @State private var searchText = ""
-    @State private var favorites: Set<String> = []
+    @AppStorage("cinenex.favoriteIDs") private var favoriteIDsStorage = ""
+
+    private var favorites: Set<String> {
+        Set(favoriteIDsStorage.split(separator: "\n").map(String.init))
+    }
     @State private var selectedItem: MediaItem?
     @State private var activePlayerItem: MediaItem?
     @State private var showingUnavailableSource = false
@@ -218,11 +222,13 @@ struct ContentView: View {
     }
 
     private func toggleFavorite(_ item: MediaItem) {
-        if favorites.contains(item.id) {
-            favorites.remove(item.id)
+        var updatedFavorites = favorites
+        if updatedFavorites.contains(item.id) {
+            updatedFavorites.remove(item.id)
         } else {
-            favorites.insert(item.id)
+            updatedFavorites.insert(item.id)
         }
+        favoriteIDsStorage = updatedFavorites.sorted().joined(separator: "\n")
     }
 
     private func play(_ item: MediaItem) {
@@ -283,7 +289,7 @@ private struct FeaturedBanner: View {
                 Text(item.title)
                     .font(.system(size: 32, weight: .heavy, design: .rounded))
                     .lineLimit(2)
-                Text("(item.year)  •  (item.genre)  •  (item.runtime)")
+                Text("\(item.year)  •  \(item.genre)  •  \(item.runtime)")
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.78))
                 HStack(spacing: 10) {
@@ -356,7 +362,7 @@ private struct MediaPosterCard: View {
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
-                Text("(item.year) · (item.genre)")
+                Text("\(item.year) · \(item.genre)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -364,7 +370,7 @@ private struct MediaPosterCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("(item.title), (item.kind.rawValue), (item.year)")
+        .accessibilityLabel("\(item.title), \(item.kind.rawValue), \(item.year)")
     }
 }
 
@@ -395,7 +401,7 @@ private struct MediaDetailView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(item.title)
                         .font(.largeTitle.bold())
-                    Text("(item.year)  •  (item.kind.rawValue)  •  (item.genre)  •  (item.runtime)")
+                    Text("\(item.year)  •  \(item.kind.rawValue)  •  \(item.genre)  •  \(item.runtime)")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Text(item.synopsis)

@@ -30,8 +30,20 @@ jobs:
 
       - name: Build for iOS Simulator
         run: |
-          xcodebuild             -project CineNex.xcodeproj             -scheme CineNex             -destination 'generic/platform=iOS Simulator'             -derivedDataPath DerivedData             CODE_SIGNING_ALLOWED=NO             build
+          xcodebuild \
+            -project CineNex.xcodeproj \
+            -scheme CineNex \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
 
-      - name: Run unit tests
+      - name: Run unit tests on iPhone 17 Pro Max simulator
         run: |
-          xcodebuild             -project CineNex.xcodeproj             -scheme CineNex             -destination 'platform=iOS Simulator,name=iPhone 16'             -derivedDataPath DerivedData             CODE_SIGNING_ALLOWED=NO             test
+          xcodebuild \
+            -project CineNex.xcodeproj \
+            -scheme CineNex \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            test

@@ -21,5 +21,22 @@ final class MediaItemTests: XCTestCase {
 
         XCTAssertNotNil(sample?.streamURL)
         XCTAssertEqual(sample?.streamURL?.scheme, "https")
+        XCTAssertEqual(sample?.streamURL?.host, "storage.googleapis.com")
+    }
+
+    func testCatalogItemsHaveNonemptyDisplayMetadata() {
+        for item in MediaItem.demoCatalog {
+            XCTAssertFalse(item.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            XCTAssertFalse(item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            XCTAssertFalse(item.genre.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            XCTAssertFalse(item.synopsis.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+    }
+
+    func testNonPlayableDemoItemsDoNotClaimToHaveStreams() {
+        let unavailableItems = MediaItem.demoCatalog.filter { $0.id != "big-buck-bunny" }
+
+        XCTAssertFalse(unavailableItems.isEmpty)
+        XCTAssertTrue(unavailableItems.allSatisfy { $0.streamURL == nil })
     }
 }
