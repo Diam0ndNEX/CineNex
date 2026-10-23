@@ -44,6 +44,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json
+          import os
           import subprocess
           import sys
 
@@ -76,7 +77,7 @@ jobs:
           )
           selected = devices[0]
           print(f"Selected simulator: {selected['name']} ({selected['udid']})")
-          with open("${GITHUB_OUTPUT}", "a", encoding="utf-8") as output:
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"device_id={selected['udid']}\n")
               output.write(f"device_name={selected['name']}\n")
           PY
