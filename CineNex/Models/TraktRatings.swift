@@ -88,15 +88,34 @@ final class TraktRatingStore: ObservableObject {
         self.storageKey = storageKey
         if let data = defaults.data(forKey: storageKey),
            let saved = try? JSONDecoder().decode([TraktRatingEntry].self, from: data) {
-            var seen = Set<String>()
-            entries = saved
-                .filter { seen.insert($0.id).inserted && !$0.title.isEmpty && (1...10).contains($0.rating) }
-                .sorted {
-                    let leftDate = $0.ratedAt ?? ""
-                    let rightDate = $1.ratedAt ?? ""
-                    if leftDate != rightDate { return leftDate > rightDate }
-                    return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            var entriesByID: [String: TraktRatingEntry] = [:]
+            for entry in saved {
+                let id = entry.id.trimmingCharacters(in: .whitespacesAndNewlines)
+                let title = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !id.isEmpty, !title.isEmpty, (1...10).contains(entry.rating) else { continue }
+
+                let normalized = TraktRatingEntry(
+                    id: id,
+                    title: title,
+                    year: entry.year,
+                    tmdbID: entry.tmdbID,
+                    ratedAt: entry.ratedAt,
+                    rating: entry.rating
+                )
+                if let existing = entriesByID[id] {
+                    if (normalized.ratedAt ?? "") > (existing.ratedAt ?? "") {
+                        entriesByID[id] = normalized
+                    }
+                } else {
+                    entriesByID[id] = normalized
                 }
+            }
+            entries = entriesByID.values.sorted {
+                let leftDate = $0.ratedAt ?? ""
+                let rightDate = $1.ratedAt ?? ""
+                if leftDate != rightDate { return leftDate > rightDate }
+                return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
         } else {
             entries = []
         }
