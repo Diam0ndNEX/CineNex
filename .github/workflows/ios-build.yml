@@ -1,0 +1,37 @@
+name: iOS Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild             -project CineNex.xcodeproj             -scheme CineNex             -destination 'generic/platform=iOS Simulator'             -derivedDataPath DerivedData             CODE_SIGNING_ALLOWED=NO             build
+
+      - name: Run unit tests
+        run: |
+          xcodebuild             -project CineNex.xcodeproj             -scheme CineNex             -destination 'platform=iOS Simulator,name=iPhone 16'             -derivedDataPath DerivedData             CODE_SIGNING_ALLOWED=NO             test
