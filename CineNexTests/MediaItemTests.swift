@@ -225,6 +225,52 @@ final class MediaItemTests: XCTestCase {
         XCTAssertEqual(details.trailerURL?.absoluteString, "https://www.youtube.com/watch?v=officialTrailer")
     }
 
+    func testTMDBRecommendationsMapToSameMediaTypeAndIgnoreInvalidDuplicates() throws {
+        let data = Data("""
+        {
+          "recommendations": {
+            "results": [
+              {"id": 20, "title": "Arrival", "release_date": "2016-11-11", "overview": "First contact", "poster_path": "/arrival.jpg", "vote_average": 7.6},
+              {"id": 20, "title": "Duplicate", "release_date": "2016-11-11"},
+              {"id": 21, "title": "  ", "release_date": "2020-01-01"},
+              {"id": 22, "title": "Another World", "release_date": "2021-03-02"}
+            ]
+          }
+        }
+        """.utf8)
+
+        let details = try JSONDecoder().decode(TMDBTitleDetails.self, from: data)
+        let recommendations = details.recommendedItems(for: .movie)
+
+        XCTAssertEqual(recommendations.map(\.id), ["tmdb-movie-20", "tmdb-movie-22"])
+        XCTAssertEqual(recommendations.map(\.title), ["Arrival", "Another World"])
+        XCTAssertEqual(recommendations.first?.year, 2016)
+        XCTAssertEqual(recommendations.first?.genre, "Recommended")
+        XCTAssertEqual(recommendations.first?.metadataProvider, "tmdb")
+        XCTAssertEqual(recommendations.first?.posterURL?.absoluteString, "https://image.tmdb.org/t/p/w500/arrival.jpg")
+        XCTAssertNil(recommendations.first?.streamURL)
+    }
+
+    func testTVRecommendationsUseSeriesTitlesAndIdentifiers() throws {
+        let data = Data("""
+        {
+          "recommendations": {
+            "results": [
+              {"id": 44, "name": "Severance", "first_air_date": "2022-02-18"}
+            ]
+          }
+        }
+        """.utf8)
+
+        let details = try JSONDecoder().decode(TMDBTitleDetails.self, from: data)
+        let recommendations = details.recommendedItems(for: .series)
+
+        XCTAssertEqual(recommendations.first?.id, "tmdb-tv-44")
+        XCTAssertEqual(recommendations.first?.title, "Severance")
+        XCTAssertEqual(recommendations.first?.kind, .series)
+        XCTAssertEqual(recommendations.first?.year, 2022)
+    }
+
     func testTMDBDetailsIgnoreInvalidTrailerAndEmptyCastNames() throws {
         let data = Data("""
         {
