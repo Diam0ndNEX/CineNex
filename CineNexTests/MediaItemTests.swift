@@ -200,12 +200,12 @@ final class MediaItemTests: XCTestCase {
             "crew": [
               {"name": "Director One", "job": "Director"},
               {"name": "Writer One", "job": "Writer"}
-            ],
-            "created_by": [
-              {"name": "Creator One"},
-              {"name": "Creator One"}
             ]
           },
+          "created_by": [
+            {"name": "Creator One"},
+            {"name": "Creator One"}
+          ],
           "videos": {
             "results": [
               {"key": "sampleClip", "site": "YouTube", "type": "Clip", "official": true},
