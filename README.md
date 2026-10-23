@@ -53,3 +53,5 @@ CineNex is a player and discovery app, not a source of universal streaming right
 ## Security
 
 Do not commit API secrets, account credentials, signing certificates, provisioning profiles, or private keys. Configure provider credentials through appropriate build settings or GitHub Actions secrets when needed.
+
+Trakt scrobbling includes a TMDB identifier only when the selected movie was returned by TMDB and has a positive numeric TMDB ID. Local/demo entries continue to use title and year matching; CineNex does not guess external identifiers.

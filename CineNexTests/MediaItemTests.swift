@@ -141,4 +141,47 @@ final class MediaItemTests: XCTestCase {
         XCTAssertEqual(results.first?.title, "Arrival")
     }
 
+    func testTraktScrobblePayloadIncludesVerifiedTMDBIdentifier() {
+        let item = MediaItem(
+            id: "tmdb-movie-550",
+            title: "Fight Club",
+            kind: .movie,
+            year: 1999,
+            genre: "Drama",
+            synopsis: "A test item.",
+            symbol: "film",
+            runtime: "Movie",
+            streamURL: nil,
+            externalID: 550,
+            metadataProvider: "tmdb"
+        )
+
+        let payload = TraktScrobbleMetadata.moviePayload(for: item)
+
+        XCTAssertEqual(payload["title"] as? String, "Fight Club")
+        XCTAssertEqual(payload["year"] as? Int, 1999)
+        let ids = payload["ids"] as? [String: Int]
+        XCTAssertEqual(ids?["tmdb"], 550)
+    }
+
+    func testTraktScrobblePayloadDoesNotInventExternalIdentifiers() {
+        let item = MediaItem(
+            id: "big-buck-bunny",
+            title: "Big Buck Bunny",
+            kind: .movie,
+            year: 2008,
+            genre: "Animation",
+            synopsis: "A test item.",
+            symbol: "hare.fill",
+            runtime: "10 min",
+            streamURL: URL(string: "https://example.com/sample.mp4")
+        )
+
+        let payload = TraktScrobbleMetadata.moviePayload(for: item)
+
+        XCTAssertNil(payload["ids"])
+        XCTAssertEqual(payload["title"] as? String, "Big Buck Bunny")
+        XCTAssertEqual(payload["year"] as? Int, 2008)
+    }
+
 }

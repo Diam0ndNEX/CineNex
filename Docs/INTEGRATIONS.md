@@ -19,3 +19,5 @@ To use it, export data from Letterboxd, extract the ZIP, and import the relevant
 ## Local tracking
 
 Playback progress and CineNex favorites continue to work without external accounts. Trakt sync is optional and can be disconnected independently. Letterboxd CSV data is stored locally on the device. Local playback progress is not automatically converted into a watched diary entry because reaching a saved position does not prove a complete watch.
+
+Trakt scrobbling includes a TMDB identifier only when the selected movie was returned by TMDB and has a positive numeric TMDB ID. Local/demo entries continue to use title and year matching; CineNex does not guess external identifiers.

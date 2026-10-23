@@ -181,7 +181,7 @@ final class TraktIntegration: ObservableObject {
 
         do {
             let token = try await validAccessToken()
-            let movie: [String: Any] = ["title": item.title, "year": item.year]
+            let movie = TraktScrobbleMetadata.moviePayload(for: item)
             let progress: Double
             if duration.isFinite, duration > 0, position.isFinite {
                 progress = min(100, max(0, position / duration * 100))
@@ -348,3 +348,17 @@ private struct TraktTokenKeychain {
     }
 }
 
+enum TraktScrobbleMetadata {
+    static func moviePayload(for item: MediaItem) -> [String: Any] {
+        var movie: [String: Any] = [
+            "title": item.title,
+            "year": item.year
+        ]
+        if item.metadataProvider == "tmdb",
+           let tmdbID = item.externalID,
+           tmdbID > 0 {
+            movie["ids"] = ["tmdb": tmdbID]
+        }
+        return movie
+    }
+}
