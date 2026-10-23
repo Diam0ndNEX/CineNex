@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 struct TraktWatchlistMovie: Decodable, Identifiable, Hashable {
