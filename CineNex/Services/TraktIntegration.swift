@@ -164,6 +164,22 @@ final class TraktIntegration: ObservableObject {
         lastError = nil
     }
 
+    func fetchMovieWatchlist() async throws -> [TraktWatchlistMovie] {
+        guard isConnected else {
+            throw IntegrationError.message("Connect your Trakt account before importing its watchlist.")
+        }
+        let token = try await validAccessToken()
+        let data = try await get(
+            path: "/sync/watchlist/movies",
+            clientID: savedClientID,
+            bearerToken: token.accessToken
+        )
+        let movies = try TraktWatchlistMovie.decodeList(data)
+        statusMessage = "Loaded \(movies.count) movies from your Trakt watchlist"
+        lastError = nil
+        return movies
+    }
+
     func scrobbleStart(for item: MediaItem) async {
         await sendScrobble("start", for: item, position: 0, duration: 0)
     }
@@ -224,6 +240,32 @@ final class TraktIntegration: ObservableObject {
         try tokenStore.save(refreshed)
         tokens = refreshed
         return refreshed
+    }
+
+    private func get(
+        path: String,
+        clientID: String,
+        bearerToken: String
+    ) async throws -> Data {
+        guard let url = URL(string: "https://api.trakt.tv\\(path)") else {
+            throw IntegrationError.message("The Trakt API URL is invalid.")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(clientID, forHTTPHeaderField: "trakt-api-key")
+        request.setValue("2", forHTTPHeaderField: "trakt-api-version")
+        request.setValue("Bearer \\(bearerToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw IntegrationError.message("Trakt returned an invalid network response.")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let responseText = String(data: data, encoding: .utf8) ?? ""
+            throw TraktAPIError(statusCode: http.statusCode, responseText: responseText)
+        }
+        return data
     }
 
     private func post<Response: Decodable>(
