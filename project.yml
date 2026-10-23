@@ -1,0 +1,42 @@
+name: CineNex
+options:
+  bundleIdPrefix: com.diam0ndnex
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    GENERATE_INFOPLIST_FILE: YES
+    INFOPLIST_KEY_CFBundleDisplayName: CineNex
+    INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleLightContent
+    SWIFT_EMIT_LOC_STRINGS: YES
+targets:
+  CineNex:
+    type: application
+    platform: iOS
+    sources:
+      - path: CineNex
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.diam0ndnex.cinenex
+        PRODUCT_NAME: CineNex
+        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads: NO
+        CODE_SIGN_STYLE: Automatic
+    scheme:
+      testTargets:
+        - CineNexTests
+  CineNexTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: CineNexTests
+    dependencies:
+      - target: CineNex
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.diam0ndnex.cinenex.tests
