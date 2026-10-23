@@ -82,6 +82,12 @@ struct ContentView: View {
             }
             .tabItem { Label("My List", systemImage: "bookmark.fill") }
             .tag(AppTab.library)
+
+            NavigationStack {
+                TrackingView()
+            }
+            .tabItem { Label("Tracking", systemImage: "arrow.triangle.2.circlepath") }
+            .tag(AppTab.tracking)
         }
         .tint(Color.cineNexAccent)
         .fullScreenCover(item: $activePlayerItem) { item in
@@ -277,6 +283,7 @@ private enum AppTab: Hashable {
     case home
     case search
     case library
+    case tracking
 }
 
 private extension Color {

@@ -47,6 +47,15 @@ struct PlayerView: View {
         .onAppear(perform: startPlayback)
         .onDisappear {
             saveCurrentProgress()
+            let position = player.currentTime().seconds
+            let duration = player.currentItem?.duration.seconds ?? 0
+            Task {
+                await TraktIntegration.shared.scrobbleStop(
+                    for: item,
+                    position: position.isFinite ? position : 0,
+                    duration: duration.isFinite ? duration : 0
+                )
+            }
             player.pause()
             if let timeObserver {
                 player.removeTimeObserver(timeObserver)
@@ -90,6 +99,7 @@ struct PlayerView: View {
                         await player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
                     }
                     player.play()
+                    Task { await TraktIntegration.shared.scrobbleStart(for: item) }
                     return
                 case .failed:
                     playbackError = playerItem.error?.localizedDescription ?? "The source may be unavailable or use an unsupported format."
