@@ -24,6 +24,11 @@ struct TrackingView: View {
     @State private var showingTraktHistoryReview = false
     @State private var loadingTraktHistory = false
     @State private var historyMessage: String?
+    @StateObject private var traktRatings = TraktRatingStore.shared
+    @State private var remoteRatings: [TraktRatingMovie] = []
+    @State private var showingTraktRatingsReview = false
+    @State private var loadingTraktRatings = false
+    @State private var ratingsMessage: String?
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -40,6 +45,7 @@ struct TrackingView: View {
                 traktCard
                 traktWatchlistCard
                 traktHistoryCard
+                traktRatingsCard
                 letterboxdCard
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -469,6 +475,95 @@ struct TrackingView: View {
         .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 22))
         .sheet(isPresented: $showingTraktHistoryReview) {
             TraktHistoryReviewView(movies: remoteHistory, store: traktHistory)
+        }
+    }
+
+    private var traktRatingsCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "star.leadinghalf.filled")
+                    .font(.title2)
+                    .foregroundStyle(Color.cineNexAccent)
+                    .frame(width: 46, height: 46)
+                    .background(Color.cineNexAccent.opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Trakt Movie Ratings")
+                        .font(.title2.bold())
+                    Text("\(traktRatings.entries.count) ratings saved locally")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text("Fetch your movie ratings from Trakt, review them, and import selected ratings into CineNex’s local rating list. This is a one-way import: it does not rate or change anything on Trakt.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            if !traktRatings.entries.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(traktRatings.entries.prefix(5)) { entry in
+                        HStack(alignment: .center, spacing: 10) {
+                            Image(systemName: "star.fill")
+                                .foregroundStyle(Color.cineNexAccent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.title)
+                                    .font(.subheadline.weight(.medium))
+                                Text([entry.year.map(String.init), "\(entry.rating)/10 ★", entry.ratedAt.map { String($0.prefix(10)) }].compactMap { $0 }.joined(separator: " · "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button(role: .destructive) {
+                                traktRatings.remove(id: entry.id)
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Remove \(entry.title) from local ratings")
+                        }
+                    }
+                }
+            }
+
+            Button {
+                loadingTraktRatings = true
+                ratingsMessage = nil
+                Task {
+                    do {
+                        remoteRatings = try await trakt.fetchMovieRatings()
+                        if remoteRatings.isEmpty {
+                            ratingsMessage = "No valid movie ratings were found in your Trakt account."
+                        } else {
+                            showingTraktRatingsReview = true
+                        }
+                    } catch {
+                        ratingsMessage = error.localizedDescription
+                    }
+                    loadingTraktRatings = false
+                }
+            } label: {
+                if loadingTraktRatings {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Label("Fetch and review Trakt ratings", systemImage: "arrow.down.to.line")
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!trakt.isConnected || loadingTraktRatings)
+
+            if let ratingsMessage {
+                Text(ratingsMessage)
+                    .font(.footnote)
+                    .foregroundStyle(ratingsMessage.localizedCaseInsensitiveContains("failed") || ratingsMessage.localizedCaseInsensitiveContains("error") ? .red : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(18)
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 22))
+        .sheet(isPresented: $showingTraktRatingsReview) {
+            TraktRatingsReviewView(movies: remoteRatings, store: traktRatings)
         }
     }
 
