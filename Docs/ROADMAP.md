@@ -38,7 +38,8 @@ Acceptance: integrations are opt-in, can be disconnected, and report partial fai
 - Search the TMDB multi-search endpoint and show live poster artwork and ratings in title details.
 - Add refresh, loading feedback, network/API error messages, and local demo fallback.
 - Completed: Keychain storage for TMDB credentials with legacy migration, cached poster artwork, verified TMDB identifiers in Trakt movie scrobbles, and TMDB attribution notice.
-- Remaining: season/episode metadata and broader Trakt history, ratings, and watchlist synchronization.
+- Completed: TV season summaries on title detail pages, including episode counts, air years, artwork, and overviews when TMDB provides them.
+- Remaining: per-season episode listings and broader Trakt history, ratings, and watchlist synchronization.
 
 Acceptance: search and details show live metadata and recover from network/API failures.
 
