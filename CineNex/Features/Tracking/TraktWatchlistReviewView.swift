@@ -88,13 +88,13 @@ struct TraktWatchlistReviewView: View {
                     Button(didImport ? "Done" : "Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(didImport ? "Done" : "Import \\(selectedIDs.count)") {
+                    Button(didImport ? "Done" : "Import \(selectedIDs.count)") {
                         if didImport {
                             dismiss()
                         } else {
                             let selectedCount = selectedMovies.count
                             let added = store.importMovies(selectedMovies)
-                            resultMessage = "Imported \\(selectedCount) selected movies; added \\(added) new entries. Existing entries were updated without creating duplicates."
+                            resultMessage = "Imported \(selectedCount) selected movies; added \(added) new entries. Existing entries were updated without creating duplicates."
                             didImport = true
                         }
                     }
