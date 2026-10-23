@@ -286,7 +286,7 @@ private enum AppTab: Hashable {
     case tracking
 }
 
-private extension Color {
+extension Color {
     static let cineNexBackground = Color(red: 0.035, green: 0.043, blue: 0.065)
     static let cineNexSurface = Color(red: 0.09, green: 0.105, blue: 0.145)
     static let cineNexAccent = Color(red: 0.42, green: 0.35, blue: 1.0)
