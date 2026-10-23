@@ -95,7 +95,8 @@ struct ContentView: View {
                             item: item,
                             isFavorite: favorites.contains(item.id),
                             onFavoriteToggle: { toggleFavorite(item) },
-                            onPlay: { play(item) }
+                            onPlay: { play(item) },
+                            onSelectItem: { selectedItem = $0 }
                         )
                     }
             }
@@ -109,7 +110,8 @@ struct ContentView: View {
                             item: item,
                             isFavorite: favorites.contains(item.id),
                             onFavoriteToggle: { toggleFavorite(item) },
-                            onPlay: { play(item) }
+                            onPlay: { play(item) },
+                            onSelectItem: { selectedItem = $0 }
                         )
                     }
             }
@@ -123,7 +125,8 @@ struct ContentView: View {
                             item: item,
                             isFavorite: favorites.contains(item.id),
                             onFavoriteToggle: { toggleFavorite(item) },
-                            onPlay: { play(item) }
+                            onPlay: { play(item) },
+                            onSelectItem: { selectedItem = $0 }
                         )
                     }
             }
@@ -632,6 +635,7 @@ private struct MediaDetailView: View {
     let isFavorite: Bool
     let onFavoriteToggle: () -> Void
     let onPlay: () -> Void
+    let onSelectItem: (MediaItem) -> Void
     @State private var extendedDetails: TMDBTitleDetails?
     @State private var detailsLoading = false
     @State private var detailsError: String?
@@ -770,6 +774,36 @@ private struct MediaDetailView: View {
                                 .foregroundStyle(.white)
                         }
                         .accessibilityHint("Opens the selected official or first available TMDB trailer in YouTube")
+                    }
+
+                    let recommendations = details.recommendedItems(for: item.kind)
+                    if !recommendations.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("You might also like")
+                                .font(.title3.bold())
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(alignment: .top, spacing: 14) {
+                                    ForEach(recommendations) { recommendation in
+                                        VStack(alignment: .leading, spacing: 7) {
+                                            MediaPosterCard(item: recommendation) {
+                                                onSelectItem(recommendation)
+                                            }
+                                            .frame(width: 132)
+                                            Text(recommendation.title)
+                                                .font(.subheadline.weight(.medium))
+                                                .lineLimit(2)
+                                                .frame(width: 132, alignment: .leading)
+                                            if recommendation.year > 0 {
+                                                Text(String(recommendation.year))
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                                    .frame(width: 132, alignment: .leading)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
