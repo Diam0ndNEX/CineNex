@@ -39,6 +39,24 @@ final class TMDBGenreMappingTests: XCTestCase {
         XCTAssertEqual(items.map(\.genre), ["Kids", "News", "Reality", "Soap", "Talk"])
     }
 
+    func testMultipleGenresArePreservedInTMDBOrderWithoutDuplicates() throws {
+        let json = """
+        {
+          "results": [
+            {"id": 31, "media_type": "movie", "title": "Genre Mix", "genre_ids": [28, 12, 28, 878, 999999]},
+            {"id": 32, "media_type": "tv", "name": "Series Mix", "genre_ids": [10759, 18, 16, 10759]}
+          ]
+        }
+        """
+
+        let items = try TMDBCatalogProvider.mapResponse(Data(json.utf8))
+
+        XCTAssertEqual(items.map(\.genre), [
+            "Action · Adventure · Sci-Fi",
+            "Action & Adventure · Drama · Animation"
+        ])
+    }
+
     func testUnknownGenreUsesSafeMediaKindFallback() throws {
         let json = """
         {

@@ -144,7 +144,7 @@ struct TMDBCatalogProvider: CatalogProvider {
                 title: title,
                 kind: isMovie ? .movie : .series,
                 year: year,
-                genre: genreName(for: result.genreIDs ?? [], isMovie: isMovie),
+                genre: genreNames(for: result.genreIDs ?? [], isMovie: isMovie),
                 synopsis: synopsis,
                 symbol: isMovie ? "film" : "tv",
                 runtime: isMovie ? "Movie" : "Series",
@@ -157,7 +157,7 @@ struct TMDBCatalogProvider: CatalogProvider {
         }
     }
 
-    private static func genreName(for ids: [Int], isMovie: Bool) -> String {
+    private static func genreNames(for ids: [Int], isMovie: Bool) -> String {
         let genres: [Int: String] = isMovie
             ? [
                 28: "Action",
@@ -198,10 +198,13 @@ struct TMDBCatalogProvider: CatalogProvider {
                 10768: "War & Politics",
                 37: "Western"
             ]
-        for id in ids {
-            if let genre = genres[id] { return genre }
+
+        var seenNames = Set<String>()
+        let mapped = ids.compactMap { id -> String? in
+            guard let name = genres[id], seenNames.insert(name).inserted else { return nil }
+            return name
         }
-        return isMovie ? "Movie" : "Series"
+        return mapped.isEmpty ? (isMovie ? "Movie" : "Series") : mapped.joined(separator: " · ")
     }
 }
 
