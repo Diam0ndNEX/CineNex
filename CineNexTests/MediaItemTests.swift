@@ -220,6 +220,29 @@ final class MediaItemTests: XCTestCase {
         XCTAssertEqual(details.genreNames, ["Mystery"])
     }
 
+    func testTMDBSeriesSeasonMetadataDecodesAndSortsSafely() throws {
+        let data = Data("""
+        {
+          "seasons": [
+            {"id": 102, "name": "Season 2", "season_number": 2, "episode_count": 8, "air_date": "2023-01-15", "poster_path": "/season2.jpg", "overview": "The story continues."},
+            {"id": 100, "name": "Specials", "season_number": 0, "episode_count": 2},
+            {"id": 101, "name": "Season 1", "season_number": 1, "episode_count": 10, "air_date": "2022-01-15", "poster_path": "invalid"},
+            {"id": 103, "name": "Duplicate season", "season_number": 1, "episode_count": 99},
+            {"id": 104, "name": "   ", "season_number": 3, "episode_count": 1}
+          ]
+        }
+        """.utf8)
+
+        let details = try JSONDecoder().decode(TMDBTitleDetails.self, from: data)
+
+        XCTAssertEqual(details.seasonSummaries.map(\\.seasonNumber), [0, 1, 2])
+        XCTAssertEqual(details.seasonSummaries.map(\\.displayName), ["Specials", "Season 1", "Season 2"])
+        XCTAssertEqual(details.seasonSummaries[2].episodeCount, 8)
+        XCTAssertEqual(details.seasonSummaries[2].airYear, 2023)
+        XCTAssertEqual(details.seasonSummaries[2].posterURL?.absoluteString, "https://image.tmdb.org/t/p/w342/season2.jpg")
+        XCTAssertNil(details.seasonSummaries[1].posterURL)
+    }
+
     func testTMDBDetailsHandleMissingOptionalFields() throws {
         let details = try JSONDecoder().decode(TMDBTitleDetails.self, from: Data("{}".utf8))
 
