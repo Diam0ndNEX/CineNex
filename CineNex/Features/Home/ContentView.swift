@@ -632,6 +632,9 @@ private struct MediaDetailView: View {
     let isFavorite: Bool
     let onFavoriteToggle: () -> Void
     let onPlay: () -> Void
+    @State private var extendedDetails: TMDBTitleDetails?
+    @State private var detailsLoading = false
+    @State private var detailsError: String?
 
     var body: some View {
         ScrollView {
@@ -665,9 +668,56 @@ private struct MediaDetailView: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(Color(red: 1.0, green: 0.78, blue: 0.28))
                     }
+                    if let tagline = extendedDetails?.tagline,
+                       !tagline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(tagline)
+                            .font(.subheadline.italic())
+                            .foregroundStyle(Color.cineNexAccent)
+                    }
                     Text(item.synopsis)
                         .font(.body)
                         .foregroundStyle(.white.opacity(0.84))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if detailsLoading {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Loading full details…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let details = extendedDetails {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("More details")
+                            .font(.title3.bold())
+                        if let runtime = details.runtimeLabel {
+                            detailRow("Runtime", value: runtime, symbol: "clock")
+                        }
+                        if let status = details.status, !status.isEmpty {
+                            detailRow("Status", value: status, symbol: "info.circle")
+                        }
+                        if !details.genreNames.isEmpty {
+                            detailRow("Genres", value: details.genreNames.joined(separator: " · "), symbol: "tag")
+                        }
+                        if item.kind == .series {
+                            if let seasons = details.numberOfSeasons, seasons > 0 {
+                                detailRow("Seasons", value: String(seasons), symbol: "square.stack")
+                            }
+                            if let episodes = details.numberOfEpisodes, episodes > 0 {
+                                detailRow("Episodes", value: String(episodes), symbol: "play.rectangle")
+                            }
+                        }
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
+                } else if let detailsError {
+                    Label(detailsError, systemImage: "info.circle")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -698,6 +748,50 @@ private struct MediaDetailView: View {
         }
         .background(Color.cineNexBackground.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: item.id) {
+            await loadExtendedDetails()
+        }
+    }
+
+    private func detailRow(_ title: String, value: String, symbol: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: symbol)
+                .foregroundStyle(Color.cineNexAccent)
+                .frame(width: 20)
+            Text(title)
+                .foregroundStyle(.secondary)
+                .frame(width: 82, alignment: .leading)
+            Text(value)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .font(.subheadline)
+    }
+
+    @MainActor
+    private func loadExtendedDetails() async {
+        guard item.metadataProvider == "tmdb" else {
+            extendedDetails = nil
+            detailsError = nil
+            return
+        }
+        guard let token = TMDBTokenStore.load()?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !token.isEmpty else {
+            detailsError = nil
+            return
+        }
+
+        detailsLoading = true
+        detailsError = nil
+        defer { detailsLoading = false }
+        do {
+            extendedDetails = try await TMDBCatalogProvider(readAccessToken: token).fetchDetails(for: item)
+        } catch is CancellationError {
+            return
+        } catch {
+            detailsError = "Additional details are temporarily unavailable."
+        }
     }
 }
 
