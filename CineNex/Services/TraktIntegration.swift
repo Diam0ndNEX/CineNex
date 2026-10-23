@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Security
 
@@ -149,6 +150,11 @@ final class TraktIntegration: ObservableObject {
         }
     }
 
+    func reportSetupError(_ error: Error) {
+        lastError = error.localizedDescription
+        statusMessage = "Trakt connection failed"
+    }
+
     func disconnect() {
         try? tokenStore.delete()
         tokens = nil
@@ -175,10 +181,7 @@ final class TraktIntegration: ObservableObject {
 
         do {
             let token = try await validAccessToken()
-            var movie: [String: Any] = ["title": item.title, "year": item.year]
-            if let imdbID = item.imdbID, !imdbID.isEmpty {
-                movie["ids"] = ["imdb": imdbID]
-            }
+            let movie: [String: Any] = ["title": item.title, "year": item.year]
             let progress: Double
             if duration.isFinite, duration > 0, position.isFinite {
                 progress = min(100, max(0, position / duration * 100))
@@ -345,6 +348,3 @@ private struct TraktTokenKeychain {
     }
 }
 
-private extension MediaItem {
-    var imdbID: String? { nil }
-}

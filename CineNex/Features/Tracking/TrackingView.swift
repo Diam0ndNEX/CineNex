@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct TrackingView: View {
     @StateObject private var trakt = TraktIntegration.shared
@@ -217,10 +218,7 @@ struct TrackingView: View {
     }
 
     private func traktError(_ error: Error) {
-        Task { @MainActor in
-            let message = error.localizedDescription
-            UserDefaults.standard.set(message, forKey: "cinenex.trakt.lastSetupError")
-        }
+        trakt.reportSetupError(error)
     }
 }
 
