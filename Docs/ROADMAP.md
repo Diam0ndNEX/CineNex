@@ -33,10 +33,10 @@ Acceptance: integrations are opt-in, can be disconnected, and report partial fai
 
 ## Milestone 4 — Catalog integration
 
-- Select a documented metadata provider such as TMDB.
-- Implement network loading, decoding, cancellation, and clear loading/error/empty states.
-- Add artwork loading with caching and accessible fallback artwork.
-- Map catalog entries to verified TMDB, IMDb, and Trakt IDs where available.
+- TMDB trending movie/TV metadata provider with user-supplied Read Access Token.
+- Decode trending metadata, map titles, overviews, release years, genres, ratings, poster paths, and TMDB IDs.
+- Add refresh, loading feedback, network/API error messages, and local demo fallback.
+- Remaining: cached artwork, verified IMDb/Trakt cross-identifiers, and season/episode metadata.
 
 Acceptance: search and details show live metadata and recover from network/API failures.
 

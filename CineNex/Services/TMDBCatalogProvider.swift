@@ -1,0 +1,161 @@
+import Foundation
+
+struct TMDBCatalogProvider: CatalogProvider {
+    let providerName = "TMDB Trending"
+    private let readAccessToken: String
+    private let session: URLSession
+
+    init(readAccessToken: String, session: URLSession = .shared) {
+        self.readAccessToken = readAccessToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.session = session
+    }
+
+    func fetchCatalog() async throws -> [MediaItem] {
+        guard !readAccessToken.isEmpty else {
+            throw TMDBCatalogError.missingToken
+        }
+        guard let url = URL(string: "https://api.themoviedb.org/3/trending/all/week?language=en-US") else {
+            throw TMDBCatalogError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(readAccessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 20
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw TMDBCatalogError.network(error.localizedDescription)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw TMDBCatalogError.invalidResponse
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 401 || http.statusCode == 403 {
+                throw TMDBCatalogError.unauthorized
+            }
+            if http.statusCode == 429 {
+                throw TMDBCatalogError.rateLimited
+            }
+            throw TMDBCatalogError.server(http.statusCode)
+        }
+
+        return try Self.mapResponse(data)
+    }
+
+    static func mapResponse(_ data: Data) throws -> [MediaItem] {
+        let decoded: TrendingResponse
+        do {
+            decoded = try JSONDecoder().decode(TrendingResponse.self, from: data)
+        } catch {
+            throw TMDBCatalogError.invalidData
+        }
+
+        return decoded.results.compactMap { result in
+            guard result.mediaType == "movie" || result.mediaType == "tv" else { return nil }
+            let isMovie = result.mediaType == "movie"
+            let title = (isMovie ? result.title : result.name)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let title, !title.isEmpty else { return nil }
+            let date = isMovie ? result.releaseDate : result.firstAirDate
+            let year = date.flatMap { Int($0.prefix(4)) } ?? 0
+            let overview = result.overview?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let synopsis = (overview?.isEmpty == false ? overview! : "No description is available from TMDB yet.")
+            let posterURL = result.posterPath.flatMap {
+                URL(string: "https://image.tmdb.org/t/p/w500\($0)")
+            }
+            return MediaItem(
+                id: "tmdb-\(result.mediaType)-\(result.id)",
+                title: title,
+                kind: isMovie ? .movie : .series,
+                year: year,
+                genre: genreName(for: result.genreIDs ?? [], isMovie: isMovie),
+                synopsis: synopsis,
+                symbol: isMovie ? "film" : "tv",
+                runtime: isMovie ? "Movie" : "Series",
+                streamURL: nil,
+                posterURL: posterURL,
+                rating: result.voteAverage,
+                externalID: result.id,
+                metadataProvider: "tmdb"
+            )
+        }
+    }
+
+    private static func genreName(for ids: [Int], isMovie: Bool) -> String {
+        let genres: [Int: String] = isMovie
+            ? [28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy", 80: "Crime", 99: "Documentary", 18: "Drama", 14: "Fantasy", 27: "Horror", 10749: "Romance", 878: "Sci-Fi", 53: "Thriller"]
+            : [10759: "Action & Adventure", 16: "Animation", 35: "Comedy", 80: "Crime", 99: "Documentary", 18: "Drama", 10765: "Sci-Fi & Fantasy", 9648: "Mystery", 10768: "War & Politics"]
+        for id in ids {
+            if let genre = genres[id] { return genre }
+        }
+        return isMovie ? "Movie" : "Series"
+    }
+}
+
+private struct TrendingResponse: Decodable {
+    let results: [TrendingResult]
+}
+
+private struct TrendingResult: Decodable {
+    let id: Int
+    let mediaType: String
+    let title: String?
+    let name: String?
+    let overview: String?
+    let releaseDate: String?
+    let firstAirDate: String?
+    let posterPath: String?
+    let voteAverage: Double?
+    let genreIDs: [Int]?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case mediaType = "media_type"
+        case title
+        case name
+        case overview
+        case releaseDate = "release_date"
+        case firstAirDate = "first_air_date"
+        case posterPath = "poster_path"
+        case voteAverage = "vote_average"
+        case genreIDs = "genre_ids"
+    }
+}
+
+enum TMDBCatalogError: LocalizedError {
+    case missingToken
+    case invalidURL
+    case invalidResponse
+    case invalidData
+    case unauthorized
+    case rateLimited
+    case server(Int)
+    case network(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingToken:
+            return "Add your TMDB Read Access Token in Tracking to load live catalog metadata."
+        case .invalidURL:
+            return "CineNex could not create the TMDB request URL."
+        case .invalidResponse:
+            return "TMDB returned an invalid network response."
+        case .invalidData:
+            return "TMDB returned data CineNex could not understand."
+        case .unauthorized:
+            return "TMDB rejected the token. Check that you copied the Read Access Token correctly."
+        case .rateLimited:
+            return "TMDB rate limit reached. Wait a moment and refresh again."
+        case .server(let status):
+            return "TMDB returned HTTP \(status). Try again later."
+        case .network(let message):
+            return "Could not reach TMDB: \(message)"
+        }
+    }
+}

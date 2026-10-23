@@ -37,6 +37,15 @@ xcodebuild -project CineNex.xcodeproj -scheme CineNex -destination 'platform=iOS
 
 See [Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md) and [Docs/ROADMAP.md](Docs/ROADMAP.md).
 
+## Optional live metadata
+
+1. Create or open your TMDB account and visit [API settings](https://www.themoviedb.org/settings/api).
+2. Copy the TMDB API **Read Access Token**.
+3. In CineNex, open Tracking, enter the token in Live Catalog, and save it.
+4. Return to Home and pull down or tap the refresh icon to load trending metadata. Disconnecting TMDB returns CineNex to the demo catalog.
+
+The token is saved locally in app preferences. Do not share it or commit it to the repository. TMDB metadata access does not grant rights to stream, download, or redistribute any title. Follow TMDB attribution and API terms for distribution.
+
 ## Content and rights
 
 CineNex is a player and discovery app, not a source of universal streaming rights. Integrations must respect the source's access rules, copyright, DRM, and download permissions. A catalog result does not imply that a playable stream or download is available.

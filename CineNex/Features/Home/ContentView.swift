@@ -13,7 +13,9 @@ struct ContentView: View {
     @State private var activePlayerItem: MediaItem?
     @State private var showingUnavailableSource = false
 
-    private let catalog = MediaItem.demoCatalog
+    @State private var catalog = MediaItem.demoCatalog
+    @State private var catalogLoading = false
+    @State private var catalogError: String?
 
     private var filteredCatalog: [MediaItem] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -90,6 +92,7 @@ struct ContentView: View {
             .tag(AppTab.tracking)
         }
         .tint(Color.cineNexAccent)
+        .task { await loadCatalog() }
         .fullScreenCover(item: $activePlayerItem) { item in
             PlayerView(item: item, progressStore: playbackProgressStore)
         }
@@ -104,6 +107,14 @@ struct ContentView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 header
+
+                if let catalogError {
+                    Label(catalogError, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 20)
+                }
 
                 if let featured = catalog.first {
                     FeaturedBanner(item: featured) {
@@ -128,6 +139,7 @@ struct ContentView: View {
             .padding(.bottom, 24)
         }
         .background(Color.cineNexBackground.ignoresSafeArea())
+        .refreshable { await loadCatalog(force: true) }
         .toolbar(.hidden, for: .navigationBar)
     }
 
@@ -204,6 +216,21 @@ struct ContentView: View {
             }
             Spacer()
             Button {
+                Task { await loadCatalog(force: true) }
+            } label: {
+                if catalogLoading {
+                    ProgressView()
+                        .frame(width: 42, height: 42)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.title3.weight(.semibold))
+                        .frame(width: 42, height: 42)
+                        .background(Color.cineNexSurface, in: Circle())
+                }
+            }
+            .disabled(catalogLoading)
+            .accessibilityLabel("Refresh catalog")
+            Button {
                 selectedTab = .search
             } label: {
                 Image(systemName: "magnifyingglass")
@@ -256,6 +283,34 @@ struct ContentView: View {
                     }
                 }
                 .padding(.horizontal, 20)
+            }
+        }
+    }
+
+    @MainActor
+    private func loadCatalog(force: Bool = false) async {
+        let token = UserDefaults.standard.string(forKey: "cinenex.tmdb.readAccessToken")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !token.isEmpty else {
+            catalog = MediaItem.demoCatalog
+            catalogError = nil
+            return
+        }
+        guard force || !catalogLoading else { return }
+
+        catalogLoading = true
+        defer { catalogLoading = false }
+        do {
+            let liveCatalog = try await TMDBCatalogProvider(readAccessToken: token).fetchCatalog()
+            guard !Task.isCancelled else { return }
+            catalog = liveCatalog.isEmpty ? MediaItem.demoCatalog : liveCatalog
+            catalogError = liveCatalog.isEmpty ? "TMDB returned no trending titles. Showing the demo catalog instead." : nil
+        } catch is CancellationError {
+            return
+        } catch {
+            catalogError = error.localizedDescription
+            if catalog.isEmpty {
+                catalog = MediaItem.demoCatalog
             }
         }
     }
@@ -378,9 +433,22 @@ private struct MediaPosterCard: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                    Image(systemName: item.symbol)
-                        .font(.system(size: 38, weight: .light))
-                        .foregroundStyle(.white.opacity(0.9))
+                    if let posterURL = item.posterURL {
+                        AsyncImage(url: posterURL) { phase in
+                            if let image = phase.image {
+                                image.resizable().scaledToFill()
+                            } else {
+                                Image(systemName: item.symbol)
+                                    .font(.system(size: 38, weight: .light))
+                                    .foregroundStyle(.white.opacity(0.9))
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                        }
+                    } else {
+                        Image(systemName: item.symbol)
+                            .font(.system(size: 38, weight: .light))
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
                     VStack {
                         HStack {
                             Text(item.kind.rawValue.uppercased())
@@ -396,6 +464,7 @@ private struct MediaPosterCard: View {
                     .padding(8)
                 }
                 .aspectRatio(0.72, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
 
                 Text(item.title)
                     .font(.subheadline.weight(.semibold))

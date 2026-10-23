@@ -17,6 +17,10 @@ struct MediaItem: Identifiable, Hashable {
     let symbol: String
     let runtime: String
     let streamURL: URL?
+    var posterURL: URL? = nil
+    var rating: Double? = nil
+    var externalID: Int? = nil
+    var metadataProvider: String = "demo"
 
     static let demoCatalog: [MediaItem] = [
         MediaItem(

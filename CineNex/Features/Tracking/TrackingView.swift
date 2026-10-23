@@ -12,6 +12,8 @@ struct TrackingView: View {
     @State private var exportingLetterboxd = false
     @State private var exportDocument = LetterboxdCSVDocument()
     @State private var letterboxdMessage: String?
+    @State private var tmdbToken = UserDefaults.standard.string(forKey: "cinenex.tmdb.readAccessToken") ?? ""
+    @State private var tmdbMessage: String?
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -24,6 +26,7 @@ struct TrackingView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                tmdbCard
                 traktCard
                 letterboxdCard
 
@@ -65,6 +68,78 @@ struct TrackingView: View {
         } message: {
             Text("Create an API application on Trakt, copy its Client ID into this screen, and then connect your account. CineNex uses the device authorization flow and does not ask for your Trakt password.")
         }
+    }
+
+    private var tmdbCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles.tv")
+                    .font(.title2)
+                    .foregroundStyle(Color.cineNexAccent)
+                    .frame(width: 46, height: 46)
+                    .background(Color.cineNexAccent.opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Live Catalog")
+                        .font(.title2.bold())
+                    Text(tmdbToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Using local demo titles" : "TMDB token saved")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text("Connect TMDB to replace the sample catalog with trending movies and series, real descriptions, ratings, release years, and poster artwork. TMDB supplies metadata only; it does not supply playable streams.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            SecureField("TMDB Read Access Token", text: $tmdbToken)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding(12)
+                .background(Color.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
+                .accessibilityLabel("TMDB Read Access Token")
+
+            HStack(spacing: 10) {
+                Button {
+                    let token = tmdbToken.trimmingCharacters(in: .whitespacesAndNewlines)
+                    UserDefaults.standard.set(token, forKey: "cinenex.tmdb.readAccessToken")
+                    tmdbToken = token
+                    tmdbMessage = token.isEmpty
+                        ? "Live catalog disabled. CineNex will use its local demo catalog."
+                        : "Token saved. Return to Home and tap refresh to load trending titles."
+                } label: {
+                    Label("Save token", systemImage: "checkmark")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button {
+                    tmdbToken = ""
+                    UserDefaults.standard.removeObject(forKey: "cinenex.tmdb.readAccessToken")
+                    tmdbMessage = "TMDB disconnected. CineNex will use its local demo catalog."
+                } label: {
+                    Label("Disconnect", systemImage: "xmark")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if let tmdbMessage {
+                Text(tmdbMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button {
+                openURL(URL(string: "https://www.themoviedb.org/settings/api")!)
+            } label: {
+                Label("Get a TMDB API token", systemImage: "arrow.up.right.square")
+                    .font(.footnote.weight(.medium))
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(18)
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 22))
     }
 
     private var traktCard: some View {

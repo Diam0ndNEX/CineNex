@@ -9,7 +9,8 @@ CineNex is an iPhone-first media discovery and playback app. It separates catalo
 - SwiftUI provides Home, Search, My List, and Tracking tabs.
 - `MediaItem` represents a catalog entry and optional playable URL.
 - `CatalogProvider` defines the boundary for metadata providers.
-- `DemoCatalogProvider` supplies local sample entries.
+- `DemoCatalogProvider` supplies local sample entries when no live metadata provider is configured.
+- `TMDBCatalogProvider` fetches trending movie/TV metadata with a user-supplied TMDB Read Access Token and maps posters, descriptions, years, genres, ratings, and TMDB IDs; metadata results never include playable URLs.
 - `PlayerView` uses AVPlayer for compatible HTTPS media and records local progress.
 - `PlaybackProgressStore` persists resume positions in local UserDefaults.
 - `TraktIntegration` handles device authorization, secure token storage, refresh, and optional movie scrobbling.
@@ -28,7 +29,7 @@ CineNex is an iPhone-first media discovery and playback app. It separates catalo
 ## Constraints and assumptions
 
 - Initial deployment target is iOS 17.
-- The first release uses local demo catalog data; no live catalog API key is required.
+- The app starts with local demo catalog data and can optionally load live TMDB trending metadata using a user-supplied Read Access Token.
 - A catalog listing is not proof of streaming or download rights.
 - Only media sources that permit access and playback should be integrated.
 - Playback progress is stored locally on the device and is not synced between devices.
