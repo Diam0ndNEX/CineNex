@@ -11,6 +11,7 @@ struct TMDBTitleDetails: Decodable, Equatable {
     let credits: TMDBTitleCredits?
     let videos: TMDBTitleVideos?
     let createdBy: [TMDBTitleCreator]?
+    let recommendations: TMDBTitleRecommendations?
 
     enum CodingKeys: String, CodingKey {
         case tagline
@@ -19,6 +20,7 @@ struct TMDBTitleDetails: Decodable, Equatable {
         case genres
         case credits
         case videos
+        case recommendations
         case createdBy = "created_by"
         case episodeRunTime = "episode_run_time"
         case numberOfSeasons = "number_of_seasons"
@@ -72,6 +74,38 @@ struct TMDBTitleDetails: Decodable, Equatable {
             .uniqued()
     }
 
+    func recommendedItems(for kind: MediaKind) -> [MediaItem] {
+        var seenIDs = Set<Int>()
+        return (recommendations?.results ?? []).compactMap { result in
+            guard result.id > 0, seenIDs.insert(result.id).inserted else { return nil }
+            let titleValue = (kind == .movie ? result.title : result.name)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let titleValue, !titleValue.isEmpty else { return nil }
+            let date = kind == .movie ? result.releaseDate : result.firstAirDate
+            let year = date.flatMap { Int($0.prefix(4)) } ?? 0
+            let overview = result.overview?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let synopsis = overview?.isEmpty == false ? overview! : "No description is available from TMDB yet."
+            let posterURL = result.posterPath.flatMap {
+                URL(string: "https://image.tmdb.org/t/p/w500\($0)")
+            }
+            return MediaItem(
+                id: "tmdb-\(kind == .movie ? "movie" : "tv")-\(result.id)",
+                title: titleValue,
+                kind: kind,
+                year: year,
+                genre: "Recommended",
+                synopsis: synopsis,
+                symbol: kind == .movie ? "film" : "tv",
+                runtime: kind == .movie ? "Movie" : "Series",
+                streamURL: nil,
+                posterURL: posterURL,
+                rating: result.voteAverage,
+                externalID: result.id,
+                metadataProvider: "tmdb"
+            )
+        }
+    }
+
     var trailerURL: URL? {
         let candidates = (videos?.results ?? []).filter {
             $0.site?.caseInsensitiveCompare("YouTube") == .orderedSame
@@ -121,6 +155,32 @@ struct TMDBTitleVideo: Decodable, Equatable {
     let site: String?
     let type: String?
     let official: Bool?
+}
+
+struct TMDBTitleRecommendations: Decodable, Equatable {
+    let results: [TMDBTitleRecommendation]?
+}
+
+struct TMDBTitleRecommendation: Decodable, Equatable {
+    let id: Int
+    let title: String?
+    let name: String?
+    let overview: String?
+    let releaseDate: String?
+    let firstAirDate: String?
+    let posterPath: String?
+    let voteAverage: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case name
+        case overview
+        case releaseDate = "release_date"
+        case firstAirDate = "first_air_date"
+        case posterPath = "poster_path"
+        case voteAverage = "vote_average"
+    }
 }
 
 private extension Array where Element == String {
