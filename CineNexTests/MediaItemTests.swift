@@ -235,8 +235,8 @@ final class MediaItemTests: XCTestCase {
 
         let details = try JSONDecoder().decode(TMDBTitleDetails.self, from: data)
 
-        XCTAssertEqual(details.seasonSummaries.map(\\.seasonNumber), [0, 1, 2])
-        XCTAssertEqual(details.seasonSummaries.map(\\.displayName), ["Specials", "Season 1", "Season 2"])
+        XCTAssertEqual(details.seasonSummaries.map(\.seasonNumber), [0, 1, 2])
+        XCTAssertEqual(details.seasonSummaries.map(\.displayName), ["Specials", "Season 1", "Season 2"])
         XCTAssertEqual(details.seasonSummaries[2].episodeCount, 8)
         XCTAssertEqual(details.seasonSummaries[2].airYear, 2023)
         XCTAssertEqual(details.seasonSummaries[2].posterURL?.absoluteString, "https://image.tmdb.org/t/p/w342/season2.jpg")
