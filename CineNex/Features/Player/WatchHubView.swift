@@ -537,7 +537,10 @@ struct WatchHubView: View {
         defer { internetArchiveSourcesLoading = false }
 
         do {
-            internetArchiveSources = try await InternetArchivePlaybackProvider().findSources(for: request)
+            let result = try await PlaybackSourceCoordinator(
+                providers: [InternetArchivePlaybackProvider()]
+            ).search(for: request)
+            internetArchiveSources = result.sources
         } catch is CancellationError {
             return
         } catch {
