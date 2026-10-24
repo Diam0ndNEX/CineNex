@@ -1,10 +1,5 @@
 import Foundation
 
-enum PlaybackSourceKind: String, Codable, CaseIterable, Sendable {
-    case directMedia
-    case webEmbed
-}
-
 struct EmbedPlaybackProvider: Identifiable, Equatable, Sendable {
     let id: String
     let displayName: String
@@ -38,37 +33,56 @@ struct EmbedPlaybackProvider: Identifiable, Equatable, Sendable {
     func embedURL(for request: PlaybackSourceRequest) -> URL? {
         guard request.isValid,
               supportedMediaKinds.contains(request.mediaKind),
-              let host = baseURL.host,
+              let baseHost = baseURL.host,
               baseURL.scheme?.lowercased() == "https" else {
             return nil
         }
 
-        if requiresTMDBID && (request.tmdbID == nil || request.tmdbID! <= 0) {
-            return nil
+        if requiresTMDBID {
+            guard let tmdbID = request.tmdbID, tmdbID > 0 else {
+                return nil
+            }
         }
 
-        let identifier = request.tmdbID.map(String.init) ?? request.title
+        let identifier: String
+        if let tmdbID = request.tmdbID {
+            identifier = String(tmdbID)
+        } else {
+            identifier = request.title
+        }
+
         let pathTemplate: String
         switch request.mediaKind {
         case .movie:
             pathTemplate = moviePath
         case .series:
-            guard request.seasonNumber != nil, request.episodeNumber != nil else {
+            guard let seasonNumber = request.seasonNumber,
+                  let episodeNumber = request.episodeNumber,
+                  seasonNumber >= 0,
+                  episodeNumber > 0 else {
                 return nil
             }
             pathTemplate = seriesPath
         }
 
-        let path = pathTemplate
+        let rawPath = pathTemplate
             .replacingOccurrences(of: "{id}", with: identifier)
             .replacingOccurrences(of: "{season}", with: String(request.seasonNumber ?? 0))
             .replacingOccurrences(of: "{episode}", with: String(request.episodeNumber ?? 0))
-        let relativePath = path.split(separator: "/", omittingEmptySubsequences: false)
-            .map { String($0).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
-            .joined(separator: "/")
+        let segmentCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+        let encodedSegments = rawPath.split(separator: "/", omittingEmptySubsequences: false).map { segment in
+            String(segment).addingPercentEncoding(withAllowedCharacters: segmentCharacters) ?? ""
+        }
+        guard !encodedSegments.contains(where: { $0.isEmpty }) else {
+            return nil
+        }
+
+        let relativePath = encodedSegments.joined(separator: "/")
         let result = baseURL.appendingPathComponent(relativePath)
-        guard result.host?.lowercased() == host.lowercased(),
-              result.scheme?.lowercased() == "https" else {
+        guard result.host?.lowercased() == baseHost.lowercased(),
+              result.scheme?.lowercased() == "https",
+              result.user == nil,
+              result.password == nil else {
             return nil
         }
         return result
