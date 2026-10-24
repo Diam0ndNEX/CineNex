@@ -69,3 +69,16 @@ A better native reference surfaced in the investigation: [XITRIX/iTorrent](https
 The pure-Swift [warppipe/swift-torrent](https://github.com/warppipe/swift-torrent) does declare MIT in its README but has no GitHub-recognized license or LICENSE file. More importantly, its README describes a download pipeline and rarest-first piece selection, not a playback-oriented range server with seek-aware piece deadlines. It is not the best fit for CineNex's requirement to stream and seek without reinventing the scheduling layer.
 
 **Updated recommendation:** first ask whether XITRIX's maintainer is willing to clarify the license of `LibTorrent-Swift` and whether its wrapper exposes the piece-priority and file-reading primitives CineNex needs. In parallel, keep the official libtorrent 2.x source as the fallback, building our own narrow native bridge if necessary. Keep `libtorrent_flutter` as the streaming-behavior reference and an option only if the project knowingly accepts GPL-3.0 and the native extraction cost is justified. No torrent engine is integrated by this investigation.
+
+
+### XITRIX wrapper API audit — 2026-10-24
+
+The public Objective-C headers confirm that `XITRIX/LibTorrent-Swift` already exposes a useful native surface:
+
+- `Session` owns the libtorrent session, restores state, adds/removes `Downloadable` items, and reports torrent lifecycle updates through `SessionDelegate`.
+- `TorrentHandle` exposes snapshots, pause/resume, file priorities, sequential download, and first/last-piece priority. `TorrentHandle.Snapshot` reports metadata, per-file entries, progress, transfer rates, and piece completion state.
+- `FileEntry` exposes each file's index, relative path, size, downloaded byte count, and piece range.
+- The wrapper's `make.sh` configures libtorrent with Xcode and an iOS 15 deployment target. This is evidence of an iOS-oriented native build recipe, not yet evidence that the current wrapper builds reproducibly with CineNex's Xcode/CI toolchain or that all required device/simulator slices are available.
+- The inspected public API does **not** expose a playback-specific per-piece deadline API or a built-in HTTP byte-range server. Sequential and first/last-piece prioritization are available, but seek-aware streaming would still need additional native work or a separately audited range-serving layer. Do not assume sequential download alone gives reliable seeking.
+
+**Integration decision:** keep this wrapper as the selected candidate, subject to a licensing gate. The wrapper repository has no visible license file or declared license metadata, and the iTorrent app's MIT license does not automatically grant rights to the wrapper or its submodules. Before adding the wrapper as a submodule, copying it, or shipping it in CineNex, obtain explicit reuse terms from the maintainer. After that, prototype the dependency in an isolated branch, verify the Xcode project and submodule revisions, and build both iPhone device and simulator targets in CI. Keep torrent playback disabled until range requests can wait for requested pieces safely, prioritize seek windows, enforce strict cache/path limits, and pass authorized-content end-to-end tests.
