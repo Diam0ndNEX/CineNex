@@ -2,6 +2,24 @@ import XCTest
 @testable import CineNex
 
 final class MediaItemTests: XCTestCase {
+    func testYearLabelOmitsUnknownYearsAndFormatsKnownYears() {
+        let knownYear = MediaItem.demoCatalog[0]
+        let unknownYear = MediaItem(
+            id: "unknown-year",
+            title: "Unknown Year",
+            kind: .movie,
+            year: 0,
+            genre: "Drama",
+            synopsis: "A test item with no known release year.",
+            symbol: "film",
+            runtime: "Movie",
+            streamURL: nil
+        )
+
+        XCTAssertEqual(knownYear.yearLabel, "2008")
+        XCTAssertNil(unknownYear.yearLabel)
+    }
+
     func testDemoCatalogContainsMoviesAndSeries() {
         let catalog = MediaItem.demoCatalog
 

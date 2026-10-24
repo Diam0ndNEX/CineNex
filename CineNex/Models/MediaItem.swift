@@ -22,6 +22,10 @@ struct MediaItem: Codable, Identifiable, Hashable {
     var externalID: Int? = nil
     var metadataProvider: String = "demo"
 
+    var yearLabel: String? {
+        year > 0 ? String(year) : nil
+    }
+
     static let demoCatalog: [MediaItem] = [
         MediaItem(
             id: "big-buck-bunny",
