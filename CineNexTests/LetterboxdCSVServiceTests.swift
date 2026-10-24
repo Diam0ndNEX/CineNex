@@ -19,6 +19,13 @@ final class LetterboxdCSVServiceTests: XCTestCase {
         XCTAssertEqual(records[0].kind, .diary)
     }
 
+    func testRatingsOutsideLetterboxdRangeAreIgnored() throws {
+        let csv = "Name,Rating\\nZero,0\\nMaximum,5\\nToo high,5.5\\nNegative,-1\\nNot a number,NaN"
+        let records = try LetterboxdCSVService.parse(csv, filename: "ratings.csv")
+        XCTAssertEqual(records.map(\.title), ["Zero", "Maximum", "Too high", "Negative", "Not a number"])
+        XCTAssertEqual(records.map(\.rating), [0, 5, nil, nil, nil])
+    }
+
     func testCSVParserPreservesQuotedNewlinesAndEscapedQuotes() throws {
         let csv = """
         Date,Name,Year,Letterboxd URI,Rating,Review,Watched Date
