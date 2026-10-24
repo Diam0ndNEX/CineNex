@@ -37,6 +37,10 @@ final class FavoriteLibraryStore {
         persist(snapshots)
     }
 
+    func removeAll() {
+        defaults.removeObject(forKey: storageKey)
+    }
+
     private func persist(_ snapshots: [String: MediaItem]) {
         guard let data = try? JSONEncoder().encode(snapshots) else { return }
         defaults.set(data, forKey: storageKey)
