@@ -244,13 +244,22 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
             downloads = []
             return
         }
-        downloads = decoded.filter { record in
+        var restored = decoded.filter { record in
             !record.id.isEmpty
                 && !record.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 && Self.supportsOfflineDownload(from: record.sourceURL)
                 && record.progress.isFinite
                 && (0...1).contains(record.progress)
         }
+
+        for index in restored.indices where restored[index].status == .completed {
+            guard restored[index].localAssetURL(in: downloadsDirectory) == nil else { continue }
+            restored[index].status = .failed
+            restored[index].errorMessage = "The downloaded media file is missing. Download it again to restore offline playback."
+            restored[index].updatedAt = Date()
+        }
+
+        downloads = restored
         sortAndPersist()
     }
 
