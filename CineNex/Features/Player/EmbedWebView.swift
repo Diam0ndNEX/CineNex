@@ -18,6 +18,7 @@ struct EmbedWebView: UIViewRepresentable {
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
         webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
         webView.load(URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 20))
         return webView
@@ -28,7 +29,7 @@ struct EmbedWebView: UIViewRepresentable {
         webView.load(URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 20))
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         private let onFailure: () -> Void
 
         init(onFailure: @escaping () -> Void) {
@@ -43,14 +44,40 @@ struct EmbedWebView: UIViewRepresentable {
             onFailure()
         }
 
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
             guard let url = navigationAction.request.url,
                   let scheme = url.scheme?.lowercased(),
-                  ["https", "http", "about", "blob", "data"].contains(scheme) else {
+                  scheme == "https",
+                  url.host != nil else {
                 decisionHandler(.cancel)
                 return
             }
+
             decisionHandler(.allow)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            createWebViewWith configuration: WKWebViewConfiguration,
+            for navigationAction: WKNavigationAction,
+            windowFeatures: WKWindowFeatures
+        ) -> WKWebView? {
+            guard let url = navigationAction.request.url,
+                  url.scheme?.lowercased() == "https",
+                  url.host != nil else {
+                return nil
+            }
+
+            webViewLoad(url, in: navigationAction)
+            return nil
+        }
+
+        private func webViewLoad(_ url: URL, in navigationAction: WKNavigationAction) {
+            navigationAction.targetFrame?.request
         }
     }
 }
