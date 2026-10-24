@@ -68,6 +68,8 @@ struct OfflineLibraryView: View {
                             download: download,
                             localURL: store.localPlaybackURL(for: download.id),
                             onPlay: { url in onPlay(download, url) },
+                            onPause: { store.pause(id: download.id) },
+                            onResume: { store.resume(id: download.id) },
                             onCancel: { store.cancel(id: download.id) },
                             onRemove: { store.remove(id: download.id) },
                             onRetry: {
@@ -100,6 +102,8 @@ private struct OfflineDownloadRow: View {
     let download: OfflineDownload
     let localURL: URL?
     let onPlay: (URL) -> Void
+    let onPause: () -> Void
+    let onResume: () -> Void
     let onCancel: () -> Void
     let onRemove: () -> Void
     let onRetry: () -> Void
@@ -108,6 +112,7 @@ private struct OfflineDownloadRow: View {
         switch download.status {
         case .queued: return "Queued"
         case .downloading: return "Downloading"
+        case .paused: return "Paused"
         case .completed: return "Downloaded"
         case .failed: return "Download failed"
         case .cancelled: return "Cancelled"
@@ -118,6 +123,7 @@ private struct OfflineDownloadRow: View {
         switch download.status {
         case .queued: return "clock"
         case .downloading: return "arrow.down.circle"
+        case .paused: return "pause.circle"
         case .completed: return "checkmark.circle.fill"
         case .failed: return "exclamationmark.circle.fill"
         case .cancelled: return "xmark.circle"
@@ -140,10 +146,10 @@ private struct OfflineDownloadRow: View {
                     Label(statusText, systemImage: statusSymbol)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(download.status == .failed ? .orange : .secondary)
-                    if download.status == .downloading || download.status == .queued {
+                    if download.status == .downloading || download.status == .queued || download.status == .paused {
                         ProgressView(value: download.progress)
                             .tint(Color.cineNexAccent)
-                        Text(download.status == .queued ? "Waiting to start" : "\(Int(download.progress * 100))%")
+                        Text(download.status == .queued ? "Waiting to start" : download.status == .paused ? "Paused at \(Int(download.progress * 100))%" : "\(Int(download.progress * 100))%")
                             .font(.caption2.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
@@ -168,7 +174,23 @@ private struct OfflineDownloadRow: View {
                     .buttonStyle(.borderedProminent)
                 }
 
-                if download.status == .queued || download.status == .downloading {
+                if download.status == .downloading {
+                    Button(action: onPause) {
+                        Label("Pause", systemImage: "pause.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                if download.status == .paused || download.status == .queued {
+                    Button(action: onResume) {
+                        Label("Resume", systemImage: "play.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                if download.status == .queued || download.status == .downloading || download.status == .paused {
                     Button(action: onCancel) {
                         Label("Cancel", systemImage: "xmark")
                             .frame(maxWidth: .infinity)
