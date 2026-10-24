@@ -21,3 +21,9 @@ To use it, export data from Letterboxd, extract the ZIP, and import the relevant
 Playback progress and CineNex favorites continue to work without external accounts. Trakt sync is optional and can be disconnected independently. Letterboxd CSV data is stored locally on the device. Local playback progress is not automatically converted into a watched diary entry because reaching a saved position does not prove a complete watch.
 
 Trakt scrobbling includes a TMDB identifier only when the selected movie was returned by TMDB and has a positive numeric TMDB ID. Local/demo entries continue to use title and year matching; CineNex does not guess external identifiers.
+
+## Embedded playback cleaner
+
+CineNex's embedded WebKit player includes an on-device Playback Cleaner. When enabled, it compiles a small native WebKit content-blocking rule set for selected third-party advertising domains, rejects top-level navigation to those domains, and refuses to create pop-up web views. It does not inspect or rewrite video streams, remove ads mixed into video, inject page scripts, or promise to eliminate every ad. Filtering can be disabled globally or for an individual provider when a player stops working. Only HTTPS navigation is allowed, and the filter is deliberately conservative to reduce compatibility risk.
+
+The initial domain list is bundled with the app; no browsing history or URLs are uploaded to a filtering service. Domain coverage is intentionally limited and should be expanded only with evidence that the additional rules do not break supported players.
