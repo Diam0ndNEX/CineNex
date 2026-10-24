@@ -155,7 +155,9 @@ final class TorrentDiskByteReaderTests: XCTestCase {
             expectedLength: 8,
             availability: ImmediateAvailability()
         )
-        try Data("bad".utf8).write(to: url, options: .atomic)
+        let writer = try FileHandle(forWritingTo: url)
+        try writer.truncate(atOffset: 3)
+        try writer.close()
         do {
             _ = try await reader.read(offset: 0, length: 8)
             XCTFail("A short disk read must fail.")
