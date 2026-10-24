@@ -158,25 +158,23 @@ private final class MockArchiveURLProtocol: URLProtocol {
 
     override func startLoading() {
         guard let responseHandler = Self.responseHandler,
-              let url = request.url,
-              let response = HTTPURLResponse(
-                url: url,
-                statusCode: responseHandler(request).statusCode,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-              ) else {
+              let url = request.url else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
 
         let result = responseHandler(request)
-        let finalResponse = HTTPURLResponse(
+        guard let response = HTTPURLResponse(
             url: url,
             statusCode: result.statusCode,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
-        ) ?? response
-        client?.urlProtocol(self, didReceive: finalResponse, cacheStoragePolicy: .notAllowed)
+        ) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: result.data)
         client?.urlProtocolDidFinishLoading(self)
     }
