@@ -221,7 +221,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             try Task.checkCancellation()
             if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
                let size = attributes[.size] as? NSNumber,
-               size.int64Value == expectedLength {
+               size.int64Value <= expectedLength {
                 return
             }
             try await Task.sleep(for: .milliseconds(250))

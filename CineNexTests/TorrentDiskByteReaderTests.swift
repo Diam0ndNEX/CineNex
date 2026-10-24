@@ -112,8 +112,8 @@ final class TorrentDiskByteReaderTests: XCTestCase {
         try await reader.close()
     }
 
-    func testRejectsFileWhoseSizeDoesNotMatchExpectedLength() throws {
-        let url = try makeTemporaryFile(Data("short".utf8))
+    func testRejectsFileLargerThanExpectedLength() throws {
+        let url = try makeTemporaryFile(Data(repeating: 0, count: 100))
         defer { try? FileManager.default.removeItem(at: url) }
         XCTAssertThrowsError(
             try TorrentDiskByteReader(
@@ -124,6 +124,29 @@ final class TorrentDiskByteReaderTests: XCTestCase {
         ) {
             XCTAssertEqual($0 as? TorrentDiskByteReaderError, .unavailableFile)
         }
+    }
+
+    func testReadsSparseFileAfterItGrowsAndAvailabilityCompletes() async throws {
+        let url = try makeTemporaryFile(Data("abc".utf8))
+        defer { try? FileManager.default.removeItem(at: url) }
+        let availability = DelayedAvailability()
+        let reader = try TorrentDiskByteReader(
+            fileURL: url,
+            expectedLength: 6,
+            availability: availability
+        )
+        let readTask = Task { try await reader.read(offset: 0, length: 6) }
+        try await Task.sleep(for: .milliseconds(40))
+
+        let writer = try FileHandle(forWritingTo: url)
+        try writer.seekToEnd()
+        try writer.write(contentsOf: Data("def".utf8))
+        try writer.close()
+        await availability.release()
+
+        let readData = try await readTask.value
+        XCTAssertEqual(readData, Data("abcdef".utf8))
+        try await reader.close()
     }
 
  

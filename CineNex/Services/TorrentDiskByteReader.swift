@@ -15,7 +15,7 @@ enum TorrentDiskByteReaderError: LocalizedError, Equatable {
         case .invalidRange:
             return "The requested torrent byte range is outside the selected file."
         case .unavailableFile:
-            return "The selected torrent file is missing or has changed size."
+            return "The selected torrent file is missing or larger than its expected size."
         case let .shortRead(expected, actual):
             return "The torrent file returned \(actual) bytes when \(expected) bytes were required."
         case .closed:
@@ -41,7 +41,7 @@ actor TorrentDiskByteReader: TorrentByteReader {
               FileManager.default.fileExists(atPath: fileURL.path),
               let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
               let number = attributes[.size] as? NSNumber,
-              number.int64Value == expectedLength else {
+              number.int64Value <= expectedLength else {
             throw TorrentDiskByteReaderError.unavailableFile
         }
         self.fileURL = fileURL
@@ -67,6 +67,19 @@ actor TorrentDiskByteReader: TorrentByteReader {
         )
         try Task.checkCancellation()
         guard !isClosed else { throw TorrentDiskByteReaderError.closed }
+
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+              let number = attributes[.size] as? NSNumber,
+              number.int64Value <= length else {
+            throw TorrentDiskByteReaderError.unavailableFile
+        }
+        let availableLength = max(0, number.int64Value - offset)
+        guard availableLength >= Int64(requestedLength) else {
+            throw TorrentDiskByteReaderError.shortRead(
+                expected: requestedLength,
+                actual: Int(min(Int64(requestedLength), availableLength))
+            )
+        }
 
         try fileHandle.seek(toOffset: UInt64(offset))
         let data = try fileHandle.read(upToCount: requestedLength) ?? Data()
