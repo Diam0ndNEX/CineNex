@@ -3,6 +3,7 @@ import SwiftUI
 struct WatchHubView: View {
     let item: MediaItem
     let onPlayDirect: (MediaItem) -> Void
+    let onSelectItem: (MediaItem) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("cinenex.defaultPlaybackProvider") private var defaultProviderID = "smart"
@@ -10,6 +11,13 @@ struct WatchHubView: View {
     @State private var availableProviders: [ResolvedEmbedSource] = []
     @State private var seasonNumber = 1
     @State private var episodeNumber = 1
+    @State private var seasons: [TMDBTitleSeason] = []
+    @State private var episodes: [TMDBSeasonEpisode] = []
+    @State private var recommendations: [MediaItem] = []
+    @State private var recommendationsLoading = false
+    @State private var episodesLoading = false
+    @State private var catalogErrorMessage: String?
+    @State private var episodeErrorMessage: String?
 
     private var request: PlaybackSourceRequest {
         PlaybackSourceRequest(
@@ -30,7 +38,7 @@ struct WatchHubView: View {
                     quickActions
                     episodeSelection
                     providerSection
-                    recommendationsPlaceholder
+                    recommendationsSection
                 }
                 .padding(20)
                 .padding(.bottom, 28)
@@ -48,6 +56,7 @@ struct WatchHubView: View {
             }
             .task(id: item.id) {
                 resolveSources()
+                await loadCatalogDetails()
             }
         }
         .tint(Color.cineNexAccent)
@@ -129,26 +138,6 @@ struct WatchHubView: View {
             }
             .pickerStyle(.menu)
             .accessibilityLabel("Default playback source")
-        }
-    }
-
-    private var episodeSelection: some View {
-        Group {
-            if item.kind == .series {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Choose episode")
-                        .font(.title3.bold())
-                    Stepper("Season \(seasonNumber)", value: $seasonNumber, in: 1...99)
-                        .onChange(of: seasonNumber) { _, _ in resolveSources() }
-                    Stepper("Episode \(episodeNumber)", value: $episodeNumber, in: 1...999)
-                        .onChange(of: episodeNumber) { _, _ in resolveSources() }
-                    Text("Select the episode before opening a source. Episode metadata is not yet synced from the catalog here.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(16)
-                .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
-            }
         }
     }
 
@@ -252,17 +241,199 @@ struct WatchHubView: View {
         }
     }
 
-    private var recommendationsPlaceholder: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Keep discovering")
-                .font(.title3.bold())
-            Text("Recommendations from TMDB will stay available here as the Watch Hub grows. Source availability is checked separately from catalog metadata.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+    private var recommendationsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("You might also like")
+                    .font(.title3.bold())
+                Spacer()
+                if recommendationsLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            if let catalogErrorMessage, recommendations.isEmpty {
+                Text(catalogErrorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if recommendations.isEmpty && !recommendationsLoading {
+                Text("Recommendations appear when TMDB metadata is available for this title.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(recommendations) { recommendation in
+                            Button {
+                                onSelectItem(recommendation)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 7) {
+                                    CachedPosterImage(
+                                        url: recommendation.posterURL,
+                                        fallbackSymbol: recommendation.symbol,
+                                        symbolSize: 28
+                                    )
+                                    .frame(width: 124, height: 178)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                                    Text(recommendation.title)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(2)
+                                        .frame(width: 124, alignment: .leading)
+
+                                    if let rating = recommendation.rating, rating > 0 {
+                                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .frame(width: 124, alignment: .leading)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Opens the Watch Hub for this recommendation")
+                        }
+                    }
+                }
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var episodeSelection: some View {
+        Group {
+            if item.kind == .series {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Choose episode")
+                        .font(.title3.bold())
+
+                    if !seasons.isEmpty {
+                        Picker("Season", selection: $seasonNumber) {
+                            ForEach(seasons) { season in
+                                Text(season.displayName).tag(season.seasonNumber)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .onChange(of: seasonNumber) { _, newValue in
+                            episodeNumber = 1
+                            Task { await loadEpisodes(for: newValue) }
+                            resolveSources()
+                        }
+                    } else {
+                        Stepper("Season \(seasonNumber)", value: $seasonNumber, in: 0...99)
+                            .onChange(of: seasonNumber) { _, newValue in
+                                episodeNumber = 1
+                                Task { await loadEpisodes(for: newValue) }
+                                resolveSources()
+                            }
+                    }
+
+                    if !episodes.isEmpty {
+                        Picker("Episode", selection: $episodeNumber) {
+                            ForEach(episodes) { episode in
+                                Text("E\(episode.episodeNumber) · \(episode.displayName)")
+                                    .tag(episode.episodeNumber)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .onChange(of: episodeNumber) { _, _ in resolveSources() }
+
+                        if let episode = episodes.first(where: { $0.episodeNumber == episodeNumber }),
+                           let overview = episode.overview?.trimmingCharacters(in: .whitespacesAndNewlines),
+                           !overview.isEmpty {
+                            Text(overview)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if episodesLoading {
+                        ProgressView("Loading episodes…")
+                            .font(.caption)
+                    } else {
+                        Text(episodeErrorMessage ?? "Episode metadata is unavailable. You can still choose a season and episode number manually.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Stepper("Episode \(episodeNumber)", value: $episodeNumber, in: 1...999)
+                            .onChange(of: episodeNumber) { _, _ in resolveSources() }
+                    }
+                }
+                .padding(16)
+                .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
+            }
+        }
+    }
+
+    @MainActor
+    private func loadCatalogDetails() async {
+        guard item.metadataProvider == "tmdb",
+              let token = TMDBTokenStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !token.isEmpty else {
+            catalogErrorMessage = item.metadataProvider == "tmdb"
+                ? "Add your TMDB Read Access Token in Tracking to load recommendations and episode details."
+                : "Live recommendations and episode details require a TMDB catalog item."
+            return
+        }
+
+        recommendationsLoading = true
+        catalogErrorMessage = nil
+        defer { recommendationsLoading = false }
+
+        do {
+            let provider = TMDBCatalogProvider(readAccessToken: token)
+            guard let details = try await provider.fetchDetails(for: item) else {
+                catalogErrorMessage = "TMDB details are unavailable for this title."
+                return
+            }
+            recommendations = details.recommendedItems(for: item.kind)
+                .filter { $0.id != item.id }
+                .prefix(12)
+                .map { $0 }
+
+            if item.kind == .series {
+                seasons = details.seasonSummaries
+                if let firstSeason = seasons.first {
+                    seasonNumber = firstSeason.seasonNumber
+                }
+                await loadEpisodes(for: seasonNumber, provider: provider, token: token)
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            catalogErrorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func loadEpisodes(for requestedSeason: Int, provider existingProvider: TMDBCatalogProvider? = nil, token existingToken: String? = nil) async {
+        guard item.kind == .series else { return }
+        guard let token = existingToken ?? TMDBTokenStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !token.isEmpty else {
+            episodeErrorMessage = "Add your TMDB Read Access Token in Tracking to load episodes."
+            episodes = []
+            return
+        }
+
+        episodesLoading = true
+        episodeErrorMessage = nil
+        defer { episodesLoading = false }
+
+        do {
+            let provider = existingProvider ?? TMDBCatalogProvider(readAccessToken: token)
+            let loadedEpisodes = try await provider.fetchSeasonEpisodes(for: item, seasonNumber: requestedSeason)
+            guard seasonNumber == requestedSeason else { return }
+            episodes = loadedEpisodes
+            if !loadedEpisodes.contains(where: { $0.episodeNumber == episodeNumber }) {
+                episodeNumber = loadedEpisodes.first?.episodeNumber ?? 1
+            }
+            resolveSources()
+        } catch is CancellationError {
+            return
+        } catch {
+            episodeErrorMessage = error.localizedDescription
+            episodes = []
+        }
     }
 
     private func resolveSources() {
@@ -297,6 +468,7 @@ private struct EmbedWebPlaybackView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var loadFailed = false
+    @State private var reloadID = UUID()
 
     var body: some View {
         NavigationStack {
@@ -307,11 +479,15 @@ private struct EmbedWebPlaybackView: View {
                     } description: {
                         Text("This source may be unavailable or incompatible with iOS. Return to the source list and try another provider.")
                     } actions: {
-                        Button("Try Again") { loadFailed = false }
+                        Button("Try Again") {
+                            loadFailed = false
+                            reloadID = UUID()
+                        }
                             .buttonStyle(.borderedProminent)
                     }
                 } else {
                     EmbedWebView(url: url, onFailure: { loadFailed = true })
+                        .id(reloadID)
                         .background(.black)
                         .ignoresSafeArea(edges: .bottom)
                 }
@@ -325,6 +501,7 @@ private struct EmbedWebPlaybackView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         loadFailed = false
+                        reloadID = UUID()
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
