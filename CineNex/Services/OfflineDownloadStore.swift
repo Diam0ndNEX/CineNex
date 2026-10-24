@@ -332,7 +332,7 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
         } catch {
             updateRecord(id: id) { record in
                 record.status = .failed
-                record.errorMessage = "The downloaded media could not be saved locally: \\(error.localizedDescription)"
+                record.errorMessage = "The downloaded media could not be saved locally: \(error.localizedDescription)"
             }
             tasks[id] = nil
         }
