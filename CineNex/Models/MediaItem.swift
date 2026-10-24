@@ -22,6 +22,15 @@ struct MediaItem: Codable, Identifiable, Hashable {
     var externalID: Int? = nil
     var metadataProvider: String = "demo"
 
+    var accessibilitySummary: String {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanGenre = genre.trimmingCharacters(in: .whitespacesAndNewlines)
+        let kindLabel = kind == .movie ? "Movie" : "Series"
+        let yearText = year > 0 ? String(year) : "Year unknown"
+        let genreText = cleanGenre.isEmpty ? "Genre unavailable" : cleanGenre
+        return "\(cleanTitle.isEmpty ? "Untitled" : cleanTitle), \(kindLabel), \(yearText), \(genreText)"
+    }
+
     var yearLabel: String? {
         year > 0 ? String(year) : nil
     }
