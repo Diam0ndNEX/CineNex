@@ -39,7 +39,8 @@ struct OfflineDownload: Codable, Identifiable, Equatable {
         guard status == .completed,
               let url = localDirectoryURL(in: downloadsDirectory),
               let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-              attributes[.type] as? FileAttributeType == .typeDirectory else {
+              let fileType = attributes[.type] as? FileAttributeType,
+              fileType == .typeDirectory else {
             return nil
         }
         return url
