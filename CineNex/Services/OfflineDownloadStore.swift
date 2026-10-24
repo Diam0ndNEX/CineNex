@@ -243,7 +243,7 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
         }
     }
 
-    static func directorySize(at directoryURL: URL) -> Int64 {
+    nonisolated static func directorySize(at directoryURL: URL) -> Int64 {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directoryURL.path, isDirectory: &isDirectory),
               isDirectory.boolValue,
