@@ -64,6 +64,8 @@ struct PlaybackSource: Codable, Identifiable, Equatable, Sendable {
             && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && (url.scheme?.lowercased() == "https" || url.scheme?.lowercased() == "http")
             && url.host != nil
+            && url.user == nil
+            && url.password == nil
     }
 }
 
@@ -101,26 +103,30 @@ enum PlaybackSourceSearchError: LocalizedError {
 
 struct PlaybackSourceCoordinator: Sendable {
     let providers: [any PlaybackSourceProvider]
+    let providerTimeout: TimeInterval
 
-    init(providers: [any PlaybackSourceProvider]) {
+    init(providers: [any PlaybackSourceProvider], providerTimeout: TimeInterval = 12) {
         var seen = Set<String>()
         self.providers = providers.filter { provider in
             let cleanID = provider.id.trimmingCharacters(in: .whitespacesAndNewlines)
             return !cleanID.isEmpty && seen.insert(cleanID).inserted
         }
+        self.providerTimeout = min(60, max(0.1, providerTimeout.isFinite ? providerTimeout : 12))
     }
 
     func search(for request: PlaybackSourceRequest) async throws -> PlaybackSourceSearchResult {
         guard request.isValid else {
             throw PlaybackSourceSearchError.invalidRequest
         }
+        try Task.checkCancellation()
 
         let providers = self.providers
+        let timeout = providerTimeout
         let results = await withTaskGroup(of: ProviderSearchResult.self, returning: [ProviderSearchResult].self) { group in
             for provider in providers {
                 group.addTask {
                     do {
-                        let sources = try await provider.findSources(for: request)
+                        let sources = try await Self.sources(from: provider, request: request, timeout: timeout)
                         return ProviderSearchResult(
                             providerID: provider.id,
                             providerName: provider.displayName,
@@ -150,6 +156,7 @@ struct PlaybackSourceCoordinator: Sendable {
             }
             return collected
         }
+        try Task.checkCancellation()
 
         var uniqueSources: [String: PlaybackSource] = [:]
         var failures: [PlaybackProviderFailure] = []
@@ -193,6 +200,27 @@ struct PlaybackSourceCoordinator: Sendable {
         )
     }
 
+    private static func sources(
+        from provider: any PlaybackSourceProvider,
+        request: PlaybackSourceRequest,
+        timeout: TimeInterval
+    ) async throws -> [PlaybackSource] {
+        try await withThrowingTaskGroup(of: [PlaybackSource].self) { group in
+            group.addTask {
+                try await provider.findSources(for: request)
+            }
+            group.addTask {
+                let nanoseconds = UInt64(timeout * 1_000_000_000)
+                try await Task.sleep(nanoseconds: nanoseconds)
+                throw PlaybackProviderTimeoutError.timedOut(timeout)
+            }
+
+            let firstResult = try await group.next() ?? []
+            group.cancelAll()
+            return firstResult
+        }
+    }
+
     private static func precedes(_ lhs: PlaybackSource, _ rhs: PlaybackSource) -> Bool {
         if lhs.providerPriority != rhs.providerPriority {
             return lhs.providerPriority > rhs.providerPriority
@@ -213,4 +241,15 @@ private struct ProviderSearchResult: Sendable {
     let providerPriority: Int
     let sources: [PlaybackSource]
     let failure: PlaybackProviderFailure?
+}
+
+private enum PlaybackProviderTimeoutError: LocalizedError {
+    case timedOut(TimeInterval)
+
+    var errorDescription: String? {
+        switch self {
+        case .timedOut(let timeout):
+            return "Provider timed out after \(String(format: "%.1f", timeout)) seconds."
+        }
+    }
 }
