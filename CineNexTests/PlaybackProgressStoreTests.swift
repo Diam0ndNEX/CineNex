@@ -63,6 +63,24 @@ final class PlaybackProgressStoreTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
     }
 
+    func testShortMediaOnlyCompletesNearTheEnd() {
+        let (store, defaults, suite) = makeStore()
+        store.record(itemID: "short-clip", position: 5, duration: 10)
+        XCTAssertEqual(store.progress(for: "short-clip")?.position, 5)
+        store.record(itemID: "short-clip", position: 9.8, duration: 10)
+        XCTAssertNil(store.progress(for: "short-clip"))
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testVeryShortMediaDoesNotCompleteAtInitialPosition() {
+        let (store, defaults, suite) = makeStore()
+        store.record(itemID: "intro", position: 0, duration: 12)
+        XCTAssertNil(store.progress(for: "intro"))
+        store.record(itemID: "intro", position: 5, duration: 12)
+        XCTAssertEqual(store.progress(for: "intro")?.position, 5)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
     func testUnknownDurationPreservesKnownDuration() {
         let (store, defaults, suite) = makeStore()
         store.record(itemID: "sample", position: 42, duration: 100)
