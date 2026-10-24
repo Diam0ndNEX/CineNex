@@ -4,6 +4,7 @@ struct OfflineLibraryView: View {
     @StateObject private var store = OfflineDownloadStore.shared
     @State private var retryErrorMessage: String?
     @State private var showingRetryError = false
+    @State private var showingRemoveCompletedConfirmation = false
     let onPlay: (OfflineDownload, URL) -> Void
 
     private var completedDownloadCount: Int {
@@ -54,6 +55,16 @@ struct OfflineLibraryView: View {
 
                 storageSummary
 
+                if completedDownloadCount > 0 {
+                    Button(role: .destructive) {
+                        showingRemoveCompletedConfirmation = true
+                    } label: {
+                        Label("Remove All Completed Downloads", systemImage: "trash")
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                    .buttonStyle(.bordered)
+                }
+
                 if store.downloads.isEmpty {
                     ContentUnavailableView(
                         "No offline downloads",
@@ -94,6 +105,17 @@ struct OfflineLibraryView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(retryErrorMessage ?? "The download could not be restarted.")
+        }
+        .confirmationDialog(
+            "Remove all completed downloads?",
+            isPresented: $showingRemoveCompletedConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Remove \(completedDownloadCount) Downloads", role: .destructive) {
+                store.removeCompletedDownloads()
+            }
+        } message: {
+            Text("This permanently deletes downloaded media from this device. Active downloads are not affected.")
         }
     }
 }
