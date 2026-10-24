@@ -176,7 +176,7 @@ struct InternetArchivePlaybackProvider: PlaybackSourceProvider, Sendable {
                 providerName: "Internet Archive",
                 title: title,
                 url: url,
-                qualityLabel: "MP4 · Public domain/CC",
+                qualityLabel: "MP4 · open-license metadata",
                 languageCode: nil,
                 subtitleLanguages: [],
                 supportsNativePlayback: true,
@@ -194,13 +194,19 @@ struct InternetArchivePlaybackProvider: PlaybackSourceProvider, Sendable {
         }
 
         let path = components.path.lowercased()
-        guard !path.contains(".."),
+        guard components.user == nil,
+              components.password == nil,
+              components.port == nil,
               components.query == nil,
               components.fragment == nil else {
             return false
         }
-        return path.hasPrefix("/publicdomain/zero/")
-            || path.hasPrefix("/publicdomain/mark/")
+        return [
+            "/publicdomain/zero/1.0",
+            "/publicdomain/zero/1.0/",
+            "/publicdomain/mark/1.0",
+            "/publicdomain/mark/1.0/"
+        ].contains(path)
     }
 
     private static func isSupportedVideoFormat(_ format: String) -> Bool {
@@ -221,6 +227,8 @@ struct InternetArchivePlaybackProvider: PlaybackSourceProvider, Sendable {
 
     private static func isSafeIdentifier(_ identifier: String) -> Bool {
         !identifier.isEmpty
+            && identifier != "."
+            && identifier != ".."
             && identifier.count <= 180
             && identifier.range(of: "^[A-Za-z0-9._-]+$", options: .regularExpression) != nil
     }

@@ -4,6 +4,9 @@ import XCTest
 final class InternetArchivePlaybackProviderTests: XCTestCase {
     func testAcceptsOnlyPublicDomainLicenseLabels() {
         XCTAssertTrue(InternetArchivePlaybackProvider.isAllowedLicense("https://creativecommons.org/publicdomain/zero/1.0/"))
+        XCTAssertTrue(InternetArchivePlaybackProvider.isAllowedLicense("https://creativecommons.org/publicdomain/mark/1.0/"))
+        XCTAssertFalse(InternetArchivePlaybackProvider.isAllowedLicense("https://creativecommons.org/publicdomain/zero/not-a-license/"))
+        XCTAssertFalse(InternetArchivePlaybackProvider.isAllowedLicense("https://user@creativecommons.org/publicdomain/zero/1.0/"))
         XCTAssertFalse(InternetArchivePlaybackProvider.isAllowedLicense("https://creativecommons.org/licenses/by/4.0/"))
         XCTAssertFalse(InternetArchivePlaybackProvider.isAllowedLicense("https://creativecommons.org/licenses/by-sa/4.0/"))
         XCTAssertFalse(InternetArchivePlaybackProvider.isAllowedLicense("https://creativecommons.org/licenses/by-nc/4.0/"))
@@ -134,6 +137,11 @@ final class InternetArchivePlaybackProviderTests: XCTestCase {
         XCTAssertTrue(InternetArchivePlaybackProvider.sources(
             fromMetadataResponse: licensed,
             identifier: "../other",
+            request: PlaybackSourceRequest(title: "Example Film", mediaKind: .movie)
+        ).isEmpty)
+        XCTAssertTrue(InternetArchivePlaybackProvider.sources(
+            fromMetadataResponse: licensed,
+            identifier: "..",
             request: PlaybackSourceRequest(title: "Example Film", mediaKind: .movie)
         ).isEmpty)
         XCTAssertTrue(InternetArchivePlaybackProvider.sources(
