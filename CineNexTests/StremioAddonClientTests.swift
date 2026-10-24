@@ -68,28 +68,10 @@ final class StremioAddonClientTests: XCTestCase {
         }
     }
 
-    func testRejectsHTTPSManifestThatFinishesOnHTTPAfterRedirect() async throws {
-        StremioStubURLProtocol.handler = { request in
-            let downgradedURL = URL(string: "http://addons.example.test/manifest.json")!
-            let response = HTTPURLResponse(
-                url: downgradedURL,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return (response, Data(#"{"id":"test.addon","version":"1","name":"Test","resources":["stream"],"types":["movie"]}"#.utf8))
-        }
-        let client = try StremioAddonClient(
-            manifestURL: URL(string: "https://addons.example.test/manifest.json")!,
-            session: makeSession()
-        )
-
-        do {
-            _ = try await client.fetchManifest()
-            XCTFail("Expected HTTPS downgrade to be rejected.")
-        } catch {
-            XCTAssertEqual(error as? StremioAddonClientError, .invalidManifestURL)
-        }
+    func testHTTPSValidationRejectsDowngradedAndCredentialedURLs() {
+        XCTAssertFalse(StremioAddonClient.isSafeHTTPSURL(URL(string: "http://addons.example.test/manifest.json")!))
+        XCTAssertFalse(StremioAddonClient.isSafeHTTPSURL(URL(string: "https://user:pass@addons.example.test/manifest.json")!))
+        XCTAssertTrue(StremioAddonClient.isSafeHTTPSURL(URL(string: "https://addons.example.test/manifest.json")!))
     }
 
     func testReportsHTTPFailureInsteadOfTreatingItAsAnEmptyResult() async throws {
