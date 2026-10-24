@@ -176,7 +176,7 @@ final class PlaybackSourceCoordinatorTests: XCTestCase {
             for: PlaybackSourceRequest(title: "Example Film", mediaKind: .movie)
         )
 
-        XCTAssertEqual(result.sources.map(\\.providerID), ["trusted-high", "trusted-low"])
+        XCTAssertEqual(result.sources.map(\.providerID), ["trusted-high", "trusted-low"])
         XCTAssertEqual(result.sources.last?.providerName, "Trusted low")
         XCTAssertEqual(result.sources.last?.providerPriority, 1)
     }
