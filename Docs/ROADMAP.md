@@ -55,9 +55,9 @@ Acceptance: supported streams play consistently and state persists across app la
 
 ## Milestone 6 — Offline library and release readiness
 
-- Download eligibility per source.
-- Download queue, progress, pause/resume, cancellation, and storage accounting.
-- Local media playback and offline library.
+- Implemented foundation: persistent HLS download records, progress callbacks, cancellation, removal, recovery of background URL-session tasks, and local asset location lookup.
+- Initial eligibility is intentionally limited to HTTPS HLS playlists ending in .m3u8; MP4 and DRM-protected sources are not treated as offline-downloadable.
+- Next: connect download actions and offline playback to title/episode UI, then add pause/resume and storage accounting.
 - Accessibility, localization, privacy disclosures, broader tests.
 - Signed IPA workflow after signing and distribution method are configured.
 
