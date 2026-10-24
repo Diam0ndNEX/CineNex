@@ -96,8 +96,8 @@ final class LetterboxdCSVServiceTests: XCTestCase {
         )
 
         let csv = LetterboxdCSVService.makeCSV(from: [record], kind: .watchlist)
-        XCTAssertTrue(csv.contains("\\"Film, With a Line"))
-        XCTAssertTrue(csv.contains("Break\\""))
+        XCTAssertTrue(csv.contains("\"Film, With a Line"))
+        XCTAssertTrue(csv.contains("Break\""))
     }
 
     func testUnknownCSVWithoutTitleColumnFailsClearly() {
