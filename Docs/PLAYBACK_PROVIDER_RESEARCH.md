@@ -29,3 +29,16 @@ The existence of an iOS torrent downloader is not sufficient evidence that it su
 4. Test a documented, authorized add-on with public-domain content end to end.
 5. Separately prototype the torrent engine behind an interface and test authorized media before connecting it to source discovery.
 6. Only after real-device validation, add curated no-setup defaults and keep any unavoidable user configuration optional.
+
+
+## Current implementation status
+
+The provider adapter is now connected to the Watch Hub through an explicit source-search action. Users can optionally store one HTTPS manifest URL per line; those URLs are saved locally using app preferences. Search resolves the selected TMDB item to an IMDb ID, queries the configured add-ons concurrently, and lists returned direct media URLs. Direct URLs with common native media extensions use AVPlayer; other returned URLs open in the embedded web player.
+
+This is an advanced/manual fallback, not the desired zero-setup default. It is intentionally not preloaded with unverified community add-ons. The next no-setup step is to establish a maintained registry of providers whose source behavior, authorization, privacy practices, and availability can be reviewed. That registry must not silently install an arbitrary add-on supplied by a remote list.
+
+## Torrent implementation decision
+
+The first native engine candidate to investigate is libtorrent 2.x through an iOS-compatible XCFramework. Its streaming documentation distinguishes sequential downloading from time-critical piece scheduling; sequential mode alone is not the ideal playback scheduler. A small Swift-only torrent implementation was not selected because the available project evidence describes it as incomplete and lacking important performance optimizations.
+
+Before selecting libtorrent, verify its current iOS build recipe, package/license compatibility, supported architectures, and integration cost. Prototype a playback adapter with a local HTTP byte-range server or file-backed AVPlayer path, explicit piece prioritization, bounded disk cache, and deterministic cleanup. Do not add the binary dependency until a reproducible CI build and authorized public-domain end-to-end test pass.
