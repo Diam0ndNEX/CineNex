@@ -33,7 +33,7 @@ struct TraktHistoryMovie: Decodable, Identifiable, Hashable {
         }
         let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-        return "title-\(normalized)-\(year ?? 0)"        return "title-\(title.lowercased())-\(year ?? 0)"
+        return "title-\(normalized)-\(year ?? 0)"
     }
 
     static func decodeList(_ data: Data) throws -> [TraktHistoryMovie] {
