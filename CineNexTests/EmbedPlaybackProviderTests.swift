@@ -73,6 +73,19 @@ final class EmbedPlaybackProviderTests: XCTestCase {
         ))
     }
 
+    func testProviderRejectsPathTraversalTemplate() {
+        let provider = EmbedPlaybackProvider(
+            id: "unsafe",
+            displayName: "Unsafe",
+            baseURL: URL(string: "https://media.example.test/embed/")!,
+            priority: 1,
+            moviePath: "../{id}"
+        )
+        XCTAssertNil(provider.embedURL(
+            for: PlaybackSourceRequest(title: "Example Movie", mediaKind: .movie, tmdbID: 42)
+        ))
+    }
+
     func testProviderRejectsUnsupportedMediaKind() {
         let provider = EmbedPlaybackProvider(
             id: "movie-only",
