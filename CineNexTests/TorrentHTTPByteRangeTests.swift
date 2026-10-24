@@ -53,7 +53,7 @@ final class TorrentHTTPByteRangeTests: XCTestCase {
     }
 
     func testRejectsUnsatisfiableRanges() {
-        let invalidHeaders = ["bytes=10-10", "bytes=9-2", "bytes=-0", "bytes=0-1"]
+        let invalidHeaders = ["bytes=10-10", "bytes=10-11", "bytes=9-2", "bytes=-0"]
         for header in invalidHeaders {
             XCTAssertThrowsError(try TorrentHTTPByteRange.parse(header, totalLength: 10), header)
         }
