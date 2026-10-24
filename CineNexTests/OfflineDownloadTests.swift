@@ -47,6 +47,28 @@ final class OfflineDownloadTests: XCTestCase {
         XCTAssertEqual(decoded.progress, 0.45)
     }
 
+    func testPausedDownloadStatusRoundTripsThroughCodable() throws {
+        let date = Date(timeIntervalSince1970: 1_760_000_000)
+        let record = OfflineDownload(
+            id: "download-paused",
+            title: "Paused Episode",
+            sourceURL: URL(string: "https://media.example.org/paused.m3u8")!,
+            createdAt: date,
+            updatedAt: date,
+            status: .paused,
+            progress: 0.45,
+            localDirectoryName: nil,
+            errorMessage: nil
+        )
+
+        let encoded = try JSONEncoder().encode(record)
+        let decoded = try JSONDecoder().decode(OfflineDownload.self, from: encoded)
+
+        XCTAssertEqual(decoded, record)
+        XCTAssertEqual(decoded.status, .paused)
+        XCTAssertEqual(decoded.progress, 0.45)
+    }
+
     func testDirectorySizeCountsRegularFilesRecursively() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
