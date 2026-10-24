@@ -271,7 +271,7 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
         persist()
     }
 
-    func urlSession(
+    nonisolated func urlSession(
         _ session: URLSession,
         assetDownloadTask: AVAssetDownloadTask,
         didLoad timeRange: CMTimeRange,
@@ -286,19 +286,34 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
         let expectedSeconds = CMTimeGetSeconds(expectedTimeRange.duration)
         guard expectedSeconds.isFinite, expectedSeconds > 0 else { return }
         let progress = min(max(loadedSeconds / expectedSeconds, 0), 0.99)
-        updateRecord(id: id) { record in
-            guard record.status == .downloading else { return }
-            record.progress = progress
+        Task { @MainActor [weak self] in
+            self?.updateRecord(id: id) { record in
+                guard record.status == .downloading else { return }
+                record.progress = progress
+            }
         }
     }
 
-    func urlSession(
+    nonisolated func urlSession(
         _ session: URLSession,
         assetDownloadTask: AVAssetDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
-        guard let id = assetDownloadTask.taskDescription,
-              downloads.contains(where: { $0.id == id }) else { return }
+        guard let id = assetDownloadTask.taskDescription else { return }
+        Task { @MainActor [weak self] in
+            self?.finishDownload(id: id, location: location)
+        }
+    }
+
+    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let id = task.taskDescription, let error else { return }
+        Task { @MainActor [weak self] in
+            self?.completeDownload(id: id, error: error)
+        }
+    }
+
+    private func finishDownload(id: String, location: URL) {
+        guard downloads.contains(where: { $0.id == id }) else { return }
 
         do {
             try prepareDownloadsDirectory()
@@ -317,14 +332,13 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
         } catch {
             updateRecord(id: id) { record in
                 record.status = .failed
-                record.errorMessage = "The downloaded media could not be saved locally: \(error.localizedDescription)"
+                record.errorMessage = "The downloaded media could not be saved locally: \\(error.localizedDescription)"
             }
             tasks[id] = nil
         }
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let id = task.taskDescription, let error else { return }
+    private func completeDownload(id: String, error: Error) {
         if (error as NSError).code == NSURLErrorCancelled {
             updateRecord(id: id) { record in
                 if record.status != .cancelled {
