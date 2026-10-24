@@ -201,8 +201,6 @@ struct InternetArchivePlaybackProvider: PlaybackSourceProvider, Sendable {
         }
         return path.hasPrefix("/publicdomain/zero/")
             || path.hasPrefix("/publicdomain/mark/")
-            || path.hasPrefix("/licenses/by/")
-            || path.hasPrefix("/licenses/by-sa/")
     }
 
     private static func isSupportedVideoFormat(_ format: String) -> Bool {
