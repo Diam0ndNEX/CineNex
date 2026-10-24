@@ -145,6 +145,8 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
             failures = aggregated.failures
         }
 
+        try Task.checkCancellation()
+
         batches.sort { $0.index < $1.index }
         let sources = batches.flatMap { batch in
             Self.mapSources(
