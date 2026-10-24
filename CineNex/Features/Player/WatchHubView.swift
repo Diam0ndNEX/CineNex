@@ -308,7 +308,10 @@ private struct EmbedWebPlaybackView: View {
                     } description: {
                         Text("This source may be unavailable or incompatible with iOS. Return to the source list and try another provider.")
                     } actions: {
-                        Button("Try Again") {\n                            loadFailed = false\n                            reloadID = UUID()\n                        }
+                        Button("Try Again") {
+                            loadFailed = false
+                            reloadID = UUID()
+                        }
                             .buttonStyle(.borderedProminent)
                     }
                 } else {
