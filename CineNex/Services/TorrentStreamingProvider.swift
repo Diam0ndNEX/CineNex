@@ -152,15 +152,16 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
         let port: UInt16 = try await withCheckedThrowingContinuation { continuation in
             let gate = TorrentContinuationGate()
             newListener.stateUpdateHandler = { state in
-                guard gate.claim() else { return }
                 switch state {
                 case .ready:
+                    guard gate.claim() else { return }
                     if let port = newListener.port?.rawValue {
                         continuation.resume(returning: port)
                     } else {
                         continuation.resume(throwing: TorrentStreamingError.listenerUnavailable)
                     }
                 case .failed, .cancelled:
+                    guard gate.claim() else { return }
                     continuation.resume(throwing: TorrentStreamingError.listenerUnavailable)
                 default:
                     break
