@@ -22,10 +22,27 @@ struct OfflineDownload: Codable, Identifiable, Equatable {
     var localDirectoryName: String?
     var errorMessage: String?
 
+    func localDirectoryURL(in downloadsDirectory: URL) -> URL? {
+        guard let localDirectoryName,
+              localDirectoryName == "\(id).movpkg",
+              URL(fileURLWithPath: localDirectoryName).lastPathComponent == localDirectoryName else {
+            return nil
+        }
+
+        let root = downloadsDirectory.standardizedFileURL
+        let url = root.appendingPathComponent(localDirectoryName, isDirectory: true).standardizedFileURL
+        guard url.deletingLastPathComponent() == root else { return nil }
+        return url
+    }
+
     func localAssetURL(in downloadsDirectory: URL) -> URL? {
-        guard status == .completed, let localDirectoryName else { return nil }
-        let url = downloadsDirectory.appendingPathComponent(localDirectoryName, isDirectory: true)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        guard status == .completed,
+              let url = localDirectoryURL(in: downloadsDirectory),
+              let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              attributes[.type] as? FileAttributeType == .typeDirectory else {
+            return nil
+        }
+        return url
     }
 }
 
@@ -217,8 +234,7 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
         tasks[id] = nil
 
         if let record = downloads.first(where: { $0.id == id }),
-           let directoryName = record.localDirectoryName {
-            let localURL = downloadsDirectory.appendingPathComponent(directoryName, isDirectory: true)
+           let localURL = record.localDirectoryURL(in: downloadsDirectory) {
             try? FileManager.default.removeItem(at: localURL)
         }
 
@@ -234,8 +250,7 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
         for record in completedRecords {
             tasks[record.id]?.cancel()
             tasks[record.id] = nil
-            if let directoryName = record.localDirectoryName {
-                let localURL = downloadsDirectory.appendingPathComponent(directoryName, isDirectory: true)
+            if let localURL = record.localDirectoryURL(in: downloadsDirectory) {
                 try? FileManager.default.removeItem(at: localURL)
             }
         }
