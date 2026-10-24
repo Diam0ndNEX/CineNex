@@ -124,6 +124,7 @@ struct PlaybackSourceCoordinator: Sendable {
                         return ProviderSearchResult(
                             providerID: provider.id,
                             providerName: provider.displayName,
+                            providerPriority: provider.priority,
                             sources: sources,
                             failure: nil
                         )
@@ -131,6 +132,7 @@ struct PlaybackSourceCoordinator: Sendable {
                         return ProviderSearchResult(
                             providerID: provider.id,
                             providerName: provider.displayName,
+                            providerPriority: provider.priority,
                             sources: [],
                             failure: PlaybackProviderFailure(
                                 providerID: provider.id,
@@ -156,21 +158,19 @@ struct PlaybackSourceCoordinator: Sendable {
             if let failure = result.failure {
                 failures.append(failure)
             }
-            for var source in result.sources where source.isValid {
-                if source.providerID != result.providerID {
-                    source = PlaybackSource(
-                        id: source.id,
-                        providerID: result.providerID,
-                        providerName: result.providerName,
-                        title: source.title,
-                        url: source.url,
-                        qualityLabel: source.qualityLabel,
-                        languageCode: source.languageCode,
-                        subtitleLanguages: source.subtitleLanguages,
-                        supportsNativePlayback: source.supportsNativePlayback,
-                        providerPriority: source.providerPriority
-                    )
-                }
+            for returnedSource in result.sources where returnedSource.isValid {
+                let source = PlaybackSource(
+                    id: returnedSource.id,
+                    providerID: result.providerID,
+                    providerName: result.providerName,
+                    title: returnedSource.title,
+                    url: returnedSource.url,
+                    qualityLabel: returnedSource.qualityLabel,
+                    languageCode: returnedSource.languageCode,
+                    subtitleLanguages: returnedSource.subtitleLanguages,
+                    supportsNativePlayback: returnedSource.supportsNativePlayback,
+                    providerPriority: result.providerPriority
+                )
 
                 let key = source.url.absoluteURL.standardized.absoluteString
                 if let existing = uniqueSources[key] {
@@ -210,6 +210,7 @@ struct PlaybackSourceCoordinator: Sendable {
 private struct ProviderSearchResult: Sendable {
     let providerID: String
     let providerName: String
+    let providerPriority: Int
     let sources: [PlaybackSource]
     let failure: PlaybackProviderFailure?
 }
