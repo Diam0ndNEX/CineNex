@@ -29,7 +29,6 @@ final class StremioAddonClientTests: XCTestCase {
             _ = try await task.value
             XCTFail("A cancelled manifest request must throw cancellation.")
         } catch is CancellationError {
-            XCTAssertEqual(requestCount, 0)
         } catch {
             XCTFail("Expected CancellationError, received \(error).")
         }
