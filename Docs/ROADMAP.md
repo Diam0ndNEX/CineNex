@@ -46,19 +46,20 @@ Acceptance: search and details show live metadata and recover from network/API f
 
 ## Milestone 5 — External streaming providers and source resolution
 
-**Product requirement: CineNex must not require the user to host media or run a personal media server.** Playback sources should be discovered and resolved through supported external integrations, embedded APIs, and compatible community add-ons. Jellyfin, Plex, and Emby may be optional integrations in the future, but they are not the core provider strategy.
+**Product requirement: CineNex must work as an automatically integrated app, not as a toolkit users must assemble.** Users should not have to host media, run a personal media server, find provider URLs, install/configure add-ons manually, or enter personal API tokens for basic source discovery wherever a supported integration can avoid it. Playback sources should be discovered and resolved by direct in-app API integrations (“embedded APIs”), compatible add-on protocols, and other viable external provider integrations. Jellyfin, Plex, and Emby may be optional integrations in the future, but they are not the core provider strategy.
 
 - Audit the current playback-provider abstractions and coordinator; clearly distinguish working integrations from interfaces, mock/demo providers, and unimplemented adapters.
-- Research the Stremio add-on ecosystem and implement a real, testable integration where API compatibility, add-on manifests, metadata mapping, and iOS constraints permit.
+- **Prioritize direct, embedded API integrations:** implement provider API clients inside CineNex wherever the provider exposes a documented and compatible API. The app should handle provider discovery, requests, response parsing, source normalization, and error recovery automatically rather than asking users to wire services together.
+- Research the Stremio add-on ecosystem and implement a real, testable integration where API compatibility, add-on manifests, metadata mapping, and iOS constraints permit. Prefer built-in discovery of compatible add-ons or curated defaults over requiring users to paste add-on URLs; only expose manual setup when genuinely necessary.
 - Investigate Torrential and other relevant torrent-based integrations, verifying their actual APIs, licensing/usage constraints, iOS feasibility, and whether they can produce streams that CineNex can play. Do not assume an Android implementation can be embedded directly in iOS.
 - Evaluate additional compatible source integrations to broaden movie and series coverage without requiring a user-operated server.
-- Implement provider discovery and stream resolution with timeouts, cancellation, source deduplication, provider identity and priority enforcement, and useful errors for unavailable or unsupported sources.
-- Keep catalog metadata, add-on discovery, stream resolution, and playback as separate layers. A title appearing in a catalog or a provider returning a URL does not by itself mean playback will work.
+- Implement automatic provider discovery and stream resolution with timeouts, cancellation, source deduplication, provider identity and priority enforcement, and useful errors for unavailable or unsupported sources. Run compatible providers through one native CineNex experience.
+- Keep catalog metadata, embedded provider APIs, add-on discovery, stream resolution, and playback as separate layers. A title appearing in a catalog or a provider returning a URL does not by itself mean playback will work.
 - Validate resolved source formats, HTTP headers/authentication requirements, redirects, DRM or other access restrictions, and AVPlayer compatibility before presenting a source as playable.
-- Make integrations opt-in where required, handle unavailable or incompatible add-ons gracefully, and never claim that a source is verified until it has passed the relevant checks.
-- Document any required user configuration honestly. Do not make personal API tokens, self-hosted servers, or manual add-on setup mandatory for basic app use unless a specific integration genuinely requires it.
+- Make integrations opt-in only when user consent, provider policy, or account authorization requires it; handle unavailable or incompatible providers gracefully, and never claim that a source is verified until it has passed the relevant checks.
+- Avoid unnecessary setup: do not require personal API tokens, self-hosted servers, or manual add-on configuration for basic app use when a supported embedded integration or safe default can provide the functionality. Clearly explain any unavoidable account sign-in or configuration.
 
-Acceptance: at least one real external provider integration is exercised end-to-end with tests and documented limitations; source discovery and resolution feed the native player; failures are recoverable; no personal media server is required. Provider coverage is measured by verified working integrations, not by the number of declared provider interfaces.
+Acceptance: at least one real embedded API integration and one compatible external-provider/add-on path are exercised end-to-end with tests and documented limitations; provider discovery and source resolution happen automatically and feed the native player; failures are recoverable; no personal media server is required. Provider coverage is measured by verified working integrations, not by the number of declared provider interfaces.
 
 ## Milestone 6 — Playback quality
 
