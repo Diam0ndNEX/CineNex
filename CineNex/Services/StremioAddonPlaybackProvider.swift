@@ -145,10 +145,6 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
             failures = aggregated.failures
         }
 
-        if batches.isEmpty, !failures.isEmpty {
-            throw StremioAddonClientError.transport(failures.joined(separator: " "))
-        }
-
         batches.sort { $0.index < $1.index }
         let sources = batches.flatMap { batch in
             Self.mapSources(
@@ -161,9 +157,12 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
         }
         var seenDescriptors = Set<String>()
         let descriptors = batches.flatMap { batch in
-            batch.entries.compactMap(StremioTorrentDescriptor.init(stream:))
+            batch.entries.compactMap { StremioTorrentDescriptor(stream: $0) }
         }.filter { seenDescriptors.insert($0.id).inserted }
 
+        if sources.isEmpty, descriptors.isEmpty, !failures.isEmpty {
+            throw StremioAddonClientError.transport(failures.joined(separator: " "))
+        }
         return StremioAddonDiscovery(sources: sources, torrentDescriptors: descriptors)
     }
 
