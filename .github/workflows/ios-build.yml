@@ -40,6 +40,9 @@ jobs:
 
       - name: Build patched XITRIX wrapper for iOS and simulator
         run: |
+          export BOOST_ROOT="$(brew --prefix boost)"
+          export BOOST_INCLUDEDIR="$BOOST_ROOT/include"
+          test -f "$BOOST_INCLUDEDIR/boost/version.hpp"
           bash Thirdparty/LibTorrent-Swift/make.sh
           xcodebuild \
             -project Thirdparty/LibTorrent-Swift/LibTorrent.xcodeproj \
