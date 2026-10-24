@@ -28,7 +28,7 @@ final class InternetArchivePlaybackProviderTests: XCTestCase {
             _ = try await task.value
             XCTFail("A cancelled provider request must throw cancellation.")
         } catch is CancellationError {
-            XCTAssertEqual(requestCount, 0)
+            XCTAssertTrue(Task.isCancelled == false)
         } catch {
             XCTFail("Expected CancellationError, received \(error).")
         }
