@@ -7,15 +7,18 @@ struct WatchHubView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("cinenex.defaultPlaybackProvider") private var defaultProviderID = "smart"
     @State private var selectedProvider: ResolvedEmbedSource?
-    @State private var showingPlayer = false
     @State private var availableProviders: [ResolvedEmbedSource] = []
+    @State private var seasonNumber = 1
+    @State private var episodeNumber = 1
 
     private var request: PlaybackSourceRequest {
         PlaybackSourceRequest(
             title: item.title,
             mediaKind: item.kind == .movie ? .movie : .series,
             tmdbID: item.metadataProvider == "tmdb" ? item.externalID : nil,
-            releaseYear: item.year > 0 ? item.year : nil
+            releaseYear: item.year > 0 ? item.year : nil,
+            seasonNumber: item.kind == .series ? seasonNumber : nil,
+            episodeNumber: item.kind == .series ? episodeNumber : nil
         )
     }
 
@@ -25,6 +28,7 @@ struct WatchHubView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     hero
                     quickActions
+                    episodeSelection
                     providerSection
                     recommendationsPlaceholder
                 }
@@ -123,18 +127,38 @@ struct WatchHubView: View {
         }
     }
 
+    private var episodeSelection: some View {
+        Group {
+            if item.kind == .series {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Choose episode")
+                        .font(.title3.bold())
+                    Stepper("Season \(seasonNumber)", value: $seasonNumber, in: 1...99)
+                        .onChange(of: seasonNumber) { _, _ in resolveSources() }
+                    Stepper("Episode \(episodeNumber)", value: $episodeNumber, in: 1...999)
+                        .onChange(of: episodeNumber) { _, _ in resolveSources() }
+                    Text("Select the episode before opening a source. Episode metadata is not yet synced from the catalog here.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(16)
+                .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
+            }
+        }
+    }
+
     private var providerSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Source options")
                         .font(.title3.bold())
-                    Text("Choose a source or set your default. Availability is confirmed when the player loads.")
+                    Text("These are unverified provider URL candidates, not live availability checks.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("\(availableProviders.count)")
+                Text("\(availableProviders.count) candidates")
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -143,11 +167,11 @@ struct WatchHubView: View {
 
             if availableProviders.isEmpty {
                 ContentUnavailableView(
-                    "No embed sources available",
+                    "No compatible candidates",
                     systemImage: "dot.radiowaves.left.and.right",
                     description: Text(request.tmdbID == nil
                         ? "This title needs a verified TMDB identifier before compatible sources can be requested."
-                        : "No configured source could create a valid embed URL for this title. Try a title from the live TMDB catalog.")
+                        : "No configured candidate could create an embed URL for this title. Try a title with a TMDB identifier.")
                 )
                 .padding(.vertical, 8)
             } else {
@@ -172,7 +196,7 @@ struct WatchHubView: View {
                                             .foregroundStyle(Color.cineNexAccent)
                                     }
                                 }
-                                Text("Experimental web embed · availability not verified")
+                                Text("Experimental candidate · not checked live")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
