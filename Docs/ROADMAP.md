@@ -59,7 +59,8 @@ Acceptance: supported streams play consistently and state persists across app la
 - Initial eligibility is intentionally limited to HTTPS HLS playlists ending in .m3u8; MP4 and DRM-protected sources are not treated as offline-downloadable.
 - Completed: connect eligible HLS download actions to title details, play completed downloads from the offline library, show recursive local storage usage, and recover when a completed asset disappears.
 - Completed: add pause/resume controls for active HLS downloads, preserve paused state when reconnecting background tasks, and restart cleanly if a paused task is no longer available.
-- Next: add storage-management options.
+- Completed: remove all completed offline downloads in one confirmed action while preserving queued, active, and paused downloads.
+- Next: accessibility, localization, privacy disclosures, broader tests.
 - Accessibility, localization, privacy disclosures, broader tests.
 - Signed IPA workflow after signing and distribution method are configured.
 
