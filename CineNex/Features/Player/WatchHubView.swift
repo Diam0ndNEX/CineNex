@@ -704,6 +704,7 @@ struct WatchHubView: View {
             return
         }
 
+        await TorrentPlaybackSessionRegistry.shared.stopAll()
         searchingAddonSources = true
         addonSearchMessage = nil
         defer { searchingAddonSources = false }
@@ -756,6 +757,7 @@ struct WatchHubView: View {
                 addonSearchMessage = "No playable direct URLs or valid torrent descriptors were returned. Add-ons may be unavailable or may require authentication."
             }
         } catch is CancellationError {
+            await TorrentPlaybackSessionRegistry.shared.stopAll()
             addonSearchMessage = "Source search was cancelled."
         } catch {
             addonSearchMessage = error.localizedDescription

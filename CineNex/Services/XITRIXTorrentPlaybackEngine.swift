@@ -56,13 +56,13 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         guard request.isValid else { throw TorrentStreamingError.invalidRequest }
         if let preparedFile { return [preparedFile] }
 
-        guard let applicationSupport = FileManager.default.urls(
+        guard let cacheDirectory = FileManager.default.urls(
             for: .cachesDirectory,
             in: .userDomainMask
         ).first else {
             throw TorrentStreamingError.engineUnavailable
         }
-        let root = applicationSupport
+        let root = cacheDirectory
             .appendingPathComponent("CineNex", isDirectory: true)
             .appendingPathComponent("Torrents", isDirectory: true)
             .appendingPathComponent(descriptor.infoHash, isDirectory: true)
@@ -124,9 +124,14 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
               selectedFile.size <= UInt64(Int64.max),
               selectedFile.fileOffset <= UInt64(Int64.max),
               snapshot.pieceLength > 0,
-              let contentType = XITRIXTorrentFileSupport.contentType(for: selectedFile.path),
-              let fileURL = XITRIXTorrentFileSupport.safeFileURL(root: root, relativePath: selectedFile.path) else {
+              let contentType = XITRIXTorrentFileSupport.contentType(for: selectedFile.path) else {
             throw TorrentStreamingError.invalidTorrentLayout
+        }
+        guard let fileURL = XITRIXTorrentFileSupport.safeFileURL(
+            root: root,
+            relativePath: selectedFile.path
+        ) else {
+            throw TorrentStreamingError.unsafeFilePath
         }
 
         handle.setAllFilesPriority(.dontDownload)
