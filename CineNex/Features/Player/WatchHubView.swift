@@ -162,7 +162,7 @@ struct WatchHubView: View {
                     Text(source.provider.displayName).tag(source.provider.id)
                 }
                 if item.kind == .movie {
-                    Text("Internet Archive · public-domain/CC0").tag("internet-archive")
+                    Text("Internet Archive · open-license metadata").tag("internet-archive")
                 }
             }
             .pickerStyle(.menu)
