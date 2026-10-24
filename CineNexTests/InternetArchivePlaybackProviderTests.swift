@@ -2,10 +2,10 @@ import XCTest
 @testable import CineNex
 
 final class InternetArchivePlaybackProviderTests: XCTestCase {
-    func testAcceptsPublicDomainAndAttributionLicensesOnly() {
+    func testAcceptsOnlyPublicDomainLicenseLabels() {
         XCTAssertTrue(InternetArchivePlaybackProvider.isAllowedLicense("https://creativecommons.org/publicdomain/zero/1.0/"))
-        XCTAssertTrue(InternetArchivePlaybackProvider.isAllowedLicense("https://creativecommons.org/licenses/by/4.0/"))
-        XCTAssertTrue(InternetArchivePlaybackProvider.isAllowedLicense("https://creativecommons.org/licenses/by-sa/4.0/"))
+        XCTAssertFalse(InternetArchivePlaybackProvider.isAllowedLicense("https://creativecommons.org/licenses/by/4.0/"))
+        XCTAssertFalse(InternetArchivePlaybackProvider.isAllowedLicense("https://creativecommons.org/licenses/by-sa/4.0/"))
         XCTAssertFalse(InternetArchivePlaybackProvider.isAllowedLicense("https://creativecommons.org/licenses/by-nc/4.0/"))
         XCTAssertFalse(InternetArchivePlaybackProvider.isAllowedLicense("https://creativecommons.org/licenses/by-nd/4.0/"))
         XCTAssertFalse(InternetArchivePlaybackProvider.isAllowedLicense("http://creativecommons.org/licenses/by/4.0/"))
