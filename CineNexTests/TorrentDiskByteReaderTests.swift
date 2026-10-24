@@ -15,6 +15,12 @@ final class TorrentDiskByteReaderTests: XCTestCase {
         }
     }
 
+    private actor SlowAvailability: TorrentRangeAvailability {
+        func waitUntilAvailable(offset: Int64, length: Int64) async throws {
+            try await Task.sleep(for: .seconds(30))
+        }
+    }
+
     private actor DelayedAvailability: TorrentRangeAvailability {
         private var continuation: CheckedContinuation<Void, Error>?
         private var hasBeenReleased = false
@@ -118,6 +124,45 @@ final class TorrentDiskByteReaderTests: XCTestCase {
         ) {
             XCTAssertEqual($0 as? TorrentDiskByteReaderError, .unavailableFile)
         }
+    }
+
+ 
+    func testCancellationWhileWaitingForBytesPropagates() async throws {
+        let url = try makeTemporaryFile(Data("cancel".utf8))
+        defer { try? FileManager.default.removeItem(at: url) }
+        let reader = try TorrentDiskByteReader(
+            fileURL: url,
+            expectedLength: 6,
+            availability: SlowAvailability()
+        )
+        let readTask = Task { try await reader.read(offset: 0, length: 4) }
+        try await Task.sleep(for: .milliseconds(40))
+        readTask.cancel()
+        do {
+            _ = try await readTask.value
+            XCTFail("A cancelled availability wait must not return bytes.")
+        } catch is CancellationError {
+            XCTAssertTrue(true)
+        }
+        try await reader.close()
+    }
+
+    func testShortReadFailsInsteadOfReturningIncompleteData() async throws {
+        let url = try makeTemporaryFile(Data("complete".utf8))
+        defer { try? FileManager.default.removeItem(at: url) }
+        let reader = try TorrentDiskByteReader(
+            fileURL: url,
+            expectedLength: 8,
+            availability: ImmediateAvailability()
+        )
+        try Data("bad".utf8).write(to: url, options: .atomic)
+        do {
+            _ = try await reader.read(offset: 0, length: 8)
+            XCTFail("A short disk read must fail.")
+        } catch {
+            XCTAssertEqual(error as? TorrentDiskByteReaderError, .shortRead(expected: 8, actual: 3))
+        }
+        try await reader.close()
     }
 
     func testClosedReaderRejectsFurtherReads() async throws {
