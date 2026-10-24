@@ -136,7 +136,7 @@ struct WatchHubView: View {
                     .padding(.vertical, 15)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(availableProviders.isEmpty && internetArchiveSources.isEmpty && !internetArchiveSourcesLoading && item.streamURL == nil)
+            .disabled(availableProviders.isEmpty && internetArchiveSources.isEmpty && item.streamURL == nil)
             .accessibilityHint("Starts the preferred available playback source")
 
             Picker("Default source", selection: $defaultProviderID) {
