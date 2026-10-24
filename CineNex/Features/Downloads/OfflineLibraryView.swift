@@ -1,11 +1,66 @@
 import SwiftUI
 
+enum OfflineDownloadFilter: String, CaseIterable, Identifiable {
+    case all
+    case saved
+    case active
+    case issues
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "All"
+        case .saved: return "Saved"
+        case .active: return "Active"
+        case .issues: return "Issues"
+        }
+    }
+
+    func includes(_ download: OfflineDownload) -> Bool {
+        switch self {
+        case .all:
+            return true
+        case .saved:
+            return download.status == .completed
+        case .active:
+            return download.status == .queued || download.status == .downloading || download.status == .paused
+        case .issues:
+            return download.status == .failed || download.status == .cancelled
+        }
+    }
+}
+
 struct OfflineLibraryView: View {
     @StateObject private var store = OfflineDownloadStore.shared
+    @State private var searchText = ""
+    @State private var selectedFilter: OfflineDownloadFilter = .all
     @State private var retryErrorMessage: String?
     @State private var showingRetryError = false
     @State private var showingRemoveCompletedConfirmation = false
     let onPlay: (OfflineDownload, URL) -> Void
+
+    private var filteredDownloads: [OfflineDownload] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return store.downloads.filter { download in
+            selectedFilter.includes(download) &&
+                (query.isEmpty ||
+                 download.title.localizedCaseInsensitiveContains(query) ||
+                 (download.errorMessage?.localizedCaseInsensitiveContains(query) ?? false))
+        }
+    }
+
+    private var activeDownloadCount: Int {
+        store.downloads.filter { OfflineDownloadFilter.active.includes($0) }.count
+    }
+
+    private var issueDownloadCount: Int {
+        store.downloads.filter { OfflineDownloadFilter.issues.includes($0) }.count
+    }
+
+    private var savedDownloadCount: Int {
+        store.downloads.filter { OfflineDownloadFilter.saved.includes($0) }.count
+    }
 
     private var completedDownloadCount: Int {
         store.downloads.filter { download in
@@ -74,24 +129,80 @@ struct OfflineLibraryView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 45)
                 } else {
-                    ForEach(store.downloads) { download in
-                        OfflineDownloadRow(
-                            download: download,
-                            localURL: store.localPlaybackURL(for: download.id),
-                            onPlay: { url in onPlay(download, url) },
-                            onPause: { store.pause(id: download.id) },
-                            onResume: { store.resume(id: download.id) },
-                            onCancel: { store.cancel(id: download.id) },
-                            onRemove: { store.remove(id: download.id) },
-                            onRetry: {
-                                do {
-                                    try store.enqueue(title: download.title, sourceURL: download.sourceURL)
-                                } catch {
-                                    retryErrorMessage = error.localizedDescription
-                                    showingRetryError = true
+                    VStack(spacing: 12) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundStyle(.secondary)
+                            TextField("Search downloads", text: $searchText)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .accessibilityLabel("Search offline downloads")
+                            if !searchText.isEmpty {
+                                Button {
+                                    searchText = ""
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
                                 }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Clear download search")
                             }
+                        }
+                        .padding(12)
+                        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
+
+                        Picker("Filter downloads", selection: $selectedFilter) {
+                            Text("All").tag(OfflineDownloadFilter.all)
+                            Text("Saved").tag(OfflineDownloadFilter.saved)
+                            Text("Active").tag(OfflineDownloadFilter.active)
+                            Text("Issues").tag(OfflineDownloadFilter.issues)
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityLabel("Filter offline downloads")
+
+                        HStack {
+                            Text("\(filteredDownloads.count) of \(store.downloads.count) downloads")
+                            Spacer()
+                            if selectedFilter != .all || !searchText.isEmpty {
+                                Button("Reset filters") {
+                                    selectedFilter = .all
+                                    searchText = ""
+                                }
+                                .font(.caption.weight(.semibold))
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+
+                    if filteredDownloads.isEmpty {
+                        ContentUnavailableView(
+                            "No matching downloads",
+                            systemImage: "line.3.horizontal.decrease.circle",
+                            description: Text("Try another search or filter to find your downloads.")
                         )
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 24)
+                    } else {
+                        ForEach(filteredDownloads) { download in
+                            OfflineDownloadRow(
+                                download: download,
+                                localURL: store.localPlaybackURL(for: download.id),
+                                onPlay: { url in onPlay(download, url) },
+                                onPause: { store.pause(id: download.id) },
+                                onResume: { store.resume(id: download.id) },
+                                onCancel: { store.cancel(id: download.id) },
+                                onRemove: { store.remove(id: download.id) },
+                                onRetry: {
+                                    do {
+                                        try store.enqueue(title: download.title, sourceURL: download.sourceURL)
+                                    } catch {
+                                        retryErrorMessage = error.localizedDescription
+                                        showingRetryError = true
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }

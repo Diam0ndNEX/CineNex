@@ -122,7 +122,10 @@ struct PlaybackSourceCoordinator: Sendable {
 
         let providers = self.providers
         let timeout = providerTimeout
-        let results = await withTaskGroup(of: ProviderSearchResult.self, returning: [ProviderSearchResult].self) { group in
+        let results = try await withThrowingTaskGroup(
+            of: ProviderSearchResult.self,
+            returning: [ProviderSearchResult].self
+        ) { group in
             for provider in providers {
                 group.addTask {
                     do {
@@ -134,7 +137,12 @@ struct PlaybackSourceCoordinator: Sendable {
                             sources: sources,
                             failure: nil
                         )
+                    } catch is CancellationError {
+                        throw CancellationError()
                     } catch {
+                        if Task.isCancelled {
+                            throw CancellationError()
+                        }
                         return ProviderSearchResult(
                             providerID: provider.id,
                             providerName: provider.displayName,
@@ -151,7 +159,7 @@ struct PlaybackSourceCoordinator: Sendable {
             }
 
             var collected: [ProviderSearchResult] = []
-            for await result in group {
+            for try await result in group {
                 collected.append(result)
             }
             return collected
