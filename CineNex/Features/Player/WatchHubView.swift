@@ -52,7 +52,7 @@ struct WatchHubView: View {
                 }
             }
             .sheet(item: $selectedProvider) { provider in
-                EmbedWebPlaybackView(title: item.title, url: provider.url)
+                EmbedWebPlaybackView(title: item.title, providerID: provider.provider.id, providerName: provider.provider.displayName, url: provider.url)
             }
             .task(id: item.id) {
                 resolveSources()
@@ -472,11 +472,27 @@ private struct ResolvedEmbedSource: Identifiable, Equatable {
 
 private struct EmbedWebPlaybackView: View {
     let title: String
+    let providerID: String
+    let providerName: String
     let url: URL
 
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(PlaybackCleanerPolicy.enabledStorageKey) private var cleanerGloballyEnabled = true
+    @AppStorage(PlaybackCleanerPolicy.disabledProvidersStorageKey) private var disabledProviderStorage = ""
     @State private var loadFailed = false
     @State private var reloadID = UUID()
+
+    private var disabledProviderIDs: Set<String> {
+        PlaybackCleanerPolicy.disabledProviderIDs(from: disabledProviderStorage)
+    }
+
+    private var cleanerEnabled: Bool {
+        PlaybackCleanerPolicy.isEnabled(
+            globallyEnabled: cleanerGloballyEnabled,
+            providerID: providerID,
+            disabledProviderIDs: disabledProviderIDs
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -491,10 +507,10 @@ private struct EmbedWebPlaybackView: View {
                             loadFailed = false
                             reloadID = UUID()
                         }
-                            .buttonStyle(.borderedProminent)
+                        .buttonStyle(.borderedProminent)
                     }
                 } else {
-                    EmbedWebView(url: url, onFailure: { loadFailed = true })
+                    EmbedWebView(url: url, cleanerEnabled: cleanerEnabled, onFailure: { loadFailed = true })
                         .id(reloadID)
                         .background(.black)
                         .ignoresSafeArea(edges: .bottom)
@@ -506,7 +522,31 @@ private struct EmbedWebPlaybackView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Sources") { dismiss() }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Menu {
+                        Toggle("Block ads & trackers", isOn: $cleanerGloballyEnabled)
+                        Toggle(
+                            "Disable for this provider",
+                            isOn: Binding(
+                                get: { disabledProviderIDs.contains(providerID) },
+                                set: { isDisabled in
+                                    var updated = disabledProviderIDs
+                                    if isDisabled {
+                                        updated.insert(providerID)
+                                    } else {
+                                        updated.remove(providerID)
+                                    }
+                                    disabledProviderStorage = PlaybackCleanerPolicy.storedValue(for: updated)
+                                }
+                            )
+                        )
+                        Text("Filters known ad networks and rejects pop-up windows. Some providers may need filtering disabled.")
+                            .font(.caption)
+                    } label: {
+                        Image(systemName: cleanerEnabled ? "shield.lefthalf.filled" : "shield.slash")
+                    }
+                    .accessibilityLabel("Playback Cleaner settings")
+
                     Button {
                         loadFailed = false
                         reloadID = UUID()
@@ -518,5 +558,13 @@ private struct EmbedWebPlaybackView: View {
             }
         }
         .tint(Color.cineNexAccent)
+        .onChange(of: cleanerGloballyEnabled) { _, _ in
+            loadFailed = false
+            reloadID = UUID()
+        }
+        .onChange(of: disabledProviderStorage) { _, _ in
+            loadFailed = false
+            reloadID = UUID()
+        }
     }
 }
