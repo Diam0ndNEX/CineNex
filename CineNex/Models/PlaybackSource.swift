@@ -34,7 +34,7 @@ struct PlaybackSourceRequest: Codable, Equatable, Sendable {
         return scheme == "https"
     }
 
-    var isValid: Bool {    var isValid: Bool {
+    var isValid: Bool {
         !title.isEmpty
             && (tmdbID == nil || tmdbID! > 0)
             && (releaseYear == nil || releaseYear! > 0)
