@@ -194,6 +194,11 @@ struct InternetArchivePlaybackProvider: PlaybackSourceProvider, Sendable {
         }
 
         let path = components.path.lowercased()
+        guard !path.contains(".."),
+              components.query == nil,
+              components.fragment == nil else {
+            return false
+        }
         return path.hasPrefix("/publicdomain/zero/")
             || path.hasPrefix("/publicdomain/mark/")
             || path.hasPrefix("/licenses/by/")
@@ -243,7 +248,7 @@ struct InternetArchivePlaybackProvider: PlaybackSourceProvider, Sendable {
             .lowercased()
             .unicodeScalars
             .filter { CharacterSet.alphanumerics.contains($0) }
-            .map(String.init)
+            .map { String($0) }
             .joined()
     }
 }
