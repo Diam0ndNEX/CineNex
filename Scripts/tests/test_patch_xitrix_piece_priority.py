@@ -10,6 +10,8 @@ from patch_xitrix_piece_priority import (
     FILE_ENTRY_METHOD,
     FILE_OFFSET_ASSIGNMENT,
     IMPLEMENTATION_METHOD,
+    PIECE_LENGTH_GETTER,
+    PIECE_LENGTH_METHOD,
     HEADER_METHOD,
     PatchError,
     patch_wrapper,
@@ -23,6 +25,7 @@ class PatchXitrixPiecePriorityTests(unittest.TestCase):
         file_entry = root / "LibTorrent/Core/FileEntry/FileEntry.h"
         file_entry_internal = root / "LibTorrent/Core/FileEntry/FileEntry_Internal.h"
         snapshot = root / "LibTorrent/Core/TorrentHandleSnapshot/TorrentHandleSnapshot.mm"
+        snapshot_header = root / "LibTorrent/Core/TorrentHandleSnapshot/TorrentHandleSnapshot.h"
         header.parent.mkdir(parents=True)
         implementation.parent.mkdir(parents=True, exist_ok=True)
         file_entry.parent.mkdir(parents=True, exist_ok=True)
@@ -58,7 +61,14 @@ class PatchXitrixPiecePriorityTests(unittest.TestCase):
             encoding="utf-8",
         )
         snapshot.write_text(
+            "- (BOOL)isValid {\n"
             "                fileEntry.begin_idx = static_cast<uint64_t>(beginIndex);\n",
+            encoding="utf-8",
+        )
+        snapshot_header.write_text(
+            "@interface TorrentHandleSnapshot : NSObject\n"
+            "@property (readonly) uint64_t total;\n"
+            "@end\n",
             encoding="utf-8",
         )
         return header, implementation
@@ -70,6 +80,7 @@ class PatchXitrixPiecePriorityTests(unittest.TestCase):
             file_entry = root / "LibTorrent/Core/FileEntry/FileEntry.h"
             file_entry_internal = root / "LibTorrent/Core/FileEntry/FileEntry_Internal.h"
             snapshot = root / "LibTorrent/Core/TorrentHandleSnapshot/TorrentHandleSnapshot.mm"
+            snapshot_header = root / "LibTorrent/Core/TorrentHandleSnapshot/TorrentHandleSnapshot.h"
 
             self.assertTrue(patch_wrapper(root))
             header_text = header.read_text(encoding="utf-8")
@@ -82,6 +93,8 @@ class PatchXitrixPiecePriorityTests(unittest.TestCase):
             self.assertIn(FILE_ENTRY_METHOD, file_entry.read_text(encoding="utf-8"))
             self.assertIn(FILE_ENTRY_INTERNAL_METHOD, file_entry_internal.read_text(encoding="utf-8"))
             self.assertIn(FILE_OFFSET_ASSIGNMENT, snapshot.read_text(encoding="utf-8"))
+            self.assertIn(PIECE_LENGTH_GETTER, snapshot.read_text(encoding="utf-8"))
+            self.assertIn(PIECE_LENGTH_METHOD, snapshot_header.read_text(encoding="utf-8"))
 
     def test_patch_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
