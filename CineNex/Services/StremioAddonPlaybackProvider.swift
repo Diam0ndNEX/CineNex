@@ -1,6 +1,10 @@
 import Foundation
 
-struct TMDBExternalIDResolver: Sendable {
+protocol PlaybackExternalIDResolving: Sendable {
+    func imdbID(for request: PlaybackSourceRequest) async throws -> String?
+}
+
+struct TMDBExternalIDResolver: PlaybackExternalIDResolving, Sendable {
     private let readAccessToken: String
     private let session: URLSession
 
@@ -65,14 +69,16 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
     let displayName: String
     let priority: Int
     private let clients: [StremioAddonClient]
-    private let externalIDResolver: TMDBExternalIDResolver
+    private let externalIDResolver: any PlaybackExternalIDResolving
+    private let session: URLSession
 
     init(
         id: String = "stremio-addons",
         displayName: String = "Stremio-compatible add-ons",
         priority: Int = 50,
         manifestURLs: [URL],
-        externalIDResolver: TMDBExternalIDResolver
+        externalIDResolver: any PlaybackExternalIDResolving,
+        session: URLSession = .shared
     ) throws {
         guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -81,7 +87,8 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
         self.id = id
         self.displayName = displayName
         self.priority = priority
-        self.clients = try manifestURLs.map { try StremioAddonClient(manifestURL: $0) }
+        self.session = session
+        self.clients = try manifestURLs.map { try StremioAddonClient(manifestURL: $0, session: session) }
         self.externalIDResolver = externalIDResolver
     }
 
@@ -94,7 +101,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
 
         return await withTaskGroup(of: [PlaybackSource].self, returning: [PlaybackSource].self) { group in
             for (index, client) in clients.enumerated() {
-                group.addTask {
+                group.addTask { () -> (sources: [PlaybackSource], failure: String?) in
                     do {
                         let entries = try await client.fetchStreams(
                             for: StremioStreamRequest(
@@ -104,7 +111,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                                 episodeNumber: request.episodeNumber
                             )
                         )
-                        return entries.compactMap { entry in
+                        let sources = entries.compactMap { entry in
                             guard let url = entry.validatedPlaybackURL else { return nil }
                             let title = [entry.name, entry.title]
                                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -124,13 +131,21 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                                 providerPriority: priority
                             )
                         }
+                        return (sources, nil)
                     } catch {
-                        return []
+                        return ([], error.localizedDescription)
                     }
                 }
             }
             var sources: [PlaybackSource] = []
-            for await result in group { sources.append(contentsOf: result) }
+            var failures: [String] = []
+            for await result in group {
+                sources.append(contentsOf: result.sources)
+                if let failure = result.failure { failures.append(failure) }
+            }
+            if sources.isEmpty, !failures.isEmpty {
+                throw StremioAddonClientError.transport(failures.joined(separator: " "))
+            }
             return sources
         }
     }
