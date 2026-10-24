@@ -27,8 +27,11 @@ enum XITRIXTorrentFileSupport {
               !relativePath.split(separator: "/", omittingEmptySubsequences: false).contains("..") else {
             return nil
         }
-        let standardizedRoot = root.standardizedFileURL
-        let candidate = standardizedRoot.appendingPathComponent(relativePath).standardizedFileURL
+        let standardizedRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        let candidate = standardizedRoot
+            .appendingPathComponent(relativePath)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
         let rootPath = standardizedRoot.path.hasSuffix("/")
             ? String(standardizedRoot.path.dropLast())
             : standardizedRoot.path
@@ -132,6 +135,12 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         handle.setFirstLastPriorityDownload(true)
 
         try await waitForFile(at: fileURL, expectedLength: Int64(selectedFile.size))
+        guard let verifiedFileURL = XITRIXTorrentFileSupport.safeFileURL(
+            root: root,
+            relativePath: selectedFile.path
+        ), verifiedFileURL == fileURL else {
+            throw TorrentStreamingError.unsafeFilePath
+        }
         let availability = try TorrentPieceRangeAvailability(
             fileStartOffset: Int64(selectedFile.fileOffset),
             fileLength: Int64(selectedFile.size),
@@ -139,7 +148,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             scheduler: self
         )
         let reader = try TorrentDiskByteReader(
-            fileURL: fileURL,
+            fileURL: verifiedFileURL,
             expectedLength: Int64(selectedFile.size),
             availability: availability
         )

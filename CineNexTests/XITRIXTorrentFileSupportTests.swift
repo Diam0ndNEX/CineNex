@@ -24,6 +24,20 @@ final class XITRIXTorrentFileSupportTests: XCTestCase {
         XCTAssertEqual(file.path, "/tmp/CineNex/Torrents/abc/Folder/movie.mp4")
     }
 
+    func testRejectsSymlinkThatEscapesDownloadRoot() throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cinenex-torrent-path-\(UUID().uuidString)", isDirectory: true)
+        let root = base.appendingPathComponent("root", isDirectory: true)
+        let outside = base.appendingPathComponent("outside.mp4")
+        let link = root.appendingPathComponent("escape.mp4")
+        defer { try? FileManager.default.removeItem(at: base) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data("outside".utf8).write(to: outside)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outside)
+
+        XCTAssertNil(XITRIXTorrentFileSupport.safeFileURL(root: root, relativePath: "escape.mp4"))
+    }
+
     func testRejectsPathTraversalAndAbsolutePaths() {
         let root = URL(fileURLWithPath: "/tmp/CineNex/Torrents/abc", isDirectory: true)
         let unsafePaths = ["../outside.mp4", "Folder/../../outside.mp4", "/tmp/outside.mp4", "Folder\\outside.mp4", ""]
