@@ -6,7 +6,7 @@ struct WatchHubView: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("cinenex.defaultPlaybackProvider") private var defaultProviderID = "smart"
-    @State private var selectedProvider: EmbedPlaybackProvider?
+    @State private var selectedProvider: ResolvedEmbedSource?
     @State private var showingPlayer = false
     @State private var availableProviders: [ResolvedEmbedSource] = []
 
@@ -127,9 +127,9 @@ struct WatchHubView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Available sources")
+                    Text("Source options")
                         .font(.title3.bold())
-                    Text("Choose a source or set your default.")
+                    Text("Choose a source or set your default. Availability is confirmed when the player loads.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -166,13 +166,13 @@ struct WatchHubView: View {
                                     Text(source.provider.displayName)
                                         .font(.subheadline.weight(.semibold))
                                         .foregroundStyle(.primary)
-                                    if source.provider.id == defaultProviderID || (defaultProviderID == "smart" && source == availableProviders.first) {
+                                    if source.provider.id == defaultProviderID || (defaultProviderID == "smart" && source.id == availableProviders.first?.id) {
                                         Text("DEFAULT")
                                             .font(.system(size: 9, weight: .bold))
                                             .foregroundStyle(Color.cineNexAccent)
                                     }
                                 }
-                                Text("Web player · opens in CineNex")
+                                Text("Experimental web embed · availability not verified")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
