@@ -233,23 +233,38 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
 
     private func handle(_ connection: NWConnection) async {
         defer { connection.cancel() }
+        let request: TorrentHTTPRequest
+        let file: TorrentPreparedFile
         do {
-            let request = try TorrentHTTPRequest.parse(await receiveHeader(from: connection))
-            let file = try resolve(request.target)
-            guard request.method == "GET" || request.method == "HEAD" else {
-                let plan = TorrentHTTPResponsePlan.make(method: request.method, rangeHeader: nil, totalLength: file.length, contentType: file.contentType)
-                try await send(Self.serialize(status: plan.statusCode, headers: plan.headers), connection: connection)
-                return
-            }
+            request = try TorrentHTTPRequest.parse(await receiveHeader(from: connection))
+            file = try resolve(request.target)
+        } catch {
+            let status = (error as? TorrentStreamingError) == .unauthorized ? 404 : 400
+            try? await send(Self.errorResponse(status: status), connection: connection)
+            return
+        }
+
+        guard request.method == "GET" || request.method == "HEAD" else {
             let plan = TorrentHTTPResponsePlan.make(
                 method: request.method,
-                rangeHeader: request.headers["range"],
+                rangeHeader: nil,
                 totalLength: file.length,
                 contentType: file.contentType
             )
+            try? await send(Self.serialize(status: plan.statusCode, headers: plan.headers), connection: connection)
+            return
+        }
+
+        let plan = TorrentHTTPResponsePlan.make(
+            method: request.method,
+            rangeHeader: request.headers["range"],
+            totalLength: file.length,
+            contentType: file.contentType
+        )
+        do {
             try await send(plan: plan, connection: connection, file: file)
         } catch {
-            try? await send(Self.errorResponse(status: error as? TorrentStreamingError == .unauthorized ? 404 : 400), connection: connection)
+            connection.cancel()
         }
     }
 
