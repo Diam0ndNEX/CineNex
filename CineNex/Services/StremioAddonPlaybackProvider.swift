@@ -96,7 +96,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
             return []
         }
 
-        return await withTaskGroup(of: (sources: [PlaybackSource], failure: String?).self, returning: [PlaybackSource].self) { group in
+        let aggregated = await withTaskGroup(of: (sources: [PlaybackSource], failure: String?).self, returning: (sources: [PlaybackSource], failures: [String]).self) { group in
             for (index, client) in clients.enumerated() {
                 group.addTask { () -> (sources: [PlaybackSource], failure: String?) in
                     do {
@@ -108,7 +108,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                                 episodeNumber: request.episodeNumber
                             )
                         )
-                        let sources = entries.compactMap { entry in
+                        let sources: [PlaybackSource] = entries.compactMap { entry -> PlaybackSource? in
                             guard let url = entry.validatedPlaybackURL else { return nil }
                             let title = [entry.name, entry.title]
                                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -140,11 +140,12 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                 sources.append(contentsOf: result.sources)
                 if let failure = result.failure { failures.append(failure) }
             }
-            if sources.isEmpty, !failures.isEmpty {
-                throw StremioAddonClientError.transport(failures.joined(separator: " "))
-            }
-            return sources
+            return (sources, failures)
         }
+        if aggregated.sources.isEmpty, !aggregated.failures.isEmpty {
+            throw StremioAddonClientError.transport(aggregated.failures.joined(separator: " "))
+        }
+        return aggregated.sources
     }
 
     private static func supportsNativePlayback(_ url: URL) -> Bool {
