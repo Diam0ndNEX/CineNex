@@ -177,9 +177,8 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
                     connection.cancel()
                     return
                 }
-                self.queue.async {
-                    Task { await self.handle(connection) }
-                }
+                connection.start(queue: self.queue)
+                Task { await self.handle(connection) }
             }
             newListener.start(queue: queue)
         }

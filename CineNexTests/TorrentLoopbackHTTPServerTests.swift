@@ -51,6 +51,7 @@ final class TorrentLoopbackHTTPServerTests: XCTestCase {
         XCTAssertEqual(source.url.host, "127.0.0.1")
 
         var urlRequest = URLRequest(url: source.url)
+        urlRequest.timeoutInterval = 8
         urlRequest.setValue("bytes=5-12", forHTTPHeaderField: "Range")
         let (data, response) = try await URLSession.shared.data(for: urlRequest)
         let http = try XCTUnwrap(response as? HTTPURLResponse)
@@ -75,6 +76,7 @@ final class TorrentLoopbackHTTPServerTests: XCTestCase {
         let sources = try await provider.findSources(for: PlaybackSourceRequest(title: "HEAD Test", mediaKind: .movie))
         let source = try XCTUnwrap(sources.first)
         var request = URLRequest(url: source.url)
+        request.timeoutInterval = 8
         request.httpMethod = "HEAD"
         request.setValue("bytes=2-4", forHTTPHeaderField: "Range")
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -102,7 +104,9 @@ final class TorrentLoopbackHTTPServerTests: XCTestCase {
         var components = try XCTUnwrap(URLComponents(url: source.url, resolvingAgainstBaseURL: false))
         components.path = "/v1/invalid-token/private-file"
         let invalidURL = try XCTUnwrap(components.url)
-        let (_, response) = try await URLSession.shared.data(from: invalidURL)
+        var invalidRequest = URLRequest(url: invalidURL)
+        invalidRequest.timeoutInterval = 8
+        let (_, response) = try await URLSession.shared.data(for: invalidRequest)
         let http = try XCTUnwrap(response as? HTTPURLResponse)
         XCTAssertEqual(http.statusCode, 404)
     }
