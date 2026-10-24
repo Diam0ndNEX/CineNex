@@ -8,7 +8,7 @@ struct WatchHubView: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("cinenex.defaultPlaybackProvider") private var defaultProviderID = "smart"
-    @AppStorage("cinenex.stremioAddonManifestURLs") private var stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+    @AppStorage("cinenex.stremioAddonManifestURLs") private var stremioAddonManifestURLs = "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
 
     private static let defaultStremioAddonManifestURLText = "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
     private static let defaultStremioAddonManifestURLs: [URL] = [
