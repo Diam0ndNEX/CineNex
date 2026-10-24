@@ -270,13 +270,22 @@ struct StremioAddonClient: Sendable {
 
     private func fetchData(from url: URL) async throws -> Data {
         guard Self.isSafeHTTPSURL(url) else { throw StremioAddonClientError.invalidManifestURL }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 12
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, response) = try await session.data(from: url)
+            let (data, response) = try await session.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw StremioAddonClientError.invalidResponse
             }
+            guard let finalURL = httpResponse.url, Self.isSafeHTTPSURL(finalURL) else {
+                throw StremioAddonClientError.invalidManifestURL
+            }
             guard (200..<300).contains(httpResponse.statusCode) else {
                 throw StremioAddonClientError.httpStatus(httpResponse.statusCode)
+            }
+            guard data.count <= 2_000_000 else {
+                throw StremioAddonClientError.invalidResponse
             }
             return data
         } catch let error as StremioAddonClientError {
