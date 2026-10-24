@@ -4,9 +4,12 @@ import XCTest
 
 final class StremioAddonClientTests: XCTestCase {
     func testCancelledManifestRequestPropagatesCancellation() async {
+        StremioCancellationURLProtocol.requestCount = 0
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StremioCancellationURLProtocol.self]
         let client = try! StremioAddonClient(
             manifestURL: URL(string: "https://addons.example.test/manifest.json")!,
-            session: URLSession(configuration: .ephemeral)
+            session: URLSession(configuration: configuration)
         )
 
         let task = Task {
@@ -23,6 +26,8 @@ final class StremioAddonClientTests: XCTestCase {
         } catch {
             XCTFail("Expected CancellationError, received \(error).")
         }
+
+        XCTAssertEqual(StremioCancellationURLProtocol.requestCount, 0)
     }
 
     override func tearDown() {
@@ -180,6 +185,21 @@ private final class StremioStubURLProtocol: URLProtocol {
         } catch {
             client?.urlProtocol(self, didFailWithError: error)
         }
+    }
+
+    override func stopLoading() {}
+}
+
+private final class StremioCancellationURLProtocol: URLProtocol {
+    static var requestCount = 0
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.requestCount += 1
+        client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
     }
 
     override func stopLoading() {}
