@@ -64,6 +64,11 @@ private struct TMDBExternalIDsResponse: Decodable {
     }
 }
 
+struct StremioAddonDiscovery: Equatable, Sendable {
+    let sources: [PlaybackSource]
+    let torrentDescriptors: [StremioTorrentDescriptor]
+}
+
 struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
     let id: String
     let displayName: String
@@ -90,13 +95,14 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
     }
 
     func findSources(for request: PlaybackSourceRequest) async throws -> [PlaybackSource] {
-        try Task.checkCancellation()
+        try await discover(for: request).sources
+    }
+
+    func discover(for request: PlaybackSourceRequest) async throws -> StremioAddonDiscovery {
         guard request.isValid else { throw StremioAddonClientError.invalidRequest }
-        guard !clients.isEmpty else { return [] }
-        let resolvedIMDbID = try await externalIDResolver.imdbID(for: request)
-        try Task.checkCancellation()
-        guard let imdbID = resolvedIMDbID else {
-            return []
+        guard !clients.isEmpty else { return StremioAddonDiscovery(sources: [], torrentDescriptors: []) }
+        guard let imdbID = try await externalIDResolver.imdbID(for: request) else {
+            return StremioAddonDiscovery(sources: [], torrentDescriptors: [])
         }
 
         let streamRequest = StremioStreamRequest(
@@ -105,55 +111,61 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
             seasonNumber: request.seasonNumber,
             episodeNumber: request.episodeNumber
         )
+        var batches: [(index: Int, entries: [StremioStreamEntry])] = []
+        var failures: [String] = []
+
         if clients.count == 1 {
-            let entries = try await clients[0].fetchStreams(for: streamRequest)
-            return Self.mapSources(
-                entries,
-                index: 0,
+            batches = [(0, try await clients[0].fetchStreams(for: streamRequest))]
+        } else {
+            let aggregated = await withTaskGroup(
+                of: (index: Int, entries: [StremioStreamEntry], failure: String?).self,
+                returning: (batches: [(index: Int, entries: [StremioStreamEntry])], failures: [String]).self
+            ) { group in
+                for (index, client) in clients.enumerated() {
+                    group.addTask {
+                        do {
+                            return (index, try await client.fetchStreams(for: streamRequest), nil)
+                        } catch {
+                            return (index, [], error.localizedDescription)
+                        }
+                    }
+                }
+                var fetched: [(index: Int, entries: [StremioStreamEntry])] = []
+                var errors: [String] = []
+                for await result in group {
+                    if let failure = result.failure {
+                        errors.append(failure)
+                    } else {
+                        fetched.append((result.index, result.entries))
+                    }
+                }
+                return (fetched, errors)
+            }
+            batches = aggregated.batches
+            failures = aggregated.failures
+        }
+
+        try Task.checkCancellation()
+
+        batches.sort { $0.index < $1.index }
+        let sources = batches.flatMap { batch in
+            Self.mapSources(
+                batch.entries,
+                index: batch.index,
                 providerID: id,
                 displayName: displayName,
                 priority: priority
             )
         }
+        var seenDescriptors = Set<String>()
+        let descriptors = batches.flatMap { batch in
+            batch.entries.compactMap { StremioTorrentDescriptor(stream: $0) }
+        }.filter { seenDescriptors.insert($0.id).inserted }
 
-        let aggregated = try await withThrowingTaskGroup(
-            of: (sources: [PlaybackSource], failure: String?).self,
-            returning: (sources: [PlaybackSource], failures: [String]).self
-        ) { group in
-            for (index, client) in clients.enumerated() {
-                group.addTask { () -> (sources: [PlaybackSource], failure: String?) in
-                    do {
-                        let entries = try await client.fetchStreams(for: streamRequest)
-                        let sources = Self.mapSources(
-                            entries,
-                            index: index,
-                            providerID: id,
-                            displayName: displayName,
-                            priority: priority
-                        )
-                        return (sources, nil)
-                    } catch is CancellationError {
-                        throw CancellationError()
-                    } catch {
-                        if Task.isCancelled {
-                            throw CancellationError()
-                        }
-                        return ([], error.localizedDescription)
-                    }
-                }
-            }
-            var sources: [PlaybackSource] = []
-            var failures: [String] = []
-            for try await result in group {
-                sources.append(contentsOf: result.sources)
-                if let failure = result.failure { failures.append(failure) }
-            }
-            return (sources, failures)
+        if sources.isEmpty, descriptors.isEmpty, !failures.isEmpty {
+            throw StremioAddonClientError.transport(failures.joined(separator: " "))
         }
-        if aggregated.sources.isEmpty, !aggregated.failures.isEmpty {
-            throw StremioAddonClientError.transport(aggregated.failures.joined(separator: " "))
-        }
-        return aggregated.sources
+        return StremioAddonDiscovery(sources: sources, torrentDescriptors: descriptors)
     }
 
     private static func mapSources(
