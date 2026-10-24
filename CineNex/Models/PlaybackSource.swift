@@ -29,11 +29,6 @@ struct PlaybackSourceRequest: Codable, Equatable, Sendable {
         self.episodeNumber = episodeNumber
     }
 
-    var hasSecureWebURL: Bool {
-        guard let scheme = url.scheme?.lowercased(), url.host != nil else { return false }
-        return scheme == "https"
-    }
-
     var isValid: Bool {
         !title.isEmpty
             && (tmdbID == nil || tmdbID! > 0)
@@ -56,6 +51,11 @@ struct PlaybackSource: Codable, Identifiable, Equatable, Sendable {
     let subtitleLanguages: [String]
     let supportsNativePlayback: Bool
     let providerPriority: Int
+
+    var hasSecureWebURL: Bool {
+        guard let scheme = url.scheme?.lowercased(), url.host != nil else { return false }
+        return scheme == "https"
+    }
 
     var isValid: Bool {
         !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
