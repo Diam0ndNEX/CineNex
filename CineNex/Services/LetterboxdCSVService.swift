@@ -140,7 +140,7 @@ enum LetterboxdCSVService {
         }
 
         let matchingRecords = records
-            .filter { $0.kind == kind }
+            .filter { $0.kind == kind && (kind != .diary || $0.watchedDate != nil) }
             .sorted {
                 if kind == .diary {
                     return ($0.watchedDate ?? "") < ($1.watchedDate ?? "")
