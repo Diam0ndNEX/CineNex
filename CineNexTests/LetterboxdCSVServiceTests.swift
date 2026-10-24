@@ -64,18 +64,18 @@ final class LetterboxdCSVServiceTests: XCTestCase {
         ]
 
         let watchedCSV = LetterboxdCSVService.makeCSV(from: records, kind: .watched)
-        XCTAssertTrue(watchedCSV.hasPrefix("Date,Name,Year,Letterboxd URI\\r\\n"))
+        XCTAssertTrue(watchedCSV.hasPrefix("Date,Name,Year,Letterboxd URI\r\n"))
         XCTAssertTrue(watchedCSV.contains("2026-02-01,Watched Film,2023,"))
         XCTAssertFalse(watchedCSV.contains("Diary Film"))
 
         let ratingsCSV = LetterboxdCSVService.makeCSV(from: records, kind: .ratings)
-        XCTAssertTrue(ratingsCSV.hasPrefix("Date,Name,Year,Letterboxd URI,Rating\\r\\n"))
+        XCTAssertTrue(ratingsCSV.hasPrefix("Date,Name,Year,Letterboxd URI,Rating\r\n"))
         XCTAssertTrue(ratingsCSV.contains("2026-03-01,Rated Film,2022,"))
-        XCTAssertTrue(ratingsCSV.contains(",3.5\\r\\n"))
+        XCTAssertTrue(ratingsCSV.contains(",3.5\r\n"))
         XCTAssertFalse(ratingsCSV.contains("Watchlist Film"))
 
         let watchlistCSV = LetterboxdCSVService.makeCSV(from: records, kind: .watchlist)
-        XCTAssertTrue(watchlistCSV.hasPrefix("Date,Name,Year,Letterboxd URI\\r\\n"))
+        XCTAssertTrue(watchlistCSV.hasPrefix("Date,Name,Year,Letterboxd URI\r\n"))
         XCTAssertTrue(watchlistCSV.contains("2026-04-01,Watchlist Film,2021,"))
         XCTAssertFalse(watchlistCSV.contains("Rated Film"))
     }
@@ -83,7 +83,7 @@ final class LetterboxdCSVServiceTests: XCTestCase {
     func testCSVExportQuotesCommasAndNewlinesForWatchlistRecords() {
         let record = LetterboxdRecord(
             id: "watchlist-special",
-            title: "Film, With a Line\\nBreak",
+            title: "Film, With a Line\nBreak",
             year: 2020,
             letterboxdURI: nil,
             dateAdded: "2026-04-01",
