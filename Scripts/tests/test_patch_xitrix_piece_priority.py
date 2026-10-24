@@ -5,15 +5,28 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from patch_xitrix_piece_priority import IMPLEMENTATION_METHOD, HEADER_METHOD, PatchError, patch_wrapper
+from patch_xitrix_piece_priority import (
+    FILE_ENTRY_INTERNAL_METHOD,
+    FILE_ENTRY_METHOD,
+    FILE_OFFSET_ASSIGNMENT,
+    IMPLEMENTATION_METHOD,
+    HEADER_METHOD,
+    PatchError,
+    patch_wrapper,
+)
 
 
 class PatchXitrixPiecePriorityTests(unittest.TestCase):
     def create_wrapper(self, root: Path) -> tuple[Path, Path]:
         header = root / "LibTorrent/Core/TorrentHandle/TorrentHandle.h"
         implementation = root / "LibTorrent/Core/TorrentHandle/TorrentHandle.mm"
+        file_entry = root / "LibTorrent/Core/FileEntry/FileEntry.h"
+        file_entry_internal = root / "LibTorrent/Core/FileEntry/FileEntry_Internal.h"
+        snapshot = root / "LibTorrent/Core/TorrentHandleSnapshot/TorrentHandleSnapshot.mm"
         header.parent.mkdir(parents=True)
         implementation.parent.mkdir(parents=True, exist_ok=True)
+        file_entry.parent.mkdir(parents=True, exist_ok=True)
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
         header.write_text(
             "#import <Foundation/Foundation.h>\n"
             "@interface TorrentHandle : NSObject\n"
@@ -32,12 +45,31 @@ class PatchXitrixPiecePriorityTests(unittest.TestCase):
             "@end\n",
             encoding="utf-8",
         )
+        file_entry.write_text(
+            "@interface FileEntry : NSObject\n"
+            "@property (readonly, nonatomic) uint64_t begin_idx;\n"
+            "@end\n",
+            encoding="utf-8",
+        )
+        file_entry_internal.write_text(
+            "@interface FileEntry ()\n"
+            "@property (readwrite, nonatomic) uint64_t begin_idx;\n"
+            "@end\n",
+            encoding="utf-8",
+        )
+        snapshot.write_text(
+            "                fileEntry.begin_idx = static_cast<uint64_t>(beginIndex);\n",
+            encoding="utf-8",
+        )
         return header, implementation
 
     def test_adds_checked_piece_priority_bridge(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             header, implementation = self.create_wrapper(root)
+            file_entry = root / "LibTorrent/Core/FileEntry/FileEntry.h"
+            file_entry_internal = root / "LibTorrent/Core/FileEntry/FileEntry_Internal.h"
+            snapshot = root / "LibTorrent/Core/TorrentHandleSnapshot/TorrentHandleSnapshot.mm"
 
             self.assertTrue(patch_wrapper(root))
             header_text = header.read_text(encoding="utf-8")
@@ -47,6 +79,9 @@ class PatchXitrixPiecePriorityTests(unittest.TestCase):
             self.assertIn("priority > 7", implementation_text)
             self.assertIn("pieceIndex >= torrentInfo->num_pieces()", implementation_text)
             self.assertIn("handle.piece_priority(", implementation_text)
+            self.assertIn(FILE_ENTRY_METHOD, file_entry.read_text(encoding="utf-8"))
+            self.assertIn(FILE_ENTRY_INTERNAL_METHOD, file_entry_internal.read_text(encoding="utf-8"))
+            self.assertIn(FILE_OFFSET_ASSIGNMENT, snapshot.read_text(encoding="utf-8"))
 
     def test_patch_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
