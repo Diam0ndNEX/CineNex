@@ -26,7 +26,7 @@ struct TraktWatchlistMovie: Decodable, Identifiable, Hashable {
         }
         let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-        return "title-\(normalized)-\(year ?? 0)"        return "title-\(title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())-\(year ?? 0)"
+        return "title-\(normalized)-\(year ?? 0)"
     }
 
     var title: String { movie.title.trimmingCharacters(in: .whitespacesAndNewlines) }
