@@ -228,7 +228,7 @@ struct WatchHubView: View {
                                     Text(source.provider.displayName)
                                         .font(.subheadline.weight(.semibold))
                                         .foregroundStyle(.primary)
-                                    if source.provider.id == defaultProviderID || (defaultProviderID == "smart" && source.id == availableProviders.first?.id) {
+                                    if source.provider.id == defaultProviderID || (defaultProviderID == "smart" && item.streamURL == nil && source.id == availableProviders.first?.id) {
                                         Text("DEFAULT")
                                             .font(.system(size: 9, weight: .bold))
                                             .foregroundStyle(Color.cineNexAccent)
@@ -277,6 +277,7 @@ struct WatchHubView: View {
             return $0.provider.displayName.localizedStandardCompare($1.provider.displayName) == .orderedAscending
         }
         if defaultProviderID != "smart",
+           !(defaultProviderID == "direct" && item.streamURL != nil),
            !availableProviders.contains(where: { $0.provider.id == defaultProviderID }) {
             defaultProviderID = "smart"
         }
