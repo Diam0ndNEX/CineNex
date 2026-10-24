@@ -137,3 +137,29 @@ jobs:
             -default-test-execution-time-allowance 60 \
             -maximum-test-execution-time-allowance 120 \
             test
+
+      - name: Build unsigned iOS app
+        run: |
+          xcodebuild \
+            -project CineNex.xcodeproj \
+            -scheme CineNex \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath DerivedDataDevice \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          rm -rf Payload CineNex-unsigned.ipa
+          mkdir -p Payload
+          cp -R DerivedDataDevice/Build/Products/Debug-iphoneos/CineNex.app Payload/CineNex.app
+          ditto -c -k --sequesterRsrc --keepParent Payload CineNex-unsigned.ipa
+          rm -rf Payload
+
+      - name: Upload unsigned IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CineNex-unsigned-ipa
+          path: CineNex-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7

@@ -18,6 +18,10 @@ struct WatchHubView: View {
     @State private var selectedProvider: ResolvedEmbedSource?
     @State private var selectedDiscoveredSource: PlaybackSource?
     @State private var discoveredSources: [PlaybackSource] = []
+    @State private var discoveredTorrentDescriptors: [StremioTorrentDescriptor] = []
+    @State private var preparingTorrentDescriptorID: String?
+    @State private var torrentPreparationMessage: String?
+    @State private var torrentPreparationTask: Task<Void, Never>?
     @State private var searchingAddonSources = false
     @State private var addonSearchMessage: String?
     @State private var availableProviders: [ResolvedEmbedSource] = []
@@ -83,6 +87,10 @@ struct WatchHubView: View {
                 async let archiveSearch: Void = loadInternetArchiveSources()
                 await loadCatalogDetails()
                 await archiveSearch
+            }
+            .onDisappear {
+                torrentPreparationTask?.cancel()
+                torrentPreparationTask = nil
             }
         }
         .tint(Color.cineNexAccent)
@@ -215,7 +223,7 @@ struct WatchHubView: View {
                     .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
                 }
                 .buttonStyle(.plain)
-                .disabled(searchingAddonSources)
+                .disabled(searchingAddonSources || preparingTorrentDescriptorID != nil)
                 .accessibilityHint("Queries configured Stremio-compatible add-ons for this title or episode")
 
                 Text("Torrentio and MediaFusion are preconfigured. Edit the manifest URLs to use your own instance or a configured add-on URL with custom filters or debrid settings.")
@@ -275,6 +283,48 @@ struct WatchHubView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Play source: \(source.title)")
                 }
+                
+                ForEach(discoveredTorrentDescriptors) { descriptor in
+                    Button {
+                        startTorrentPlayback(for: descriptor)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "arrow.down.to.line.compact")
+                                .font(.title2)
+                                .foregroundStyle(Color.cineNexAccent)
+                                .frame(width: 44, height: 44)
+                                .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Torrent · \(String(descriptor.infoHash.prefix(12)))")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                Text(descriptor.fileIndex.map { "Torrent file index \($0)" } ?? "Auto-select a playable video file")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if preparingTorrentDescriptorID == descriptor.id {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "play.fill")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(Color.cineNexAccent)
+                            }
+                        }
+                        .padding(12)
+                        .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(preparingTorrentDescriptorID != nil)
+                    .accessibilityLabel("Prepare torrent playback for \(descriptor.infoHash.prefix(12))")
+                }
+                if let torrentPreparationMessage {
+                    Text(torrentPreparationMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
             }
 
             if item.streamURL != nil {
@@ -695,18 +745,23 @@ struct WatchHubView: View {
         guard request.tmdbID != nil else {
             addonSearchMessage = "This catalog item has no TMDB identifier, so CineNex cannot resolve its IMDb ID for add-on lookup."
             discoveredSources = []
+            discoveredTorrentDescriptors = []
             return
         }
         guard let token = TMDBTokenStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines),
               !token.isEmpty else {
             addonSearchMessage = "A TMDB Read Access Token is needed to resolve this title to the IMDb ID used by many add-ons."
             discoveredSources = []
+            discoveredTorrentDescriptors = []
             return
         }
 
         await TorrentPlaybackSessionRegistry.shared.stopAll()
         searchingAddonSources = true
         addonSearchMessage = nil
+        torrentPreparationMessage = nil
+        discoveredSources = []
+        discoveredTorrentDescriptors = []
         defer { searchingAddonSources = false }
 
         do {
@@ -717,51 +772,71 @@ struct WatchHubView: View {
             let discovery = try await provider.discover(for: request)
             let torrentDescriptors = Array(
                 discovery.torrentDescriptors.reduce(into: [StremioTorrentDescriptor]()) { result, descriptor in
-                    if !result.contains(where: { $0.infoHash == descriptor.infoHash }) {
+                    if !result.contains(where: { $0.id == descriptor.id }) {
                         result.append(descriptor)
                     }
-                }.prefix(2)
+                }.prefix(12)
             )
-            let torrentSources = try await withThrowingTaskGroup(of: [PlaybackSource].self) { group in
-                for descriptor in torrentDescriptors {
-                    group.addTask {
-                        let engine = XITRIXTorrentPlaybackEngine(descriptor: descriptor)
-                        let torrentProvider = TorrentPlaybackProvider(engine: engine)
-                        do {
-                            return try await torrentProvider.findSources(for: request)
-                        } catch is CancellationError {
-                            await torrentProvider.stop()
-                            throw CancellationError()
-                        } catch {
-                            await torrentProvider.stop()
-                            return []
-                        }
-                    }
-                }
-                var sources: [PlaybackSource] = []
-                for try await sourcesForTorrent in group {
-                    sources.append(contentsOf: sourcesForTorrent)
-                }
-                return sources
-            }
-            discoveredSources = discovery.sources + torrentSources
-            if !torrentSources.isEmpty {
-                addonSearchMessage = "Found \(discovery.sources.count) direct source(s) and \(torrentSources.count) playable torrent source(s). Torrent playback is provided by the native engine."
-            } else if !discovery.sources.isEmpty, !discovery.torrentDescriptors.isEmpty {
-                addonSearchMessage = "Found \(discovery.sources.count) direct source(s). \(discovery.torrentDescriptors.count) torrent descriptor(s) could not be prepared for playback."
+            discoveredSources = discovery.sources
+            discoveredTorrentDescriptors = torrentDescriptors
+            if !discovery.sources.isEmpty, !torrentDescriptors.isEmpty {
+                addonSearchMessage = "Found \(discovery.sources.count) direct source(s) and \(torrentDescriptors.count) torrent option(s). Torrent transfers start only when you select one."
             } else if !discovery.sources.isEmpty {
                 addonSearchMessage = "Found \(discovery.sources.count) direct source(s). Availability and playback compatibility are not guaranteed until playback starts."
-            } else if !discovery.torrentDescriptors.isEmpty {
-                addonSearchMessage = "Found \(discovery.torrentDescriptors.count) torrent descriptor(s), but no playable torrent file could be prepared."
+            } else if !torrentDescriptors.isEmpty {
+                addonSearchMessage = "Found \(torrentDescriptors.count) torrent option(s). Select one to prepare native playback."
             } else {
                 addonSearchMessage = "No playable direct URLs or valid torrent descriptors were returned. Add-ons may be unavailable or may require authentication."
             }
         } catch is CancellationError {
             await TorrentPlaybackSessionRegistry.shared.stopAll()
             addonSearchMessage = "Source search was cancelled."
+            discoveredSources = []
+            discoveredTorrentDescriptors = []
         } catch {
             addonSearchMessage = error.localizedDescription
             discoveredSources = []
+            discoveredTorrentDescriptors = []
+        }
+    }
+
+    @MainActor
+    private func startTorrentPlayback(for descriptor: StremioTorrentDescriptor) {
+        guard torrentPreparationTask == nil else { return }
+        preparingTorrentDescriptorID = descriptor.id
+        torrentPreparationMessage = "Preparing native playback. Torrent metadata may take a moment to load."
+        torrentPreparationTask = Task {
+            await prepareTorrentPlayback(for: descriptor)
+        }
+    }
+
+    @MainActor
+    private func prepareTorrentPlayback(for descriptor: StremioTorrentDescriptor) async {
+        let engine = XITRIXTorrentPlaybackEngine(descriptor: descriptor)
+        let provider = TorrentPlaybackProvider(engine: engine)
+        defer {
+            if preparingTorrentDescriptorID == descriptor.id {
+                preparingTorrentDescriptorID = nil
+            }
+            torrentPreparationTask = nil
+        }
+
+        do {
+            let sources = try await provider.findSources(for: request)
+            try Task.checkCancellation()
+            guard let source = sources.first else {
+                await provider.stop()
+                torrentPreparationMessage = "This torrent did not contain a playable file supported by CineNex."
+                return
+            }
+            selectedDiscoveredSource = source
+            torrentPreparationMessage = "Torrent source is ready. Opening the native player."
+        } catch is CancellationError {
+            await provider.stop()
+            torrentPreparationMessage = "Torrent preparation was cancelled."
+        } catch {
+            await provider.stop()
+            torrentPreparationMessage = error.localizedDescription
         }
     }
 
