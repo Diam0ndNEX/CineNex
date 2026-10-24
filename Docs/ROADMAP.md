@@ -61,7 +61,6 @@ Acceptance: supported streams play consistently and state persists across app la
 - Completed: add pause/resume controls for active HLS downloads, preserve paused state when reconnecting background tasks, and restart cleanly if a paused task is no longer available.
 - Completed: remove all completed offline downloads in one confirmed action while preserving queued, active, and paused downloads.
 - Next: accessibility, localization, privacy disclosures, broader tests.
-- Accessibility, localization, privacy disclosures, broader tests.
 - Signed IPA workflow after signing and distribution method are configured.
 
 Acceptance: providers are individually testable, release builds are reproducible, and no secrets are stored in repository files.
