@@ -11,6 +11,7 @@ CineNex is an iPhone-first media discovery and playback app. It separates catalo
 - `CatalogProvider` defines the boundary for metadata providers.
 - `DemoCatalogProvider` supplies local sample entries when no live metadata provider is configured.
 - `TMDBCatalogProvider` fetches trending movie/TV metadata with a user-supplied TMDB Read Access Token and maps posters, descriptions, years, genres, ratings, and TMDB IDs; metadata results never include playable URLs.
+- `InternetArchivePlaybackProvider` queries the Internet Archive API without a user token or server, matches exact film titles, checks the record's listed license URL against a conservative public-domain/CC allowlist, and returns direct MP4 sources for the native player. The uploader-provided license metadata is a filter, not an independent legal certification.
 - `PlayerView` uses AVPlayer for compatible HTTPS media and records local progress.
 - `PlaybackProgressStore` persists resume positions in local UserDefaults.
 - `TraktIntegration` handles device authorization, secure token storage, refresh, and optional movie scrobbling.
@@ -20,7 +21,7 @@ CineNex is an iPhone-first media discovery and playback app. It separates catalo
 ## Planned boundaries
 
 - Catalog providers: search, metadata, artwork, seasons, episodes, and external identifiers.
-- Media providers: authorized playback URLs and source-specific capabilities.
+- Media providers: embedded API clients that discover authorized or openly licensed playback URLs, validate formats and source metadata, and expose source-specific capabilities.
 - Playback services: AVPlayer lifecycle, playback state, track selection, and error reporting.
 - Tracking adapters: Trakt API and Letterboxd official data import/export.
 - Library persistence: favorites, recent playback, and progress.
