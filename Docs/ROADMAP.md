@@ -64,6 +64,7 @@ Acceptance: at least one real embedded API integration and one compatible extern
 ## Milestone 6 — Playback quality
 
 - Playback state and recoverable errors.
+- Implemented initial embedded Playback Cleaner: native WebKit third-party blocking for a conservative bundled ad-domain list, known-ad-domain navigation rejection, pop-up web-view suppression, global enable/disable, and per-provider exceptions. Video-stream ad removal is explicitly out of scope; real-provider compatibility still needs device validation.
 - Completed: discover and select alternate audio tracks and subtitles when the stream exposes AVPlayer media-selection groups.
 - Implemented: native AVPlayer controls expose Picture in Picture and AirPlay options when supported by the device and media source; physical-device validation remains.
 - Complete series season/episode playback using actual resolved episode sources, not metadata-only episode listings.
