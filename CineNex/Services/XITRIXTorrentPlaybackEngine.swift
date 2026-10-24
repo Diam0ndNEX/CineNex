@@ -29,7 +29,10 @@ enum XITRIXTorrentFileSupport {
         }
         let standardizedRoot = root.standardizedFileURL
         let candidate = standardizedRoot.appendingPathComponent(relativePath).standardizedFileURL
-        guard candidate.path.hasPrefix(standardizedRoot.path + "/") else { return nil }
+        let rootPath = standardizedRoot.path.hasSuffix("/")
+            ? String(standardizedRoot.path.dropLast())
+            : standardizedRoot.path
+        guard candidate.path.hasPrefix(rootPath + "/") else { return nil }
         return candidate
     }
 }
@@ -100,7 +103,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         let snapshot = try await waitForMetadata(on: handle)
         let selectedFile: FileEntry
         if let requestedIndex = descriptor.fileIndex {
-            guard let indexedFile = snapshot.files.first(where: { $0.index == requestedIndex }),
+            guard let indexedFile = snapshot.files.first(where: { Int($0.index) == requestedIndex }),
                   XITRIXTorrentFileSupport.isPlayableFile(indexedFile.path) else {
                 throw TorrentStreamingError.unsupportedFile
             }
@@ -124,7 +127,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         }
 
         handle.setAllFilesPriority(.dontDownload)
-        handle.setFilePriority(.topPriority, at: selectedFile.index)
+        handle.setFilePriority(.topPriority, at: Int(selectedFile.index))
         handle.setSequentialDownload(true)
         handle.setFirstLastPriorityDownload(true)
 
