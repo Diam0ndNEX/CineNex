@@ -51,7 +51,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         if let preparedFile { return [preparedFile] }
 
         guard let applicationSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory,
+            for: .cachesDirectory,
             in: .userDomainMask
         ).first else {
             throw TorrentStreamingError.engineUnavailable
@@ -190,9 +190,12 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         }
         if let handle, let session {
             handle.pause()
-            session.removeTorrent(handle, deleteFiles: false)
+            session.removeTorrent(handle, deleteFiles: true)
         }
         session?.pause()
+        if let downloadRoot {
+            try? FileManager.default.removeItem(at: downloadRoot)
+        }
         self.reader = nil
         self.preparedFile = nil
         self.handle = nil
