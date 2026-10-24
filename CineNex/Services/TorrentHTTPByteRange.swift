@@ -33,7 +33,7 @@ struct TorrentHTTPByteRange: Equatable, Sendable {
 
         let unit = header[..<separator]
         let rawValue = header[header.index(after: separator)...]
-        guard unit.caseInsensitiveCompare("bytes") == .orderedSame,
+        guard String(unit).caseInsensitiveCompare("bytes") == .orderedSame,
               !rawValue.isEmpty,
               !rawValue.contains(","),
               let dash = rawValue.firstIndex(of: "-"),
