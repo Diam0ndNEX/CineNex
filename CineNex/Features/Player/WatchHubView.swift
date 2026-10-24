@@ -30,7 +30,7 @@ struct WatchHubView: View {
                     quickActions
                     episodeSelection
                     providerSection
-                    recommendationsPlaceholder
+                    recommendationsSection
                 }
                 .padding(20)
                 .padding(.bottom, 28)
@@ -129,26 +129,6 @@ struct WatchHubView: View {
             }
             .pickerStyle(.menu)
             .accessibilityLabel("Default playback source")
-        }
-    }
-
-    private var episodeSelection: some View {
-        Group {
-            if item.kind == .series {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Choose episode")
-                        .font(.title3.bold())
-                    Stepper("Season \(seasonNumber)", value: $seasonNumber, in: 1...99)
-                        .onChange(of: seasonNumber) { _, _ in resolveSources() }
-                    Stepper("Episode \(episodeNumber)", value: $episodeNumber, in: 1...999)
-                        .onChange(of: episodeNumber) { _, _ in resolveSources() }
-                    Text("Select the episode before opening a source. Episode metadata is not yet synced from the catalog here.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(16)
-                .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
-            }
         }
     }
 
