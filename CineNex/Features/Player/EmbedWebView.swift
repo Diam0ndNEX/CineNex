@@ -50,8 +50,7 @@ struct EmbedWebView: UIViewRepresentable {
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
             guard let url = navigationAction.request.url,
-                  let scheme = url.scheme?.lowercased(),
-                  scheme == "https",
+                  url.scheme?.lowercased() == "https",
                   url.host != nil else {
                 decisionHandler(.cancel)
                 return
@@ -66,18 +65,7 @@ struct EmbedWebView: UIViewRepresentable {
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-            guard let url = navigationAction.request.url,
-                  url.scheme?.lowercased() == "https",
-                  url.host != nil else {
-                return nil
-            }
-
-            webViewLoad(url, in: navigationAction)
-            return nil
-        }
-
-        private func webViewLoad(_ url: URL, in navigationAction: WKNavigationAction) {
-            navigationAction.targetFrame?.request
+            nil
         }
     }
 }
