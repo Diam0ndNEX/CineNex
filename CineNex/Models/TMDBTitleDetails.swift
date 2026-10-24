@@ -198,11 +198,11 @@ struct TMDBSeasonDetails: Decodable, Equatable {
 
 struct TMDBSeasonEpisode: Decodable, Equatable, Identifiable {
     var accessibilitySummary: String {
-        let title = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let season = seasonNumber.map { "Season \\($0), " } ?? ""
+        let title = (name?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? name! : "Episode")
+        let season = seasonNumber.map { "Season \($0), " } ?? ""
         let date = airDate.flatMap { $0.count >= 4 ? String($0.prefix(4)) : nil }
-        let runtimeText = runtime.flatMap { $0 > 0 ? "\\($0) minutes" : nil }
-        return ["\\(season)Episode \\(episodeNumber): \\(title)", date, runtimeText].compactMap { $0 }.joined(separator: ", ")
+        let runtimeText = runtime.flatMap { $0 > 0 ? "\($0) minutes" : nil }
+        return ["\(season)Episode \(episodeNumber): \(title)", date, runtimeText].compactMap { $0 }.joined(separator: ", ")
     }
 
 
