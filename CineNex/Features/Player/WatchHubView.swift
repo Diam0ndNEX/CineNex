@@ -526,7 +526,7 @@ private struct EmbedWebPlaybackView: View {
                     Menu {
                         Toggle("Block ads & trackers", isOn: $cleanerGloballyEnabled)
                         Toggle(
-                            "Disable for this provider",
+                            "Disable for \(providerName)",
                             isOn: Binding(
                                 get: { disabledProviderIDs.contains(providerID) },
                                 set: { isDisabled in
