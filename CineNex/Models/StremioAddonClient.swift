@@ -97,6 +97,7 @@ struct StremioStreamEntry: Decodable, Equatable, Sendable, Identifiable {
     let externalURL: URL?
     let infoHash: String?
     let fileIndex: Int?
+    let sources: [String]?
     let description: String?
     let behaviorHints: StremioStreamBehaviorHints?
 
@@ -107,6 +108,7 @@ struct StremioStreamEntry: Decodable, Equatable, Sendable, Identifiable {
         case externalURL = "externalUrl"
         case infoHash
         case fileIndex = "fileIdx"
+        case sources
         case description
         case behaviorHints
     }

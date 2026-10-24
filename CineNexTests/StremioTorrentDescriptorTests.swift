@@ -47,12 +47,26 @@ final class StremioTorrentDescriptorTests: XCTestCase {
     func testCreatesDescriptorDirectlyFromStremioStreamEntry() throws {
         let stream = try JSONDecoder().decode(
             StremioStreamEntry.self,
-            from: Data(#"{"name":"Torrent","infoHash":"0123456789ABCDEF0123456789ABCDEF01234567","fileIdx":3}"#.utf8)
+            from: Data(#"{"name":"Torrent","infoHash":"0123456789ABCDEF0123456789ABCDEF01234567","fileIdx":3,"sources":["tracker:udp://tracker.example.test:80/announce","tracker:javascript:alert(1)","dht://ignored"]}"#.utf8)
         )
 
         let descriptor = try XCTUnwrap(StremioTorrentDescriptor(stream: stream))
         XCTAssertEqual(descriptor.infoHash, validHash)
         XCTAssertEqual(descriptor.fileIndex, 3)
+        XCTAssertEqual(descriptor.trackers.map(\.absoluteString), ["udp://tracker.example.test:80/announce"])
+        let magnet = try XCTUnwrap(URLComponents(url: descriptor.magnetURL, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(magnet.queryItems?.filter { $0.name == "tr" }.compactMap(\.value), ["udp://tracker.example.test:80/announce"])
+    }
+
+    func testRejectsUnsafeTrackersAndCapsDuplicateTrackers() throws {
+        let safe = try XCTUnwrap(URL(string: "https://tracker.example.test/announce"))
+        let unsafe = try XCTUnwrap(URL(string: "https://user:pass@tracker.example.test/announce"))
+        let many = Array(repeating: safe, count: 25) + [unsafe]
+        let descriptor = try XCTUnwrap(StremioTorrentDescriptor(infoHash: validHash, fileIndex: nil, trackers: many))
+
+        XCTAssertEqual(descriptor.trackers, [safe])
+        let components = try XCTUnwrap(URLComponents(url: descriptor.magnetURL, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(components.queryItems?.filter { $0.name == "tr" }.count, 1)
     }
 
     func testRejectsDirectStreamWithoutTorrentHash() throws {
