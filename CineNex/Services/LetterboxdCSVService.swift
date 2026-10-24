@@ -130,7 +130,7 @@ enum LetterboxdCSVService {
         }
     }
 
-    static func makeDiaryCSV(from records: [LetterboxdRecord]) -> String {    static func makeDiaryCSV(from records: [LetterboxdRecord]) -> String {
+    static func makeDiaryCSV(from records: [LetterboxdRecord]) -> String {
         makeCSV(from: records, kind: .diary)
     }
 
