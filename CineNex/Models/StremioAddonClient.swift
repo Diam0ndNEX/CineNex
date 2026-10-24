@@ -226,7 +226,9 @@ struct StremioAddonClient: Sendable {
     }
 
     func fetchManifest() async throws -> StremioAddonManifest {
+        try Task.checkCancellation()
         let data = try await fetchData(from: manifestURL)
+        try Task.checkCancellation()
         let manifest: StremioAddonManifest
         do {
             manifest = try decoder.decode(StremioAddonManifest.self, from: data)
@@ -242,8 +244,10 @@ struct StremioAddonClient: Sendable {
     }
 
     func fetchStreams(for request: StremioStreamRequest) async throws -> [StremioStreamEntry] {
+        try Task.checkCancellation()
         guard request.isValid else { throw StremioAddonClientError.invalidRequest }
         let manifest = try await fetchManifest()
+        try Task.checkCancellation()
         guard manifest.supports(type: request.mediaType, itemID: request.itemID) else {
             throw StremioAddonClientError.unsupportedResource
         }
@@ -258,7 +262,9 @@ struct StremioAddonClient: Sendable {
             throw StremioAddonClientError.invalidManifestURL
         }
 
+        try Task.checkCancellation()
         let data = try await fetchData(from: streamURL)
+        try Task.checkCancellation()
         let response: StremioStreamResponse
         do {
             response = try decoder.decode(StremioStreamResponse.self, from: data)
@@ -269,6 +275,7 @@ struct StremioAddonClient: Sendable {
     }
 
     private func fetchData(from url: URL) async throws -> Data {
+        try Task.checkCancellation()
         guard Self.isSafeHTTPSURL(url) else { throw StremioAddonClientError.invalidManifestURL }
         var request = URLRequest(url: url)
         request.timeoutInterval = 12
