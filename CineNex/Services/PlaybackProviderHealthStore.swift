@@ -35,13 +35,31 @@ actor PlaybackProviderHealthStore {
         self.maximumCooldown = max(self.baseCooldown, maximumCooldown.isFinite ? maximumCooldown : 1_800)
         if let data = defaults.data(forKey: storageKey),
            let decoded = try? JSONDecoder().decode([PlaybackProviderHealth].self, from: data) {
-            self.records = Dictionary(
-                decoded.filter {
-                    !$0.providerID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        && $0.consecutiveFailures >= 0
-                }.map { ($0.providerID, $0) },
-                uniquingKeysWith: { first, _ in first }
-            )
+            var sanitized: [String: PlaybackProviderHealth] = [:]
+            for record in decoded {
+                let providerID = record.providerID.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !providerID.isEmpty,
+                      record.consecutiveFailures >= 0,
+                      sanitized[providerID] == nil else {
+                    continue
+                }
+
+                let failures = min(record.consecutiveFailures, 30)
+                let cleanedMessage = record.lastErrorMessage?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let message = cleanedMessage.flatMap { value in
+                    value.isEmpty ? nil : String(value.prefix(300))
+                }
+                sanitized[providerID] = PlaybackProviderHealth(
+                    providerID: providerID,
+                    consecutiveFailures: failures,
+                    lastFailureAt: record.lastFailureAt,
+                    nextRetryAt: failures == 0 ? nil : record.nextRetryAt,
+                    lastErrorMessage: failures == 0 ? nil : message,
+                    lastSuccessAt: record.lastSuccessAt
+                )
+            }
+            self.records = sanitized
         } else {
             self.records = [:]
         }
