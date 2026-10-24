@@ -395,6 +395,15 @@ struct ContentView: View {
                                 }
                             }
                             .frame(width: 148)
+                            .contextMenu {
+                                if showProgress {
+                                    Button(role: .destructive) {
+                                        playbackProgressStore.remove(itemID: item.id)
+                                    } label: {
+                                        Label("Remove from Continue Watching", systemImage: "xmark.circle")
+                                    }
+                                }
+                            }
                             if showProgress,
                                let progress = playbackProgressStore.progress(for: item.id),
                                let fraction = progress.completionFraction {
