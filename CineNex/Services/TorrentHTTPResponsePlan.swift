@@ -75,7 +75,7 @@ struct TorrentHTTPResponsePlan: Equatable, Sendable {
     }
 
     private static func baseHeaders(contentType: String) -> [String: String] {
-        let safeContentType = contentType.rangeOfCharacter(from: .newlines) == nil
+        let safeContentType = contentType.utf8.allSatisfy { $0 >= 32 && $0 < 127 }
             ? contentType
             : "application/octet-stream"
         return [

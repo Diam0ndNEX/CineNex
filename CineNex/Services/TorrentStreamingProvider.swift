@@ -19,8 +19,7 @@ struct TorrentPreparedFile: Sendable {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !fileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         length > 0 &&
-        !contentType.contains("\r") &&
-        !contentType.contains("\n")
+        contentType.utf8.allSatisfy { $0 >= 32 && $0 < 127 }
     }
 }
 

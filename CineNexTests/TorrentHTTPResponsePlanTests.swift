@@ -112,6 +112,18 @@ final class TorrentHTTPResponsePlanTests: XCTestCase {
         XCTAssertNil(plan.headers["X-Injected"])
     }
 
+    func testControlCharactersCannotEnterContentTypeHeader() {
+        for unsafeType in ["video/mp4\\0X-Injected: yes", "video/mp4\\u{0001}", "video/mp4\\nX-Injected: yes"] {
+            let plan = TorrentHTTPResponsePlan.make(
+                method: "GET",
+                rangeHeader: nil,
+                totalLength: 5,
+                contentType: unsafeType
+            )
+            XCTAssertEqual(plan.headers["Content-Type"], "application/octet-stream")
+        }
+    }
+
     func testEmptyResourceProducesZeroLengthFullResponse() {
         let plan = TorrentHTTPResponsePlan.make(
             method: "GET",
