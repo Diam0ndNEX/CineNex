@@ -33,7 +33,7 @@ final class TorrentHTTPResponsePlanTests: XCTestCase {
         XCTAssertTrue(plan.sendsBody)
     }
 
-    func testHeadUsesSameRangeMetadataWithoutBody() {
+    func testHeadIgnoresRangeAndReturnsFullResourceMetadataWithoutBody() {
         let plan = TorrentHTTPResponsePlan.make(
             method: "HEAD",
             rangeHeader: "bytes=10-19",
@@ -41,9 +41,22 @@ final class TorrentHTTPResponsePlanTests: XCTestCase {
             contentType: "video/mp4"
         )
 
-        XCTAssertEqual(plan.statusCode, 206)
-        XCTAssertEqual(plan.headers["Content-Length"], "10")
-        XCTAssertEqual(plan.headers["Content-Range"], "bytes 10-19/100")
+        XCTAssertEqual(plan.statusCode, 200)
+        XCTAssertEqual(plan.headers["Content-Length"], "100")
+        XCTAssertNil(plan.headers["Content-Range"])
+        XCTAssertFalse(plan.sendsBody)
+    }
+
+    func testHeadIgnoresMalformedRangeHeader() {
+        let plan = TorrentHTTPResponsePlan.make(
+            method: "HEAD",
+            rangeHeader: "bytes=malformed",
+            totalLength: 50,
+            contentType: "video/mp4"
+        )
+
+        XCTAssertEqual(plan.statusCode, 200)
+        XCTAssertEqual(plan.headers["Content-Length"], "50")
         XCTAssertFalse(plan.sendsBody)
     }
 
