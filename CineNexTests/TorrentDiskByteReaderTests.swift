@@ -76,7 +76,8 @@ final class TorrentDiskByteReaderTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(40))
         XCTAssertFalse(readTask.isCancelled)
         await availability.release()
-        XCTAssertEqual(try await readTask.value, Data("stream".utf8))
+        let readData = try await readTask.value
+        XCTAssertEqual(readData, Data("stream".utf8))
         try await reader.close()
     }
 
