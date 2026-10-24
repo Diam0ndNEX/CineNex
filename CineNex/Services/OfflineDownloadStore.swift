@@ -317,7 +317,7 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
 
         do {
             try prepareDownloadsDirectory()
-            let destination = downloadsDirectory.appendingPathComponent(id, isDirectory: true)
+            let destination = downloadsDirectory.appendingPathComponent("\(id).movpkg", isDirectory: true)
             if FileManager.default.fileExists(atPath: destination.path) {
                 try FileManager.default.removeItem(at: destination)
             }
@@ -325,7 +325,7 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
             updateRecord(id: id) { record in
                 record.status = .completed
                 record.progress = 1
-                record.localDirectoryName = id
+                record.localDirectoryName = destination.lastPathComponent
                 record.errorMessage = nil
             }
             tasks[id] = nil
