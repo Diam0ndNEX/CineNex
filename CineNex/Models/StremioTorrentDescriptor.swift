@@ -4,7 +4,7 @@ struct StremioTorrentDescriptor: Equatable, Sendable, Identifiable {
     let infoHash: String
     let fileIndex: Int?
     let trackers: [URL]
-    let magnetURL
+    let magnetURL: URL
 
     var id: String {
         "\(infoHash):\(fileIndex.map(String.init) ?? "all")"
