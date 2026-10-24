@@ -586,11 +586,12 @@ actor TorrentPlaybackSessionRegistry {
         }
     }
 
-    func stop(for url: URL) async {
-        guard let provider = providersByURL[url.absoluteString] else { return }
+    func stop(for url: URL) async -> Bool {
+        guard let provider = providersByURL[url.absoluteString] else { return false }
         let sessionID = provider.sessionID
         providersByURL = providersByURL.filter { $0.value.sessionID != sessionID }
         await provider.stop()
+        return true
     }
 
     func stopAll() async {

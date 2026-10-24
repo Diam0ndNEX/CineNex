@@ -80,7 +80,9 @@ struct WatchHubView: View {
                 )
             }
             .sheet(item: $selectedDiscoveredSource) { source in
-                DiscoveredSourcePlaybackView(source: source)
+                DiscoveredSourcePlaybackView(source: source) {
+                    discoveredSources.removeAll { $0.id == source.id }
+                }
             }
             .task(id: item.id) {
                 resolveSources()
@@ -969,6 +971,7 @@ private struct EmbedWebPlaybackView: View {
 
 private struct DiscoveredSourcePlaybackView: View {
     let source: PlaybackSource
+    let onTorrentSessionStopped: () -> Void
     @Environment(\.dismiss) private var dismiss
     @AppStorage(PlaybackCleanerPolicy.enabledStorageKey) private var cleanerGloballyEnabled = true
     @AppStorage(PlaybackCleanerPolicy.disabledProvidersStorageKey) private var disabledProviderStorage = ""
@@ -982,8 +985,9 @@ private struct DiscoveredSourcePlaybackView: View {
         )
     }
 
-    init(source: PlaybackSource) {
+    init(source: PlaybackSource, onTorrentSessionStopped: @escaping () -> Void = {}) {
         self.source = source
+        self.onTorrentSessionStopped = onTorrentSessionStopped
         _player = State(initialValue: AVPlayer(url: source.url))
     }
 
@@ -995,7 +999,11 @@ private struct DiscoveredSourcePlaybackView: View {
                         .onAppear { player.play() }
                         .onDisappear {
                             player.pause()
-                            Task { await TorrentPlaybackSessionRegistry.shared.stop(for: source.url) }
+                            Task { @MainActor in
+                                if await TorrentPlaybackSessionRegistry.shared.stop(for: source.url) {
+                                    onTorrentSessionStopped()
+                                }
+                            }
                         }
                         .background(.black)
                         .ignoresSafeArea(edges: .bottom)
