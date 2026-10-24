@@ -100,7 +100,12 @@ enum LetterboxdCSVService {
             let stableFilmID = uri ?? "\(title.lowercased())|\(year.map(String.init) ?? "")"
             let uniqueSuffix = kind == .diary ? (watchedDate ?? dateAdded ?? "") : ""
             let id = "\(kind.rawValue)|\(stableFilmID)|\(uniqueSuffix)"
-            let rating = value(ratingColumn).flatMap(Double.init)
+            let rating = value(ratingColumn).flatMap { rawValue -> Double? in
+                guard let parsed = Double(rawValue), parsed.isFinite, (0...5).contains(parsed) else {
+                    return nil
+                }
+                return parsed
+            }
             let rewatchValue = value(rewatchColumn)?.lowercased()
             let rewatch = rewatchValue.map { ["yes", "true", "1", "y"].contains($0) }
 
@@ -117,6 +122,16 @@ enum LetterboxdCSVService {
                 review: value(reviewColumn),
                 kind: kind
             )
+        }
+    }
+
+    static func exportFilename(for kind: LetterboxdRecordKind) -> String {
+        switch kind {
+        case .diary: return "diary.csv"
+        case .watched: return "watched.csv"
+        case .ratings: return "ratings.csv"
+        case .watchlist: return "watchlist.csv"
+        case .other: return "cinenex-export.csv"
         }
     }
 
