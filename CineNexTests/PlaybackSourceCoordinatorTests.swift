@@ -136,6 +136,66 @@ final class PlaybackSourceCoordinatorTests: XCTestCase {
         XCTAssertEqual(result.sources.map(\.id), ["first"])
     }
 
+    func testCoordinatorUsesRegisteredProviderIdentityAndPriority() async throws {
+        let lowProvider = StubPlaybackProvider(
+            id: "trusted-low",
+            name: "Trusted low",
+            priority: 1,
+            sources: [
+                PlaybackSource(
+                    id: "source-low",
+                    providerID: "spoofed-provider",
+                    providerName: "Spoofed provider",
+                    title: "Example Film",
+                    url: URL(string: "https://media.example.test/low.mp4")!,
+                    qualityLabel: "HD",
+                    languageCode: "en",
+                    subtitleLanguages: ["en"],
+                    supportsNativePlayback: true,
+                    providerPriority: 1000
+                )
+            ]
+        )
+        let highProvider = StubPlaybackProvider(
+            id: "trusted-high",
+            name: "Trusted high",
+            priority: 2,
+            sources: [
+                makeSource(
+                    id: "source-high",
+                    providerID: "trusted-high",
+                    url: URL(string: "https://media.example.test/high.mp4")!,
+                    priority: 2
+                )
+            ]
+        )
+
+        let result = try await PlaybackSourceCoordinator(
+            providers: [lowProvider, highProvider]
+        ).search(
+            for: PlaybackSourceRequest(title: "Example Film", mediaKind: .movie)
+        )
+
+        XCTAssertEqual(result.sources.map(\\.providerID), ["trusted-high", "trusted-low"])
+        XCTAssertEqual(result.sources.last?.providerName, "Trusted low")
+        XCTAssertEqual(result.sources.last?.providerPriority, 1)
+    }
+
+    func testRequestRejectsInvalidExternalIDsAndEpisodeCoordinates() {
+        XCTAssertFalse(
+            PlaybackSourceRequest(title: "Example Film", mediaKind: .movie, tmdbID: 0).isValid
+        )
+        XCTAssertFalse(
+            PlaybackSourceRequest(title: "Example Film", mediaKind: .movie, releaseYear: -1).isValid
+        )
+        XCTAssertFalse(
+            PlaybackSourceRequest(title: "Example Series", mediaKind: .series, seasonNumber: -1, episodeNumber: 1).isValid
+        )
+        XCTAssertFalse(
+            PlaybackSourceRequest(title: "Example Series", mediaKind: .series, seasonNumber: 1, episodeNumber: 0).isValid
+        )
+    }
+
     private func makeSource(
         id: String,
         providerID: String,
