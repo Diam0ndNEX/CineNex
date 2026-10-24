@@ -713,7 +713,7 @@ private struct MediaPosterCard: View {
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
-                Text("\(item.year) · \(item.genre)")
+                Text(([item.yearLabel, item.genre].compactMap { $0 }).joined(separator: " · "))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -760,7 +760,7 @@ private struct MediaDetailView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(item.title)
                         .font(.largeTitle.bold())
-                    Text("\(item.year)  •  \(item.kind.rawValue)  •  \(item.genre)  •  \(item.runtime)")
+                    Text(([item.yearLabel, item.kind.rawValue, item.genre, item.runtime].compactMap { $0 }).joined(separator: "  •  "))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     if let rating = item.rating {
