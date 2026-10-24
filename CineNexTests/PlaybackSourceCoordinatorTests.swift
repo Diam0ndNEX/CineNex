@@ -144,7 +144,7 @@ final class PlaybackSourceCoordinatorTests: XCTestCase {
             sources: [
                 PlaybackSource(
                     id: "source-low",
-                    providerID: "spoofed-provider",
+                    providerID: "trusted-low",
                     providerName: "Spoofed provider",
                     title: "Example Film",
                     url: URL(string: "https://media.example.test/low.mp4")!,
