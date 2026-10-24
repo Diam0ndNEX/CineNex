@@ -144,6 +144,24 @@ struct ContentView: View {
             .tag(AppTab.library)
 
             NavigationStack {
+                OfflineLibraryView { download, localURL in
+                    activePlayerItem = MediaItem(
+                        id: "offline-\(download.id)",
+                        title: download.title,
+                        kind: .movie,
+                        year: 0,
+                        genre: "Offline",
+                        synopsis: "Downloaded for offline playback.",
+                        symbol: "arrow.down.circle.fill",
+                        runtime: "Offline media",
+                        streamURL: localURL
+                    )
+                }
+            }
+            .tabItem { Label("Downloads", systemImage: "arrow.down.circle.fill") }
+            .tag(AppTab.downloads)
+
+            NavigationStack {
                 TrackingView()
             }
             .tabItem { Label("Tracking", systemImage: "arrow.triangle.2.circlepath") }
@@ -566,6 +584,7 @@ private enum AppTab: Hashable {
     case home
     case search
     case library
+    case downloads
     case tracking
 }
 
@@ -735,6 +754,10 @@ private struct MediaPosterCard: View {
 }
 
 private struct MediaDetailView: View {
+    @StateObject private var offlineDownloadStore = OfflineDownloadStore.shared
+    @State private var offlineDownloadMessage: String?
+    @State private var showingOfflineDownloadMessage = false
+
     let item: MediaItem
     let isFavorite: Bool
     let onFavoriteToggle: () -> Void
@@ -986,6 +1009,35 @@ private struct MediaDetailView: View {
                     Label("Playback will become available when a compatible provider supplies a source.", systemImage: "info.circle")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                } else if let sourceURL = item.streamURL {
+                    let eligible = OfflineDownloadStore.supportsOfflineDownload(from: sourceURL)
+                    Button {
+                        do {
+                            let record = try offlineDownloadStore.enqueue(title: item.title, sourceURL: sourceURL)
+                            offlineDownloadMessage = record.status == .completed
+                                ? "This title is already available offline."
+                                : "Added to offline downloads."
+                        } catch {
+                            offlineDownloadMessage = error.localizedDescription
+                        }
+                        showingOfflineDownloadMessage = true
+                    } label: {
+                        Label("Download for Offline", systemImage: "arrow.down.circle")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!eligible)
+                    .accessibilityHint(
+                        eligible
+                            ? "Downloads this HLS stream for offline playback"
+                            : "This source is not a supported HLS playlist"
+                    )
+                    if !eligible {
+                        Text("Offline downloads require a compatible HTTPS HLS playlist. This source cannot be downloaded in CineNex.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .padding(20)
@@ -997,6 +1049,11 @@ private struct MediaDetailView: View {
         }
         .sheet(item: $selectedSeason) { season in
             SeasonEpisodesView(item: item, season: season)
+        }
+        .alert("Offline Download", isPresented: $showingOfflineDownloadMessage) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(offlineDownloadMessage ?? "The download request has been processed.")
         }
     }
 

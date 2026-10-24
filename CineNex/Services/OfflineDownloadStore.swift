@@ -244,13 +244,22 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
             downloads = []
             return
         }
-        downloads = decoded.filter { record in
+        var restored = decoded.filter { record in
             !record.id.isEmpty
                 && !record.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 && Self.supportsOfflineDownload(from: record.sourceURL)
                 && record.progress.isFinite
                 && (0...1).contains(record.progress)
         }
+
+        for index in restored.indices where restored[index].status == .completed {
+            guard restored[index].localAssetURL(in: downloadsDirectory) == nil else { continue }
+            restored[index].status = .failed
+            restored[index].errorMessage = "The downloaded media file is missing. Download it again to restore offline playback."
+            restored[index].updatedAt = Date()
+        }
+
+        downloads = restored
         sortAndPersist()
     }
 
@@ -317,7 +326,7 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
 
         do {
             try prepareDownloadsDirectory()
-            let destination = downloadsDirectory.appendingPathComponent(id, isDirectory: true)
+            let destination = downloadsDirectory.appendingPathComponent("\(id).movpkg", isDirectory: true)
             if FileManager.default.fileExists(atPath: destination.path) {
                 try FileManager.default.removeItem(at: destination)
             }
@@ -325,7 +334,7 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
             updateRecord(id: id) { record in
                 record.status = .completed
                 record.progress = 1
-                record.localDirectoryName = id
+                record.localDirectoryName = destination.lastPathComponent
                 record.errorMessage = nil
             }
             tasks[id] = nil
