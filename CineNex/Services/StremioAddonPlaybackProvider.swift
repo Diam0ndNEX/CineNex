@@ -96,38 +96,35 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
             return []
         }
 
+        let streamRequest = StremioStreamRequest(
+            mediaType: request.mediaKind == .movie ? "movie" : "series",
+            itemID: imdbID,
+            seasonNumber: request.seasonNumber,
+            episodeNumber: request.episodeNumber
+        )
+        if clients.count == 1 {
+            let entries = try await clients[0].fetchStreams(for: streamRequest)
+            return Self.mapSources(
+                entries,
+                index: 0,
+                providerID: id,
+                displayName: displayName,
+                priority: priority
+            )
+        }
+
         let aggregated = await withTaskGroup(of: (sources: [PlaybackSource], failure: String?).self, returning: (sources: [PlaybackSource], failures: [String]).self) { group in
             for (index, client) in clients.enumerated() {
                 group.addTask { () -> (sources: [PlaybackSource], failure: String?) in
                     do {
-                        let entries = try await client.fetchStreams(
-                            for: StremioStreamRequest(
-                                mediaType: request.mediaKind == .movie ? "movie" : "series",
-                                itemID: imdbID,
-                                seasonNumber: request.seasonNumber,
-                                episodeNumber: request.episodeNumber
-                            )
+                        let entries = try await client.fetchStreams(for: streamRequest)
+                        let sources = Self.mapSources(
+                            entries,
+                            index: index,
+                            providerID: id,
+                            displayName: displayName,
+                            priority: priority
                         )
-                        let sources: [PlaybackSource] = entries.compactMap { entry -> PlaybackSource? in
-                            guard let url = entry.validatedPlaybackURL else { return nil }
-                            let title = [entry.name, entry.title]
-                                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                                .first(where: { !$0.isEmpty }) ?? "Stream from add-on \(index + 1)"
-                            let quality = Self.qualityLabel(from: [entry.name, entry.title, entry.description].compactMap { $0 }.joined(separator: " "))
-                            let nativePlayback = Self.supportsNativePlayback(url)
-                            return PlaybackSource(
-                                id: "stremio-\(index)-\(url.absoluteString)",
-                                providerID: id,
-                                providerName: displayName,
-                                title: title,
-                                url: url,
-                                qualityLabel: quality,
-                                languageCode: nil,
-                                subtitleLanguages: [],
-                                supportsNativePlayback: nativePlayback,
-                                providerPriority: priority
-                            )
-                        }
                         return (sources, nil)
                     } catch {
                         return ([], error.localizedDescription)
@@ -146,6 +143,34 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
             throw StremioAddonClientError.transport(aggregated.failures.joined(separator: " "))
         }
         return aggregated.sources
+    }
+
+    private static func mapSources(
+        _ entries: [StremioStreamEntry],
+        index: Int,
+        providerID: String,
+        displayName: String,
+        priority: Int
+    ) -> [PlaybackSource] {
+        entries.compactMap { entry -> PlaybackSource? in
+            guard let url = entry.validatedPlaybackURL else { return nil }
+            let title = [entry.name, entry.title]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first(where: { !$0.isEmpty }) ?? "Stream from add-on \(index + 1)"
+            let quality = Self.qualityLabel(from: [entry.name, entry.title, entry.description].compactMap { $0 }.joined(separator: " "))
+            return PlaybackSource(
+                id: "stremio-\(index)-\(url.absoluteString)",
+                providerID: providerID,
+                providerName: displayName,
+                title: title,
+                url: url,
+                qualityLabel: quality,
+                languageCode: nil,
+                subtitleLanguages: [],
+                supportsNativePlayback: Self.supportsNativePlayback(url),
+                providerPriority: priority
+            )
+        }
     }
 
     private static func supportsNativePlayback(_ url: URL) -> Bool {
