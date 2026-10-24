@@ -18,6 +18,7 @@ struct PlaybackProgress: Codable, Equatable, Identifiable {
 @MainActor
 final class PlaybackProgressStore: ObservableObject {
     static let shared = PlaybackProgressStore()
+    static let maximumStoredEntries = 100
     @Published private(set) var entries: [String: PlaybackProgress] = [:]
     private let defaults: UserDefaults
     private let storageKey: String
@@ -29,7 +30,10 @@ final class PlaybackProgressStore: ObservableObject {
     }
 
     var mostRecentlyWatched: [PlaybackProgress] {
-        entries.values.sorted { $0.updatedAt > $1.updatedAt }
+        entries.values.sorted {
+            if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
+            return $0.itemID.localizedStandardCompare($1.itemID) == .orderedAscending
+        }
     }
 
     func progress(for itemID: String) -> PlaybackProgress? { entries[itemID] }
@@ -51,6 +55,7 @@ final class PlaybackProgressStore: ObservableObject {
             updatedAt: Date(),
             itemSnapshot: item ?? entries[itemID]?.itemSnapshot
         )
+        trimEntriesToLimit()
         persist()
     }
 
@@ -90,6 +95,19 @@ final class PlaybackProgressStore: ObservableObject {
 
             return true
         }
+        trimEntriesToLimit()
+        if entries.count != decoded.count {
+            persist()
+        }
+    }
+
+    private func trimEntriesToLimit() {
+        guard entries.count > Self.maximumStoredEntries else { return }
+        let retained = entries.values.sorted {
+            if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
+            return $0.itemID.localizedStandardCompare($1.itemID) == .orderedAscending
+        }.prefix(Self.maximumStoredEntries)
+        entries = Dictionary(uniqueKeysWithValues: retained.map { ($0.itemID, $0) })
     }
 
     private func persist() {

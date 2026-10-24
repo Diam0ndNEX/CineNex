@@ -144,6 +144,34 @@ final class PlaybackProgressStoreTests: XCTestCase {
         _ = store
     }
 
+    func testProgressHistoryIsBoundedToTheMostRecentlyUpdatedHundredEntries() throws {
+        let (store, defaults, suite) = makeStore()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var records: [String: PlaybackProgress] = [:]
+        for index in 0..<120 {
+            let itemID = "item-" + String(index)
+            records[itemID] = PlaybackProgress(itemID: itemID, position: 20, duration: 100, updatedAt: start.addingTimeInterval(TimeInterval(index)))
+        }
+        defaults.set(try JSONEncoder().encode(records), forKey: "progress")
+        let restored = PlaybackProgressStore(defaults: defaults, storageKey: "progress")
+        XCTAssertEqual(restored.entries.count, 100)
+        XCTAssertNotNil(restored.progress(for: "item-119"))
+        XCTAssertNotNil(restored.progress(for: "item-20"))
+        XCTAssertNil(restored.progress(for: "item-19"))
+        let trimmedData = try XCTUnwrap(defaults.data(forKey: "progress"))
+        let trimmedRecords = try JSONDecoder().decode([String: PlaybackProgress].self, from: trimmedData)
+        XCTAssertEqual(trimmedRecords.count, 100)
+        XCTAssertNil(trimmedRecords["item-19"])
+        restored.record(itemID: "new-item", position: 25, duration: 100)
+        XCTAssertEqual(restored.entries.count, 100)
+        XCTAssertNotNil(restored.progress(for: "new-item"))
+        XCTAssertNil(restored.progress(for: "item-20"))
+        let persisted = PlaybackProgressStore(defaults: defaults, storageKey: "progress")
+        XCTAssertNotNil(persisted.progress(for: "new-item"))
+        XCTAssertNil(persisted.progress(for: "item-20"))
+        defaults.removePersistentDomain(forName: suite)
+        _ = store
+    }
     func testLoadingMalformedStoredDataProducesEmptyProgress() {
         let (store, defaults, suite) = makeStore()
         defaults.set(Data("{invalid-json".utf8), forKey: "progress")
