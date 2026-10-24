@@ -113,7 +113,7 @@ struct TMDBTitleDetails: Decodable, Equatable {
                 runtime: kind == .movie ? "Movie" : "Series",
                 streamURL: nil,
                 posterURL: posterURL,
-                rating: result.voteAverage,
+                rating: result.validVoteAverage,
                 externalID: result.id,
                 metadataProvider: "tmdb"
             )
@@ -197,6 +197,15 @@ struct TMDBSeasonDetails: Decodable, Equatable {
 }
 
 struct TMDBSeasonEpisode: Decodable, Equatable, Identifiable {
+    var accessibilitySummary: String {
+        let title = (name?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? name! : "Episode")
+        let season = seasonNumber.map { "Season \($0), " } ?? ""
+        let date = airDate.flatMap { $0.count >= 4 ? String($0.prefix(4)) : nil }
+        let runtimeText = runtime.flatMap { $0 > 0 ? "\($0) minutes" : nil }
+        return ["\(season)Episode \(episodeNumber): \(title)", date, runtimeText].compactMap { $0 }.joined(separator: ", ")
+    }
+
+
     let id: Int
     let name: String?
     let overview: String?
@@ -280,6 +289,11 @@ struct TMDBTitleRecommendations: Decodable, Equatable {
 }
 
 struct TMDBTitleRecommendation: Decodable, Equatable {
+    var validVoteAverage: Double? {
+        guard let voteAverage, voteAverage.isFinite, (0...10).contains(voteAverage) else { return nil }
+        return voteAverage
+    }
+
     let id: Int
     let title: String?
     let name: String?

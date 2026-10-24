@@ -50,6 +50,16 @@ final class FavoriteLibraryStoreTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
     }
 
+    func testRemoveAllClearsPersistedFavorites() {
+        let (store, defaults, suite) = makeStore()
+        store.save(MediaItem.demoCatalog[0])
+        store.save(MediaItem.demoCatalog[1])
+        store.removeAll()
+        XCTAssertTrue(store.load().isEmpty)
+        XCTAssertNil(defaults.data(forKey: "favoriteSnapshots"))
+        defaults.removePersistentDomain(forName: suite)
+    }
+
     func testInvalidFavoriteSnapshotIsNotSaved() {
         let (store, defaults, suite) = makeStore()
         let item = MediaItem(

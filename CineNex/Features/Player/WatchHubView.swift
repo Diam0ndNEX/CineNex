@@ -79,6 +79,7 @@ struct WatchHubView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                     VStack(alignment: .leading, spacing: 8) {
                         Text(item.title)
+                            .accessibilityAddTraits(.isHeader)
                             .font(.title2.bold())
                             .fixedSize(horizontal: false, vertical: true)
                         Text(([item.yearLabel, item.kind.rawValue, item.genre].compactMap { $0 }).joined(separator: " · "))

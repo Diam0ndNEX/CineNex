@@ -31,7 +31,9 @@ struct TraktHistoryMovie: Decodable, Identifiable, Hashable {
         if let tmdbID, tmdbID > 0 {
             return "tmdb-movie-\(tmdbID)"
         }
-        return "title-\(title.lowercased())-\(year ?? 0)"
+        let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+        return "title-\(normalized)-\(year ?? 0)"
     }
 
     static func decodeList(_ data: Data) throws -> [TraktHistoryMovie] {

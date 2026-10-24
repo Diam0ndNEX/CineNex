@@ -40,7 +40,10 @@ private final class PosterImageLoader: ObservableObject {
     }()
 
     func load(from url: URL?) async {
-        guard let url else {
+        image = nil
+        guard let url,
+              url.scheme?.lowercased() == "https",
+              url.host != nil else {
             image = nil
             return
         }

@@ -3,6 +3,12 @@ import Foundation
 struct CachedCatalogSnapshot: Codable, Equatable {
     let items: [MediaItem]
     let savedAt: Date
+
+    func isFresh(maxAge: TimeInterval, now: Date = Date()) -> Bool {
+        guard maxAge.isFinite, maxAge >= 0, savedAt <= now else { return false }
+        let age = now.timeIntervalSince(savedAt)
+        return age.isFinite && age <= maxAge
+    }
 }
 
 final class CatalogCacheStore {
