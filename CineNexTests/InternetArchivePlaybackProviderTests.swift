@@ -3,9 +3,8 @@ import XCTest
 
 final class InternetArchivePlaybackProviderTests: XCTestCase {
     func testCancelledTaskDoesNotStartArchiveSearch() async {
-        var requestCount = 0
         MockArchiveURLProtocol.responseHandler = { _ in
-            requestCount += 1
+            XCTFail("A cancelled search must not issue a network request.")
             return (200, Data(#"{"response":{"docs":[]}}"#.utf8))
         }
         defer { MockArchiveURLProtocol.responseHandler = nil }
