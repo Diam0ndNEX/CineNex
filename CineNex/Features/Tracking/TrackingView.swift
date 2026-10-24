@@ -31,6 +31,7 @@ struct TrackingView: View {
     @State private var showingTraktRatingsReview = false
     @State private var loadingTraktRatings = false
     @State private var ratingsMessage: String?
+    @State private var showingPrivacyDetails = false
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -56,6 +57,14 @@ struct TrackingView: View {
                     Text("CineNex keeps local playback progress on this device. Trakt and TMDB access tokens are stored in iOS Keychain. Disconnecting either service removes its saved token.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+
+                    Button {
+                        showingPrivacyDetails = true
+                    } label: {
+                        Label("View data and privacy details", systemImage: "info.circle")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .accessibilityHint("Explains what CineNex stores locally and what is shared with connected services.")
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -66,6 +75,11 @@ struct TrackingView: View {
         .background(Color.cineNexBackground.ignoresSafeArea())
         .navigationTitle("Tracking")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingPrivacyDetails) {
+            NavigationStack {
+                CineNexPrivacyDetailsView()
+            }
+        }
         .onChange(of: scrobblingEnabled) { _, newValue in
             UserDefaults.standard.set(newValue, forKey: "cinenex.traktScrobbleEnabled")
         }
@@ -770,6 +784,85 @@ struct TrackingView: View {
 
     private func traktError(_ error: Error) {
         trakt.reportSetupError(error)
+    }
+}
+
+private struct CineNexPrivacyDetailsView: View {
+    var body: some View {
+        List {
+            Section("Stored on this device") {
+                Label {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Playback and favorites")
+                            .font(.headline)
+                        Text("Resume positions, favorites, and imported watch-list records are kept in local app storage. Playback progress is not automatically synced between devices.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "iphone")
+                        .foregroundStyle(Color.cineNexAccent)
+                }
+
+                Label {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Imported Letterboxd files")
+                            .font(.headline)
+                        Text("CSV data is imported when you choose files. CineNex does not sign in to Letterboxd or upload those files to a CineNex account.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "doc.text")
+                        .foregroundStyle(Color.cineNexAccent)
+                }
+            }
+
+            Section("Connected services") {
+                Label {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("TMDB")
+                            .font(.headline)
+                        Text("When you connect TMDB, CineNex sends catalog searches and metadata requests to TMDB. The access token is stored in iOS Keychain. TMDB provides metadata, not playable media.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "sparkles.tv")
+                        .foregroundStyle(Color.cineNexAccent)
+                }
+
+                Label {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Trakt")
+                            .font(.headline)
+                        Text("Your authorization token is stored in iOS Keychain. If you enable scrobbling, supported movie playback events are sent to Trakt. You can disconnect Trakt from this screen.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(Color.cineNexAccent)
+                }
+            }
+
+            Section("Your choices") {
+                Label {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Optional integrations")
+                            .font(.headline)
+                        Text("TMDB and Trakt connections are optional. Disconnecting removes the corresponding saved token; it does not delete data already held by those services.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "hand.raised")
+                        .foregroundStyle(Color.cineNexAccent)
+                }
+            }
+        }
+        .navigationTitle("Data & Privacy")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
