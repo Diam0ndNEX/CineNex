@@ -289,7 +289,14 @@ struct TMDBTitleRecommendation: Decodable, Equatable {
     let posterPath: String?
     let voteAverage: Double?
 
+    var validVoteAverage: Double? {
+        guard let voteAverage, voteAverage.isFinite, (0...10).contains(voteAverage) else { return nil }
+        return voteAverage
+    }
+
     enum CodingKeys: String, CodingKey {
+        case id
+        case title    enum CodingKeys: String, CodingKey {
         case id
         case title
         case name
