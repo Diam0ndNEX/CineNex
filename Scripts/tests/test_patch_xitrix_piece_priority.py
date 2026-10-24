@@ -13,7 +13,7 @@ class PatchXitrixPiecePriorityTests(unittest.TestCase):
         header = root / "LibTorrent/Core/TorrentHandle/TorrentHandle.h"
         implementation = root / "LibTorrent/Core/TorrentHandle/TorrentHandle.mm"
         header.parent.mkdir(parents=True)
-        implementation.parent.mkdir(parents=True)
+        implementation.parent.mkdir(parents=True, exist_ok=True)
         header.write_text(
             "#import <Foundation/Foundation.h>\n"
             "@interface TorrentHandle : NSObject\n"
