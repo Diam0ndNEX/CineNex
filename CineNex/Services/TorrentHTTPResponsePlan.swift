@@ -33,7 +33,7 @@ struct TorrentHTTPResponsePlan: Equatable, Sendable {
         }
 
         do {
-            let parsedRange = try TorrentHTTPByteRange.parse(rangeHeader, totalLength: totalLength)
+            let parsedRange = try TorrentHTTPByteRange.parse(normalizedMethod == "GET" ? rangeHeader : nil, totalLength: totalLength)
             if let parsedRange {
                 var headers = Self.baseHeaders(contentType: contentType)
                 headers["Accept-Ranges"] = "bytes"
