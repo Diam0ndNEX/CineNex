@@ -99,7 +99,9 @@ struct WatchHubView: View {
     private var quickActions: some View {
         VStack(alignment: .leading, spacing: 10) {
             Button {
-                if let preferred = availableProviders.first(where: { $0.provider.id == defaultProviderID }) {
+                if (defaultProviderID == "smart" || defaultProviderID == "direct"), item.streamURL != nil {
+                    onPlayDirect(item)
+                } else if let preferred = availableProviders.first(where: { $0.provider.id == defaultProviderID }) {
                     selectedProvider = preferred
                 } else if let first = availableProviders.first {
                     selectedProvider = first
@@ -118,6 +120,9 @@ struct WatchHubView: View {
 
             Picker("Default source", selection: $defaultProviderID) {
                 Text("Smart Default").tag("smart")
+                if item.streamURL != nil {
+                    Text("Direct playback").tag("direct")
+                }
                 ForEach(availableProviders) { source in
                     Text(source.provider.displayName).tag(source.provider.id)
                 }
@@ -158,23 +163,56 @@ struct WatchHubView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("\(availableProviders.count) candidates")
+                Text("\(availableProviders.count + (item.streamURL == nil ? 0 : 1)) sources")
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(Color.cineNexSurface, in: Capsule())
             }
 
+            if item.streamURL != nil {
+                Button {
+                    onPlayDirect(item)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "play.fill")
+                            .font(.title2)
+                            .foregroundStyle(Color.cineNexAccent)
+                            .frame(width: 44, height: 44)
+                            .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Direct playback")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                            Text("Play the supplied media URL with CineNex's native player")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(12)
+                    .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+            }
+
             if availableProviders.isEmpty {
-                ContentUnavailableView(
+                if item.streamURL == nil {
+                    ContentUnavailableView(
                     "No compatible candidates",
                     systemImage: "dot.radiowaves.left.and.right",
                     description: Text(request.tmdbID == nil
                         ? "This title needs a verified TMDB identifier before compatible sources can be requested."
                         : "No configured candidate could create an embed URL for this title. Try a title with a TMDB identifier.")
-                )
-                .padding(.vertical, 8)
-            } else {
+                    )
+                    .padding(.vertical, 8)
+                }
+            }
+
+            if !availableProviders.isEmpty {
                 ForEach(availableProviders) { source in
                     Button {
                         selectedProvider = source
