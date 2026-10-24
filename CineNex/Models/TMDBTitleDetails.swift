@@ -197,6 +197,14 @@ struct TMDBSeasonDetails: Decodable, Equatable {
 }
 
 struct TMDBSeasonEpisode: Decodable, Equatable, Identifiable {
+    var accessibilitySummary: String {
+        let title = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let season = seasonNumber.map { "Season \($0), " } ?? ""
+        let date = airDate.flatMap { $0.count >= 4 ? String($0.prefix(4)) : nil }
+        let runtimeText = runtime.flatMap { $0 > 0 ? "\($0) minutes" : nil }
+        return ["\(season)Episode \(episodeNumber): \(title)", date, runtimeText].compactMap { $0 }.joined(separator: ", ")
+    }
+
     let id: Int
     let name: String?
     let overview: String?
@@ -219,18 +227,7 @@ struct TMDBSeasonEpisode: Decodable, Equatable, Identifiable {
         case runtime
     }
 
-    var accessibilitySummary: String {
-        let title = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let season = seasonNumber.map { "Season \($0), " } ?? ""
-        let date = airDate.flatMap { $0.count >= 4 ? String($0.prefix(4)) : nil }
-        let runtimeText = runtime.flatMap { $0 > 0 ? "\($0) minutes" : nil }
-        return ["\(season)Episode \(episodeNumber): \(title)", date, runtimeText].compactMap { $0 }.joined(separator: ", ")
-    }
-
     var displayName: String {
-        let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmedName.isEmpty ? "Episode \(episodeNumber)" : trimmedName
-    }    var displayName: String {
         let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmedName.isEmpty ? "Episode \(episodeNumber)" : trimmedName
     }
