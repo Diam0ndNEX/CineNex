@@ -12,6 +12,7 @@ struct ContentView: View {
     }
     @State private var selectedItem: MediaItem?
     @State private var activePlayerItem: MediaItem?
+    @State private var watchHubItem: MediaItem?
     @State private var showingUnavailableSource = false
 
     @State private var catalog = CatalogCacheStore.shared.load()?.items ?? MediaItem.demoCatalog
@@ -105,7 +106,7 @@ struct ContentView: View {
                             item: item,
                             isFavorite: favorites.contains(item.id),
                             onFavoriteToggle: { toggleFavorite(item) },
-                            onPlay: { play(item) },
+                            onPlay: { watchHubItem = item },
                             onSelectItem: { selectedItem = $0 }
                         )
                     }
@@ -120,7 +121,7 @@ struct ContentView: View {
                             item: item,
                             isFavorite: favorites.contains(item.id),
                             onFavoriteToggle: { toggleFavorite(item) },
-                            onPlay: { play(item) },
+                            onPlay: { watchHubItem = item },
                             onSelectItem: { selectedItem = $0 }
                         )
                     }
@@ -135,7 +136,7 @@ struct ContentView: View {
                             item: item,
                             isFavorite: favorites.contains(item.id),
                             onFavoriteToggle: { toggleFavorite(item) },
-                            onPlay: { play(item) },
+                            onPlay: { watchHubItem = item },
                             onSelectItem: { selectedItem = $0 }
                         )
                     }
@@ -172,6 +173,9 @@ struct ContentView: View {
         .fullScreenCover(item: $activePlayerItem) { item in
             PlayerView(item: item, progressStore: playbackProgressStore)
         }
+        .sheet(item: $watchHubItem) { item in
+            WatchHubView(item: item, onPlayDirect: { play($0) })
+        }
         .alert("Playback unavailable", isPresented: $showingUnavailableSource) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -196,7 +200,7 @@ struct ContentView: View {
                     FeaturedBanner(item: featured) {
                         selectedItem = featured
                     } onPlay: {
-                        play(featured)
+                        watchHubItem = featured
                     }
                 }
 
