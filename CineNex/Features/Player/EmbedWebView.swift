@@ -30,6 +30,8 @@ struct EmbedWebView: UIViewRepresentable {
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+        private static let contentRuleListIdentifier = "CineNexPlaybackCleaner-v1"
+
         private let onFailure: () -> Void
         private var lastConfigurationKey: String?
 
@@ -50,23 +52,40 @@ struct EmbedWebView: UIViewRepresentable {
 
             do {
                 let ruleJSON = try PlaybackCleanerPolicy.contentBlockerJSON()
-                WKContentRuleListStore.default().compileContentRuleList(
-                    forIdentifier: "CineNexPlaybackCleaner-v1",
-                    encodedContentRuleList: ruleJSON
-                ) { [weak self, weak webView] ruleList, _ in
-                    DispatchQueue.main.async {
-                        guard let self, let webView, self.lastConfigurationKey == key else { return }
-                        let controller = webView.configuration.userContentController
-                        controller.removeAllContentRuleLists()
-                        if let ruleList {
-                            controller.add(ruleList)
-                        }
-                        self.load(url, in: webView, configurationKey: key)
+                let store = WKContentRuleListStore.default()
+                store.lookUpContentRuleList(forIdentifier: Self.contentRuleListIdentifier) { [weak self, weak webView] cachedRuleList, lookupError in
+                    guard let self, let webView, self.lastConfigurationKey == key else { return }
+                    if let cachedRuleList {
+                        self.install(cachedRuleList, in: webView, url: url, configurationKey: key)
+                        return
                     }
+
+                    store.compileContentRuleList(
+                        forIdentifier: Self.contentRuleListIdentifier,
+                        encodedContentRuleList: ruleJSON
+                    ) { [weak self, weak webView] compiledRuleList, _ in
+                        DispatchQueue.main.async {
+                            guard let self, let webView, self.lastConfigurationKey == key else { return }
+                            if let compiledRuleList {
+                                self.install(compiledRuleList, in: webView, url: url, configurationKey: key)
+                            } else {
+                                self.load(url, in: webView, configurationKey: key)
+                            }
+                        }
+                    }
+                    _ = lookupError
                 }
             } catch {
                 load(url, in: webView, configurationKey: key)
             }
+        }
+
+        private func install(_ ruleList: WKContentRuleList, in webView: WKWebView, url: URL, configurationKey: String) {
+            guard lastConfigurationKey == configurationKey else { return }
+            let controller = webView.configuration.userContentController
+            controller.removeAllContentRuleLists()
+            controller.add(ruleList)
+            load(url, in: webView, configurationKey: configurationKey)
         }
 
         private func load(_ url: URL, in webView: WKWebView, configurationKey: String) {
