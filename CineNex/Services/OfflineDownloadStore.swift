@@ -226,6 +226,26 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
         persist()
     }
 
+    @discardableResult
+    func removeCompletedDownloads() -> Int {
+        let completedRecords = downloads.filter { $0.status == .completed }
+        guard !completedRecords.isEmpty else { return 0 }
+
+        for record in completedRecords {
+            tasks[record.id]?.cancel()
+            tasks[record.id] = nil
+            if let directoryName = record.localDirectoryName {
+                let localURL = downloadsDirectory.appendingPathComponent(directoryName, isDirectory: true)
+                try? FileManager.default.removeItem(at: localURL)
+            }
+        }
+
+        let completedIDs = Set(completedRecords.map(\.id))
+        downloads.removeAll { completedIDs.contains($0.id) }
+        persist()
+        return completedRecords.count
+    }
+
     func localPlaybackURL(for id: String) -> URL? {
         guard let record = downloads.first(where: { $0.id == id }) else { return nil }
         return record.localAssetURL(in: downloadsDirectory)
