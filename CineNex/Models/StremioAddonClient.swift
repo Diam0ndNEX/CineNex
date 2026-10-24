@@ -294,7 +294,12 @@ struct StremioAddonClient: Sendable {
             return data
         } catch let error as StremioAddonClientError {
             throw error
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
+            if Task.isCancelled {
+                throw CancellationError()
+            }
             throw StremioAddonClientError.transport(error.localizedDescription)
         }
     }
