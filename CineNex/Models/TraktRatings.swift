@@ -22,14 +22,14 @@ struct TraktRatingMovie: Decodable, Identifiable, Hashable {
         case movie
     }
 
+    var title: String { movie.title.trimmingCharacters(in: .whitespacesAndNewlines) }
+    var year: Int? { movie.year }
+    var tmdbID: Int? { movie.ids?.tmdb }
+
     var ratingLabel: String? {
         guard (1...10).contains(rating) else { return nil }
         return "\(rating) / 10"
     }
-
-    var title: String { movie.title.trimmingCharacters(in: .whitespacesAndNewlines) }
-    var year: Int? { movie.year }
-    var tmdbID: Int? { movie.ids?.tmdb }
 
     var id: String {
         if let tmdbID, tmdbID > 0 {
