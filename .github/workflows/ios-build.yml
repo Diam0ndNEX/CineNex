@@ -55,6 +55,11 @@ jobs:
             -derivedDataPath Thirdparty/LibTorrent-Swift/DerivedData \
             CODE_SIGNING_ALLOWED=NO \
             build
+          mkdir -p Thirdparty/LibTorrent-Swift/Build
+          xcodebuild -create-xcframework \
+            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Debug-iphoneos/LibTorrent.framework \
+            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Debug-iphonesimulator/LibTorrent.framework \
+            -output Thirdparty/LibTorrent-Swift/Build/LibTorrent.xcframework
 
       - name: Install XcodeGen
         run: brew install xcodegen

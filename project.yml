@@ -21,6 +21,9 @@ targets:
     platform: iOS
     sources:
       - path: CineNex
+    dependencies:
+      - framework: Thirdparty/LibTorrent-Swift/Build/LibTorrent.xcframework
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.diam0ndnex.cinenex

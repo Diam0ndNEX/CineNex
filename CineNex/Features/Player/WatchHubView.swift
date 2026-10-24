@@ -714,13 +714,44 @@ struct WatchHubView: View {
                 externalIDResolver: TMDBExternalIDResolver(readAccessToken: token)
             )
             let discovery = try await provider.discover(for: request)
-            discoveredSources = discovery.sources
-            if !discovery.sources.isEmpty, !discovery.torrentDescriptors.isEmpty {
-                addonSearchMessage = "Found \(discovery.sources.count) direct source(s) and \(discovery.torrentDescriptors.count) torrent descriptor(s). Only direct URLs are playable until native torrent playback is integrated."
+            let torrentDescriptors = Array(
+                discovery.torrentDescriptors.reduce(into: [StremioTorrentDescriptor]()) { result, descriptor in
+                    if !result.contains(where: { $0.infoHash == descriptor.infoHash }) {
+                        result.append(descriptor)
+                    }
+                }.prefix(2)
+            )
+            let torrentSources = try await withThrowingTaskGroup(of: [PlaybackSource].self) { group in
+                for descriptor in torrentDescriptors {
+                    group.addTask {
+                        let engine = XITRIXTorrentPlaybackEngine(descriptor: descriptor)
+                        let torrentProvider = TorrentPlaybackProvider(engine: engine)
+                        do {
+                            return try await torrentProvider.findSources(for: request)
+                        } catch is CancellationError {
+                            await torrentProvider.stop()
+                            throw CancellationError()
+                        } catch {
+                            await torrentProvider.stop()
+                            return []
+                        }
+                    }
+                }
+                var sources: [PlaybackSource] = []
+                for try await sourcesForTorrent in group {
+                    sources.append(contentsOf: sourcesForTorrent)
+                }
+                return sources
+            }
+            discoveredSources = discovery.sources + torrentSources
+            if !torrentSources.isEmpty {
+                addonSearchMessage = "Found \(discovery.sources.count) direct source(s) and \(torrentSources.count) playable torrent source(s). Torrent playback is provided by the native engine."
+            } else if !discovery.sources.isEmpty, !discovery.torrentDescriptors.isEmpty {
+                addonSearchMessage = "Found \(discovery.sources.count) direct source(s). \(discovery.torrentDescriptors.count) torrent descriptor(s) could not be prepared for playback."
             } else if !discovery.sources.isEmpty {
                 addonSearchMessage = "Found \(discovery.sources.count) direct source(s). Availability and playback compatibility are not guaranteed until playback starts."
             } else if !discovery.torrentDescriptors.isEmpty {
-                addonSearchMessage = "Found \(discovery.torrentDescriptors.count) torrent descriptor(s), but native torrent playback is not integrated yet."
+                addonSearchMessage = "Found \(discovery.torrentDescriptors.count) torrent descriptor(s), but no playable torrent file could be prepared."
             } else {
                 addonSearchMessage = "No playable direct URLs or valid torrent descriptors were returned. Add-ons may be unavailable or may require authentication."
             }
@@ -885,7 +916,10 @@ private struct DiscoveredSourcePlaybackView: View {
                 if source.supportsNativePlayback {
                     NativePlaybackView(player: player)
                         .onAppear { player.play() }
-                        .onDisappear { player.pause() }
+                        .onDisappear {
+                            player.pause()
+                            Task { await TorrentPlaybackSessionRegistry.shared.stop(for: source.url) }
+                        }
                         .background(.black)
                         .ignoresSafeArea(edges: .bottom)
                 } else {

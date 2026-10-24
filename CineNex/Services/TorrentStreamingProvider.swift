@@ -37,6 +37,12 @@ enum TorrentStreamingError: LocalizedError, Equatable {
     case fileUnavailable
     case invalidRead
     case engineUnavailable
+    case metadataTimeout
+    case pieceAvailabilityTimeout
+    case unsafeFilePath
+    case unsupportedFile
+    case invalidTorrentLayout
+    case torrentFileUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -47,6 +53,12 @@ enum TorrentStreamingError: LocalizedError, Equatable {
         case .fileUnavailable: return "The requested torrent file is no longer available."
         case .invalidRead: return "The torrent engine returned an invalid byte range."
         case .engineUnavailable: return "The torrent playback engine is not configured."
+        case .metadataTimeout: return "The torrent did not provide file metadata before the playback timeout."
+        case .pieceAvailabilityTimeout: return "The requested torrent pieces did not become available before the playback timeout."
+        case .unsafeFilePath: return "The torrent contains an unsafe file path."
+        case .unsupportedFile: return "The torrent does not contain a file supported by native playback."
+        case .invalidTorrentLayout: return "The torrent file layout is invalid or cannot be mapped safely to pieces."
+        case .torrentFileUnavailable: return "The selected torrent file was not created at its expected size."
         }
     }
 }
@@ -502,6 +514,7 @@ struct TorrentPlaybackProvider: PlaybackSourceProvider, Sendable {
     let id: String
     let displayName: String
     let priority: Int
+    let sessionID = UUID()
     private let engine: any TorrentPlaybackEngine
     private let server: TorrentLoopbackHTTPServer
 
@@ -548,6 +561,7 @@ struct TorrentPlaybackProvider: PlaybackSourceProvider, Sendable {
                     providerPriority: priority
                 ))
             }
+            await TorrentPlaybackSessionRegistry.shared.retain(self, urls: sources.map(\.url))
             return sources
         } catch {
             registeredURLs.forEach { _ = server.unregister($0) }
@@ -558,5 +572,32 @@ struct TorrentPlaybackProvider: PlaybackSourceProvider, Sendable {
     func stop() async {
         server.stop()
         await engine.stop()
+    }
+}
+
+actor TorrentPlaybackSessionRegistry {
+    static let shared = TorrentPlaybackSessionRegistry()
+
+    private var providersByURL: [String: TorrentPlaybackProvider] = [:]
+
+    func retain(_ provider: TorrentPlaybackProvider, urls: [URL]) {
+        for url in urls {
+            providersByURL[url.absoluteString] = provider
+        }
+    }
+
+    func stop(for url: URL) async {
+        guard let provider = providersByURL[url.absoluteString] else { return }
+        let sessionID = provider.sessionID
+        providersByURL = providersByURL.filter { $0.value.sessionID != sessionID }
+        await provider.stop()
+    }
+
+    func stopAll() async {
+        let providers = Dictionary(grouping: providersByURL.values, by: \.sessionID).compactMap { $0.value.first }
+        providersByURL.removeAll()
+        for provider in providers {
+            await provider.stop()
+        }
     }
 }
