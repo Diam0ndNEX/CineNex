@@ -61,7 +61,7 @@ enum PlaybackCleanerPolicy {
     }
 
     static func contentBlockerJSON() throws -> String {
-        let domains = blockedHosts.sorted().map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|")
+        let domains = blockedHosts.sorted().map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
         let rule: [String: Any] = [
             "trigger": [
                 "url-filter": "^https?://([^/]+\\.)?(" + domains + ")(/|$)",
