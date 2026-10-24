@@ -3,6 +3,7 @@ import SwiftUI
 struct WatchHubView: View {
     let item: MediaItem
     let onPlayDirect: (MediaItem) -> Void
+    let onSelectItem: (MediaItem) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("cinenex.defaultPlaybackProvider") private var defaultProviderID = "smart"
@@ -10,6 +11,13 @@ struct WatchHubView: View {
     @State private var availableProviders: [ResolvedEmbedSource] = []
     @State private var seasonNumber = 1
     @State private var episodeNumber = 1
+    @State private var seasons: [TMDBTitleSeason] = []
+    @State private var episodes: [TMDBSeasonEpisode] = []
+    @State private var recommendations: [MediaItem] = []
+    @State private var recommendationsLoading = false
+    @State private var episodesLoading = false
+    @State private var catalogErrorMessage: String?
+    @State private var episodeErrorMessage: String?
 
     private var request: PlaybackSourceRequest {
         PlaybackSourceRequest(
@@ -48,6 +56,7 @@ struct WatchHubView: View {
             }
             .task(id: item.id) {
                 resolveSources()
+                await loadCatalogDetails()
             }
         }
         .tint(Color.cineNexAccent)
