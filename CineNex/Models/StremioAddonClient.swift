@@ -24,12 +24,32 @@ struct StremioAddonManifest: Decodable, Equatable, Sendable {
     }
 
     func supports(type: String, itemID: String) -> Bool {
-        guard supportsStreams,
-              types.contains(where: { $0.caseInsensitiveCompare(type) == .orderedSame }) else {
+        guard types.contains(where: { $0.caseInsensitiveCompare(type) == .orderedSame }) else {
             return false
         }
-        guard let idPrefixes, !idPrefixes.isEmpty else { return true }
-        return idPrefixes.contains { itemID.hasPrefix($0) }
+        return resources.contains { resource in
+            switch resource {
+            case .named(let name):
+                guard name == "stream" else { return false }
+                return matches(type: type, itemID: itemID, allowedTypes: nil, allowedPrefixes: idPrefixes)
+            case .detailed(let name, let resourceTypes, let resourcePrefixes):
+                guard name == "stream" else { return false }
+                return matches(
+                    type: type,
+                    itemID: itemID,
+                    allowedTypes: resourceTypes,
+                    allowedPrefixes: resourcePrefixes ?? idPrefixes
+                )
+            }
+        }
+    }
+
+    private func matches(type: String, itemID: String, allowedTypes: [String]?, allowedPrefixes: [String]?) -> Bool {
+        if let allowedTypes, !allowedTypes.contains(where: { $0.caseInsensitiveCompare(type) == .orderedSame }) {
+            return false
+        }
+        guard let allowedPrefixes, !allowedPrefixes.isEmpty else { return true }
+        return allowedPrefixes.contains { itemID.hasPrefix($0) }
     }
 }
 
