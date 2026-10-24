@@ -113,7 +113,7 @@ struct TMDBTitleDetails: Decodable, Equatable {
                 runtime: kind == .movie ? "Movie" : "Series",
                 streamURL: nil,
                 posterURL: posterURL,
-                rating: result.voteAverage,
+                rating: result.validVoteAverage,
                 externalID: result.id,
                 metadataProvider: "tmdb"
             )
