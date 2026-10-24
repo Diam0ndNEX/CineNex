@@ -295,7 +295,7 @@ struct StremioAddonClient: Sendable {
         }
     }
 
-    private static func isSafeHTTPSURL(_ url: URL) -> Bool {
+    static func isSafeHTTPSURL(_ url: URL) -> Bool {
         url.scheme?.lowercased() == "https"
             && url.host?.isEmpty == false
             && url.user == nil
