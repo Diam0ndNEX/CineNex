@@ -112,4 +112,108 @@ final class OfflineDownloadTests: XCTestCase {
         try FileManager.default.createDirectory(at: localDirectory, withIntermediateDirectories: true)
         XCTAssertEqual(record.localAssetURL(in: root), localDirectory)
     }
+
+    @MainActor
+    func testRemoveCompletedDownloadsDeletesMediaAndPreservesActiveRecords() throws {
+        let suiteName = "OfflineDownloadTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let completedDirectory = root.appendingPathComponent("completed.movpkg", isDirectory: true)
+        try FileManager.default.createDirectory(at: completedDirectory, withIntermediateDirectories: true)
+        try Data([0x01, 0x02, 0x03]).write(to: completedDirectory.appendingPathComponent("segment.bin"))
+
+        let date = Date(timeIntervalSince1970: 1_760_000_000)
+        let completed = OfflineDownload(
+            id: "completed",
+            title: "Completed Film",
+            sourceURL: URL(string: "https://media.example.org/completed.m3u8")!,
+            createdAt: date,
+            updatedAt: date,
+            status: .completed,
+            progress: 1,
+            localDirectoryName: "completed.movpkg",
+            errorMessage: nil
+        )
+        let queued = OfflineDownload(
+            id: "queued",
+            title: "Queued Film",
+            sourceURL: URL(string: "https://media.example.org/queued.m3u8")!,
+            createdAt: date.addingTimeInterval(1),
+            updatedAt: date,
+            status: .queued,
+            progress: 0,
+            localDirectoryName: nil,
+            errorMessage: nil
+        )
+        let paused = OfflineDownload(
+            id: "paused",
+            title: "Paused Film",
+            sourceURL: URL(string: "https://media.example.org/paused.m3u8")!,
+            createdAt: date.addingTimeInterval(2),
+            updatedAt: date,
+            status: .paused,
+            progress: 0.4,
+            localDirectoryName: nil,
+            errorMessage: nil
+        )
+        defaults.set(try JSONEncoder().encode([completed, queued, paused]), forKey: "offline.test.records")
+
+        let store = OfflineDownloadStore(
+            defaults: defaults,
+            storageKey: "offline.test.records",
+            downloadsDirectory: root
+        )
+
+        XCTAssertEqual(store.removeCompletedDownloads(), 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: completedDirectory.path))
+        XCTAssertEqual(Set(store.downloads.map(\.id)), Set(["queued", "paused"]))
+        XCTAssertEqual(store.downloads.first(where: { $0.id == "queued" })?.status, .queued)
+        XCTAssertEqual(store.downloads.first(where: { $0.id == "paused" })?.status, .paused)
+
+        let persistedData = try XCTUnwrap(defaults.data(forKey: "offline.test.records"))
+        let persistedRecords = try JSONDecoder().decode([OfflineDownload].self, from: persistedData)
+        XCTAssertEqual(Set(persistedRecords.map(\.id)), Set(["queued", "paused"]))
+    }
+
+    @MainActor
+    func testRemoveCompletedDownloadsReturnsZeroWhenNoneAreCompleted() throws {
+        let suiteName = "OfflineDownloadTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let date = Date(timeIntervalSince1970: 1_760_000_000)
+        let queued = OfflineDownload(
+            id: "queued",
+            title: "Queued Film",
+            sourceURL: URL(string: "https://media.example.org/queued.m3u8")!,
+            createdAt: date,
+            updatedAt: date,
+            status: .queued,
+            progress: 0,
+            localDirectoryName: nil,
+            errorMessage: nil
+        )
+        defaults.set(try JSONEncoder().encode([queued]), forKey: "offline.test.records")
+
+        let store = OfflineDownloadStore(
+            defaults: defaults,
+            storageKey: "offline.test.records",
+            downloadsDirectory: root
+        )
+
+        XCTAssertEqual(store.removeCompletedDownloads(), 0)
+        XCTAssertEqual(store.downloads, [queued])
+    }
+
 }
