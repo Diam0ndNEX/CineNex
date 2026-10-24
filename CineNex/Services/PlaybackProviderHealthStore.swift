@@ -60,6 +60,16 @@ actor PlaybackProviderHealthStore {
                 )
             }
             self.records = sanitized
+            let sanitizedValues = sanitized.values.sorted {
+                $0.providerID.localizedStandardCompare($1.providerID) == .orderedAscending
+            }
+            let originalValues = decoded.sorted {
+                $0.providerID.localizedStandardCompare($1.providerID) == .orderedAscending
+            }
+            if sanitizedValues != originalValues,
+               let normalizedData = try? JSONEncoder().encode(sanitizedValues) {
+                defaults.set(normalizedData, forKey: storageKey)
+            }
         } else {
             self.records = [:]
         }
