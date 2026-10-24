@@ -8,7 +8,7 @@ The protocol uses `/manifest.json` and `/stream/{type}/{videoID}.json`. Series e
 
 ### Current limitations
 
-- The protocol client is not yet wired into Watch Hub's source search or the playback coordinator.
+- The protocol client is now wired into Watch Hub's source search and playback coordinator through an explicit user action. The optional manifest list is locally persisted; there are still no bundled default add-ons.
 - A real add-on still needs an appropriate media identifier. TMDB IDs and IMDb IDs are not interchangeable; CineNex needs an explicit external-ID lookup before querying add-ons that require IMDb IDs.
 - A returned URL is only a candidate. CineNex must validate redirects, headers, content type, codec/format support, access requirements, and real playback before labelling a source playable.
 - Torrent entries commonly contain an info hash and optional file index rather than a directly playable URL. They are retained as descriptors, not falsely treated as direct streams.
@@ -41,4 +41,4 @@ This is an advanced/manual fallback, not the desired zero-setup default. It is i
 
 The first native engine candidate to investigate is libtorrent 2.x through an iOS-compatible XCFramework. Its streaming documentation distinguishes sequential downloading from time-critical piece scheduling; sequential mode alone is not the ideal playback scheduler. A small Swift-only torrent implementation was not selected because the available project evidence describes it as incomplete and lacking important performance optimizations.
 
-Before selecting libtorrent, verify its current iOS build recipe, package/license compatibility, supported architectures, and integration cost. Prototype a playback adapter with a local HTTP byte-range server or file-backed AVPlayer path, explicit piece prioritization, bounded disk cache, and deterministic cleanup. Do not add the binary dependency until a reproducible CI build and authorized public-domain end-to-end test pass.
+A concrete reference implementation exists in [XITRIX/iTorrent_Framework](https://github.com/XITRIX/iTorrent_Framework): its README identifies libtorrent, Boost, and OpenSSL, and its build script archives device and simulator frameworks into an XCFramework. It is a native Xcode project with a libtorrent submodule rather than a drop-in Swift Package, so CineNex still needs a reproducible build and a license/dependency audit before adopting it. Apple requires separate platform slices in an XCFramework; simulator arm64 and device arm64 are not interchangeable. Before selecting libtorrent, verify its current iOS build recipe, package/license compatibility, supported architectures, and integration cost. Prototype a playback adapter with a local HTTP byte-range server or file-backed AVPlayer path, explicit piece prioritization, bounded disk cache, and deterministic cleanup. Do not add the binary dependency until a reproducible CI build and authorized public-domain end-to-end test pass.
