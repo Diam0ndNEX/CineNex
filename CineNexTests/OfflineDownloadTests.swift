@@ -89,6 +89,33 @@ final class OfflineDownloadTests: XCTestCase {
         XCTAssertEqual(OfflineDownloadStore.directorySize(at: missing), 0)
     }
 
+    func testCompletedDownloadRejectsPathTraversalDirectoryName() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let outside = root.deletingLastPathComponent().appendingPathComponent("outside.movpkg", isDirectory: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: outside) }
+
+        let record = OfflineDownload(
+            id: "download-evil",
+            title: "Unexpected Local Path",
+            sourceURL: URL(string: "https://media.example.org/film.m3u8")!,
+            createdAt: Date(),
+            updatedAt: Date(),
+            status: .completed,
+            progress: 1,
+            localDirectoryName: "../outside.movpkg",
+            errorMessage: nil
+        )
+
+        XCTAssertNil(record.localDirectoryURL(in: root))
+        XCTAssertNil(record.localAssetURL(in: root))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outside.path))
+    }
+
     func testCompletedDownloadOnlyExposesAnExistingLocalDirectory() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
