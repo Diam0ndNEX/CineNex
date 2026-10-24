@@ -27,7 +27,7 @@ final class TorrentDiskByteReaderTests: XCTestCase {
 
         func waitUntilAvailable(offset: Int64, length: Int64) async throws {
             if hasBeenReleased { return }
-            try await withCheckedThrowingContinuation { continuation in
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 self.continuation = continuation
             }
         }
