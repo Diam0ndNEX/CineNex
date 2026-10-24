@@ -2,6 +2,37 @@ import XCTest
 @testable import CineNex
 
 final class InternetArchivePlaybackProviderTests: XCTestCase {
+    func testCancelledTaskDoesNotStartArchiveSearch() async {
+        MockArchiveURLProtocol.responseHandler = { _ in
+            XCTFail("A cancelled search must not issue a network request.")
+            return (200, Data(#"{"response":{"docs":[]}}"#.utf8))
+        }
+        defer { MockArchiveURLProtocol.responseHandler = nil }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockArchiveURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+
+        let provider = InternetArchivePlaybackProvider(session: session)
+        let task = Task {
+            withUnsafeCurrentTask { currentTask in
+                currentTask?.cancel()
+            }
+            return try await provider.findSources(
+                for: PlaybackSourceRequest(title: "Example Film", mediaKind: .movie)
+            )
+        }
+
+        do {
+            _ = try await task.value
+            XCTFail("A cancelled provider request must throw cancellation.")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Expected CancellationError, received \(error).")
+        }
+    }
+
     func testAcceptsOnlyPublicDomainLicenseLabels() {
         XCTAssertTrue(InternetArchivePlaybackProvider.isAllowedLicense("https://creativecommons.org/publicdomain/zero/1.0/"))
         XCTAssertTrue(InternetArchivePlaybackProvider.isAllowedLicense("https://creativecommons.org/publicdomain/mark/1.0/"))
