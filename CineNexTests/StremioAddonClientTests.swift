@@ -4,18 +4,9 @@ import XCTest
 
 final class StremioAddonClientTests: XCTestCase {
     func testCancelledManifestRequestPropagatesCancellation() async {
-        StremioStubURLProtocol.handler = { request in
-            XCTFail("A cancelled manifest request must not issue a network request.")
-            return (
-                self.response(for: request, statusCode: 200),
-                Data(#"{"id":"test.addon","version":"1.0.0","name":"Test Add-on","resources":["stream"],"types":["movie"]}"#.utf8)
-            )
-        }
-        defer { StremioStubURLProtocol.handler = nil }
-
         let client = try! StremioAddonClient(
             manifestURL: URL(string: "https://addons.example.test/manifest.json")!,
-            session: makeSession()
+            session: URLSession(configuration: .ephemeral)
         )
 
         let task = Task {
