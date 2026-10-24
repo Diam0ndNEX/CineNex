@@ -11,6 +11,7 @@ struct TrackingView: View {
     @State private var importingLetterboxd = false
     @State private var exportingLetterboxd = false
     @State private var exportDocument = LetterboxdCSVDocument()
+    @State private var exportFilename = "diary"
     @State private var letterboxdMessage: String?
     @State private var tmdbToken = TMDBTokenStore.load() ?? ""
     @State private var tmdbMessage: String?
@@ -78,7 +79,7 @@ struct TrackingView: View {
             isPresented: $exportingLetterboxd,
             document: exportDocument,
             contentType: .commaSeparatedText,
-            defaultFilename: "diary",
+            defaultFilename: exportFilename,
             onCompletion: finishLetterboxdExport
         )
         .alert("Set up Trakt", isPresented: $showingSetupHelp) {
@@ -648,14 +649,21 @@ struct TrackingView: View {
                 }
                 .buttonStyle(.bordered)
 
-                Button {
-                    exportDocument = LetterboxdCSVDocument(data: letterboxd.makeDiaryExport())
-                    exportingLetterboxd = true
+                Menu {
+                    Button("Diary (diary.csv)") { beginLetterboxdExport(kind: .diary) }
+                        .disabled(!letterboxd.records.contains { $0.kind == .diary })
+                    Button("Watched (watched.csv)") { beginLetterboxdExport(kind: .watched) }
+                        .disabled(!letterboxd.records.contains { $0.kind == .watched })
+                    Button("Ratings (ratings.csv)") { beginLetterboxdExport(kind: .ratings) }
+                        .disabled(!letterboxd.records.contains { $0.kind == .ratings })
+                    Button("Watchlist (watchlist.csv)") { beginLetterboxdExport(kind: .watchlist) }
+                        .disabled(!letterboxd.records.contains { $0.kind == .watchlist })
                 } label: {
-                    Label("Export diary.csv", systemImage: "square.and.arrow.up")
+                    Label("Export CSV", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!letterboxd.records.contains { $0.kind != .other })
             }
 
             if let letterboxdMessage {
@@ -741,10 +749,16 @@ struct TrackingView: View {
         }
     }
 
+    private func beginLetterboxdExport(kind: LetterboxdRecordKind) {
+        exportFilename = kind.rawValue
+        exportDocument = LetterboxdCSVDocument(data: letterboxd.makeCSVExport(for: kind))
+        exportingLetterboxd = true
+    }
+
     private func finishLetterboxdExport(_ result: Result<URL, Error>) {
         switch result {
         case .success:
-            letterboxdMessage = "Diary CSV exported. Import it into Letterboxd using its official import tools."
+            letterboxdMessage = "\(exportFilename.capitalized) CSV exported. Import it into Letterboxd using its official import tools."
         case .failure(let error):
             letterboxdMessage = "Export failed: \(error.localizedDescription)"
         }

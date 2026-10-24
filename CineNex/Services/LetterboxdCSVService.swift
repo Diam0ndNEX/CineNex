@@ -121,22 +121,71 @@ enum LetterboxdCSVService {
     }
 
     static func makeDiaryCSV(from records: [LetterboxdRecord]) -> String {
-        var lines = ["Date,Name,Year,Letterboxd URI,Rating,Rewatch,Tags,Watched Date"]
-        let diary = records
-            .filter { $0.kind == .diary && $0.watchedDate != nil }
-            .sorted { ($0.watchedDate ?? "") < ($1.watchedDate ?? "") }
+        makeCSV(from: records, kind: .diary)
+    }
 
-        for record in diary {
-            let fields = [
-                record.dateAdded ?? "",
-                record.title,
-                record.year.map(String.init) ?? "",
-                record.letterboxdURI ?? "",
-                record.rating.map { String(format: "%g", $0) } ?? "",
-                record.rewatch.map { $0 ? "Yes" : "No" } ?? "",
-                record.tags ?? "",
-                record.watchedDate ?? ""
-            ]
+    static func makeCSV(from records: [LetterboxdRecord], kind: LetterboxdRecordKind) -> String {
+        let headers: [String]
+        switch kind {
+        case .diary:
+            headers = ["Date", "Name", "Year", "Letterboxd URI", "Rating", "Rewatch", "Tags", "Watched Date"]
+        case .watched:
+            headers = ["Date", "Name", "Year", "Letterboxd URI"]
+        case .ratings:
+            headers = ["Date", "Name", "Year", "Letterboxd URI", "Rating"]
+        case .watchlist:
+            headers = ["Date", "Name", "Year", "Letterboxd URI"]
+        case .other:
+            headers = ["Date", "Name", "Year", "Letterboxd URI", "Rating", "Rewatch", "Tags", "Watched Date", "Review"]
+        }
+
+        let matchingRecords = records
+            .filter { $0.kind == kind && (kind != .diary || $0.watchedDate != nil) }
+            .sorted {
+                if kind == .diary {
+                    return ($0.watchedDate ?? "") < ($1.watchedDate ?? "")
+                }
+                if ($0.dateAdded ?? "") != ($1.dateAdded ?? "") {
+                    return ($0.dateAdded ?? "") < ($1.dateAdded ?? "")
+                }
+                return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
+
+        var lines = [headers.joined(separator: ",")]
+        for record in matchingRecords {
+            let date = kind == .watched ? (record.watchedDate ?? record.dateAdded ?? "") : (record.dateAdded ?? "")
+            let fields: [String]
+            switch kind {
+            case .diary:
+                fields = [
+                    record.dateAdded ?? "",
+                    record.title,
+                    record.year.map(String.init) ?? "",
+                    record.letterboxdURI ?? "",
+                    record.rating.map { String(format: "%g", $0) } ?? "",
+                    record.rewatch.map { $0 ? "Yes" : "No" } ?? "",
+                    record.tags ?? "",
+                    record.watchedDate ?? ""
+                ]
+            case .watched:
+                fields = [date, record.title, record.year.map(String.init) ?? "", record.letterboxdURI ?? ""]
+            case .ratings:
+                fields = [date, record.title, record.year.map(String.init) ?? "", record.letterboxdURI ?? "", record.rating.map { String(format: "%g", $0) } ?? ""]
+            case .watchlist:
+                fields = [date, record.title, record.year.map(String.init) ?? "", record.letterboxdURI ?? ""]
+            case .other:
+                fields = [
+                    record.dateAdded ?? "",
+                    record.title,
+                    record.year.map(String.init) ?? "",
+                    record.letterboxdURI ?? "",
+                    record.rating.map { String(format: "%g", $0) } ?? "",
+                    record.rewatch.map { $0 ? "Yes" : "No" } ?? "",
+                    record.tags ?? "",
+                    record.watchedDate ?? "",
+                    record.review ?? ""
+                ]
+            }
             lines.append(fields.map(escapeCSV).joined(separator: ","))
         }
         return lines.joined(separator: "\r\n") + "\r\n"
@@ -277,7 +326,11 @@ final class LetterboxdLibraryStore: ObservableObject {
     }
 
     func makeDiaryExport() -> Data {
-        Data(LetterboxdCSVService.makeDiaryCSV(from: records).utf8)
+        makeCSVExport(for: .diary)
+    }
+
+    func makeCSVExport(for kind: LetterboxdRecordKind) -> Data {
+        Data(LetterboxdCSVService.makeCSV(from: records, kind: kind).utf8)
     }
 
     private func persist() {
