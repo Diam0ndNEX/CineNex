@@ -3,6 +3,39 @@ import XCTest
 @testable import CineNex
 
 final class StremioAddonPlaybackProviderTests: XCTestCase {
+    func testCancelledProviderRequestStopsBeforeExternalNetworking() async {
+        ProviderStubURLProtocol.handler = { request in
+            XCTFail("A cancelled source request must not perform add-on networking.")
+            return (self.response(request, 200), Data(#"{"streams":[]}"#.utf8))
+        }
+        defer { ProviderStubURLProtocol.handler = nil }
+
+        let provider = try! StremioAddonPlaybackProvider(
+            manifestURLs: [
+                URL(string: "https://addons.example.test/first/manifest.json")!,
+                URL(string: "https://addons.example.test/second/manifest.json")!
+            ],
+            externalIDResolver: StubExternalIDResolver(value: "tt1234567"),
+            session: makeSession()
+        )
+        let task = Task {
+            withUnsafeCurrentTask { currentTask in
+                currentTask?.cancel()
+            }
+            return try await provider.findSources(
+                for: PlaybackSourceRequest(title: "Example Film", mediaKind: .movie, tmdbID: 42)
+            )
+        }
+
+        do {
+            _ = try await task.value
+            XCTFail("A cancelled provider request must throw cancellation.")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Expected CancellationError, received \(error).")
+        }
+    }
+
     override func tearDown() {
         ProviderStubURLProtocol.handler = nil
         super.tearDown()

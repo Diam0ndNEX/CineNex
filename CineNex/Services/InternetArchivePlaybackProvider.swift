@@ -17,6 +17,7 @@ struct InternetArchivePlaybackProvider: PlaybackSourceProvider, Sendable {
     }
 
     func findSources(for request: PlaybackSourceRequest) async throws -> [PlaybackSource] {
+        try Task.checkCancellation()
         guard request.isValid, request.mediaKind == .movie else { return [] }
 
         var components = URLComponents(
@@ -41,6 +42,7 @@ struct InternetArchivePlaybackProvider: PlaybackSourceProvider, Sendable {
         }
 
         let searchData = try await data(from: searchURL)
+        try Task.checkCancellation()
         let records = try Self.searchRecords(from: searchData)
             .filter { record in
                 Self.normalizedTitle(record.title) == Self.normalizedTitle(request.title)
@@ -48,28 +50,38 @@ struct InternetArchivePlaybackProvider: PlaybackSourceProvider, Sendable {
             }
             .prefix(4)
 
-        return await withTaskGroup(of: [PlaybackSource].self, returning: [PlaybackSource].self) { group in
+        return try await withThrowingTaskGroup(
+            of: [PlaybackSource].self,
+            returning: [PlaybackSource].self
+        ) { group in
             for record in records {
                 group.addTask {
+                    try Task.checkCancellation()
                     do {
                         let metadataURL = apiBaseURL
                             .appendingPathComponent("metadata")
                             .appendingPathComponent(record.identifier)
                         let metadataData = try await data(from: metadataURL)
+                        try Task.checkCancellation()
                         let object = try Self.jsonObject(from: metadataData)
                         return Self.sources(
                             fromMetadataResponse: object,
                             identifier: record.identifier,
                             request: request
                         )
+                    } catch is CancellationError {
+                        throw CancellationError()
                     } catch {
+                        if Task.isCancelled {
+                            throw CancellationError()
+                        }
                         return []
                     }
                 }
             }
 
             var collected: [PlaybackSource] = []
-            for await sources in group {
+            for try await sources in group {
                 collected.append(contentsOf: sources)
             }
             var seen = Set<String>()

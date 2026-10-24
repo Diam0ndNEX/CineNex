@@ -90,9 +90,12 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
     }
 
     func findSources(for request: PlaybackSourceRequest) async throws -> [PlaybackSource] {
+        try Task.checkCancellation()
         guard request.isValid else { throw StremioAddonClientError.invalidRequest }
         guard !clients.isEmpty else { return [] }
-        guard let imdbID = try await externalIDResolver.imdbID(for: request) else {
+        let resolvedIMDbID = try await externalIDResolver.imdbID(for: request)
+        try Task.checkCancellation()
+        guard let imdbID = resolvedIMDbID else {
             return []
         }
 
@@ -113,7 +116,10 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
             )
         }
 
-        let aggregated = await withTaskGroup(of: (sources: [PlaybackSource], failure: String?).self, returning: (sources: [PlaybackSource], failures: [String]).self) { group in
+        let aggregated = try await withThrowingTaskGroup(
+            of: (sources: [PlaybackSource], failure: String?).self,
+            returning: (sources: [PlaybackSource], failures: [String]).self
+        ) { group in
             for (index, client) in clients.enumerated() {
                 group.addTask { () -> (sources: [PlaybackSource], failure: String?) in
                     do {
@@ -126,14 +132,19 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                             priority: priority
                         )
                         return (sources, nil)
+                    } catch is CancellationError {
+                        throw CancellationError()
                     } catch {
+                        if Task.isCancelled {
+                            throw CancellationError()
+                        }
                         return ([], error.localizedDescription)
                     }
                 }
             }
             var sources: [PlaybackSource] = []
             var failures: [String] = []
-            for await result in group {
+            for try await result in group {
                 sources.append(contentsOf: result.sources)
                 if let failure = result.failure { failures.append(failure) }
             }

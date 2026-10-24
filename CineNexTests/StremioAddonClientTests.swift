@@ -3,6 +3,28 @@ import XCTest
 @testable import CineNex
 
 final class StremioAddonClientTests: XCTestCase {
+    func testCancelledManifestRequestPropagatesCancellation() async {
+        let client = try! StremioAddonClient(
+            manifestURL: URL(string: "https://addons.example.test/manifest.json")!,
+            session: URLSession(configuration: .ephemeral)
+        )
+
+        let task = Task {
+            withUnsafeCurrentTask { currentTask in
+                currentTask?.cancel()
+            }
+            return try await client.fetchManifest()
+        }
+
+        do {
+            _ = try await task.value
+            XCTFail("A cancelled manifest request must throw cancellation.")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Expected CancellationError, received \(error).")
+        }
+    }
+
     override func tearDown() {
         StremioStubURLProtocol.handler = nil
         super.tearDown()
