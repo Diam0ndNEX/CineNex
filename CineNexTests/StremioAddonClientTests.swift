@@ -74,6 +74,46 @@ final class StremioAddonClientTests: XCTestCase {
         XCTAssertTrue(StremioAddonClient.isSafeHTTPSURL(URL(string: "https://addons.example.test/manifest.json")!))
     }
 
+    func testRedirectDelegateRejectsDowngradedAndCredentialedRedirects() {
+        let delegate = StremioHTTPSRedirectDelegate()
+        let originalURL = URL(string: "https://addons.example.test/manifest.json")!
+        let response = HTTPURLResponse(
+            url: originalURL,
+            statusCode: 302,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Location": "http://unsafe.example.test/manifest.json"]
+        )!
+        let task = URLSession.shared.dataTask(with: originalURL)
+
+        for target in [
+            URL(string: "http://unsafe.example.test/manifest.json")!,
+            URL(string: "https://user:pass@addons.example.test/manifest.json")!
+        ] {
+            var followedURL: URL?
+            delegate.urlSession(
+                URLSession.shared,
+                task: task,
+                willPerformHTTPRedirection: response,
+                newRequest: URLRequest(url: target)
+            ) { request in
+                followedURL = request?.url
+            }
+            XCTAssertNil(followedURL)
+        }
+
+        let allowedURL = URL(string: "https://cdn.example.test/manifest.json")!
+        var followedURL: URL?
+        delegate.urlSession(
+            URLSession.shared,
+            task: task,
+            willPerformHTTPRedirection: response,
+            newRequest: URLRequest(url: allowedURL)
+        ) { request in
+            followedURL = request?.url
+        }
+        XCTAssertEqual(followedURL, allowedURL)
+    }
+
     func testReportsHTTPFailureInsteadOfTreatingItAsAnEmptyResult() async throws {
         StremioStubURLProtocol.handler = { request in
             (self.response(for: request, statusCode: 503), Data())

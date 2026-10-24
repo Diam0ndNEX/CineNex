@@ -273,12 +273,16 @@ struct StremioAddonClient: Sendable {
         var request = URLRequest(url: url)
         request.timeoutInterval = 12
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let redirectDelegate = StremioHTTPSRedirectDelegate()
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: request, delegate: redirectDelegate)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw StremioAddonClientError.invalidResponse
             }
             guard let finalURL = httpResponse.url, Self.isSafeHTTPSURL(finalURL) else {
+                throw StremioAddonClientError.invalidManifestURL
+            }
+            if (300..<400).contains(httpResponse.statusCode) {
                 throw StremioAddonClientError.invalidManifestURL
             }
             guard (200..<300).contains(httpResponse.statusCode) else {
@@ -302,3 +306,19 @@ struct StremioAddonClient: Sendable {
             && url.password == nil
     }
 }
+final class StremioHTTPSRedirectDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        guard let url = request.url, StremioAddonClient.isSafeHTTPSURL(url) else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
+    }
+}
+
