@@ -29,6 +29,17 @@ final class TorrentLoopbackHTTPServerTests: XCTestCase {
         func stop() async {}
     }
 
+    func testConcurrentStartCallsShareOneListener() async throws {
+        let server = TorrentLoopbackHTTPServer()
+        defer { server.stop() }
+
+        async let first = server.start()
+        async let second = server.start()
+        let ports = try await [first, second]
+
+        XCTAssertEqual(ports[0], ports[1])
+    }
+
     func testProviderReturnsLoopbackURLAndServesPartialBytes() async throws {
         let expected = Data("0123456789abcdefghijklmnopqrstuvwxyz".utf8)
         let file = TorrentPreparedFile(

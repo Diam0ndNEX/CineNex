@@ -138,12 +138,39 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
     private var bearerToken = ""
     private var started = false
     private var stopped = false
+    private var startupTask: Task<UInt16, Error>?
+    private var startupID: UUID?
 
     func start() async throws -> UInt16 {
-        let state = lock.withLock { (started, stopped, listener?.port?.rawValue) }
-        if state.0, let port = state.2 { return port }
-        guard !state.1 else { throw TorrentStreamingError.listenerUnavailable }
+        let selection: (task: Task<UInt16, Error>, id: UUID) = try lock.withLock {
+            guard !stopped else { throw TorrentStreamingError.listenerUnavailable }
+            if started, let port = listener?.port?.rawValue {
+                return (Task<UInt16, Error> { port }, UUID())
+            }
+            if let startupTask, let startupID {
+                return (startupTask, startupID)
+            }
+            let id = UUID()
+            let task = Task<UInt16, Error> { try await self.startListener() }
+            startupTask = task
+            startupID = id
+            return (task, id)
+        }
 
+        do {
+            return try await selection.task.value
+        } catch {
+            lock.withLock {
+                if startupID == selection.id {
+                    startupTask = nil
+                    startupID = nil
+                }
+            }
+            throw error
+        }
+    }
+
+    private func startListener() async throws -> UInt16 {
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         let newListener: NWListener
