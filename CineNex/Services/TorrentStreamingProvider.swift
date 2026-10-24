@@ -74,7 +74,9 @@ struct TorrentHTTPRequest: Equatable, Sendable {
               parts[2] == "HTTP/1.0" || parts[2] == "HTTP/1.1",
               parts[1].hasPrefix("/"),
               !parts[1].contains("#"),
-              !parts[1].contains("\\") else {
+              !parts[1].contains("\\"),
+              parts[0].utf8.allSatisfy({ $0 >= 33 && $0 <= 126 }),
+              parts[1].utf8.allSatisfy({ $0 >= 33 && $0 <= 126 }) else {
             throw TorrentStreamingError.invalidHTTPRequest
         }
 
@@ -89,20 +91,19 @@ struct TorrentHTTPRequest: Equatable, Sendable {
             let tokenCharacters = "!#$%&'*+-.^_|~".utf8
             guard !name.isEmpty,
                   name.utf8.allSatisfy({ ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 122) || tokenCharacters.contains($0) }),
-                  !value.contains("\r"),
-                  !value.contains("\n"),
+                  value.utf8.allSatisfy({ $0 == 9 || ($0 >= 32 && $0 != 127) }),
                   headers[name] == nil else {
                 throw TorrentStreamingError.invalidHTTPRequest
             }
             headers[name] = value
         }
-        if let transferEncoding = headers["transfer-encoding"], !transferEncoding.isEmpty {
+        if headers["transfer-encoding"] != nil {
             throw TorrentStreamingError.invalidHTTPRequest
         }
         if let contentLength = headers["content-length"], contentLength != "0" {
             throw TorrentStreamingError.invalidHTTPRequest
         }
-        if let host = headers["host"], host.isEmpty {
+        if parts[2] == "HTTP/1.1", headers["host"]?.isEmpty != false {
             throw TorrentStreamingError.invalidHTTPRequest
         }
         return TorrentHTTPRequest(method: String(parts[0]), target: String(parts[1]), headers: headers)
@@ -125,7 +126,11 @@ private final class TorrentContinuationGate: @unchecked Sendable {
 final class TorrentLoopbackHTTPServer: @unchecked Sendable {
     private struct Resource {
         let file: TorrentPreparedFile
+        let registeredAt: Date
     }
+
+    private static let resourceLifetime: TimeInterval = 2 * 60 * 60
+    private static let maximumResources = 64
 
     private let lock = NSLock()
     private let queue = DispatchQueue(label: "com.diam0ndnex.cinenex.torrent-http", qos: .userInitiated)
@@ -201,8 +206,14 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
             throw TorrentStreamingError.listenerUnavailable
         }
         let token = bearerToken
+        let now = Date()
+        resources = resources.filter { now.timeIntervalSince($0.value.registeredAt) < Self.resourceLifetime }
+        guard resources.count < Self.maximumResources else {
+            lock.unlock()
+            throw TorrentStreamingError.fileUnavailable
+        }
         let resourceID = Self.makeToken()
-        resources[resourceID] = Resource(file: file)
+        resources[resourceID] = Resource(file: file, registeredAt: now)
         lock.unlock()
 
         var components = URLComponents()
@@ -282,6 +293,10 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard !stopped, parts[1] == bearerToken, let resource = resources[parts[2]] else {
+            throw TorrentStreamingError.unauthorized
+        }
+        guard Date().timeIntervalSince(resource.registeredAt) < Self.resourceLifetime else {
+            resources.removeValue(forKey: parts[2])
             throw TorrentStreamingError.unauthorized
         }
         return resource.file
