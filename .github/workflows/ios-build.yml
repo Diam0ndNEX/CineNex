@@ -95,6 +95,7 @@ jobs:
             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.device_id }}" \
             -derivedDataPath DerivedData \
             CODE_SIGNING_ALLOWED=NO \
+            -parallel-testing-enabled NO \
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 60 \
             -maximum-test-execution-time-allowance 120 \
