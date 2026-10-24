@@ -31,7 +31,7 @@ struct MediaItem: Codable, Identifiable, Hashable {
         return "\(cleanTitle.isEmpty ? "Untitled" : cleanTitle), \(kindLabel), \(yearText), \(genreText)"
     }
 
-    var yearLabel: String? {    var yearLabel: String? {
+    var yearLabel: String? {
         year > 0 ? String(year) : nil
     }
 
