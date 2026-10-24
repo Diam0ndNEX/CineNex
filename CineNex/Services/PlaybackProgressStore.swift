@@ -96,6 +96,9 @@ final class PlaybackProgressStore: ObservableObject {
             return true
         }
         trimEntriesToLimit()
+        if entries.count != decoded.count {
+            persist()
+        }
     }
 
     private func trimEntriesToLimit() {
