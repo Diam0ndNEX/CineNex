@@ -53,7 +53,7 @@ struct EmbedWebView: UIViewRepresentable {
             do {
                 let ruleJSON = try PlaybackCleanerPolicy.contentBlockerJSON()
                 let store = WKContentRuleListStore.default()
-                store.lookUpContentRuleList(forIdentifier: Self.contentRuleListIdentifier) { [weak self, weak webView] cachedRuleList, lookupError in
+                store.lookUpContentRuleList(forIdentifier: Self.contentRuleListIdentifier) { [weak self, weak webView] cachedRuleList, _ in
                     guard let self, let webView, self.lastConfigurationKey == key else { return }
                     if let cachedRuleList {
                         self.install(cachedRuleList, in: webView, url: url, configurationKey: key)
@@ -73,7 +73,6 @@ struct EmbedWebView: UIViewRepresentable {
                             }
                         }
                     }
-                    _ = lookupError
                 }
             } catch {
                 load(url, in: webView, configurationKey: key)
