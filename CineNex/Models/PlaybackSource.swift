@@ -124,6 +124,7 @@ struct PlaybackSourceCoordinator: Sendable {
                         return ProviderSearchResult(
                             providerID: provider.id,
                             providerName: provider.displayName,
+                            providerPriority: provider.priority,
                             sources: sources,
                             failure: nil
                         )
@@ -131,6 +132,7 @@ struct PlaybackSourceCoordinator: Sendable {
                         return ProviderSearchResult(
                             providerID: provider.id,
                             providerName: provider.displayName,
+                            providerPriority: provider.priority,
                             sources: [],
                             failure: PlaybackProviderFailure(
                                 providerID: provider.id,
@@ -168,7 +170,7 @@ struct PlaybackSourceCoordinator: Sendable {
                         languageCode: source.languageCode,
                         subtitleLanguages: source.subtitleLanguages,
                         supportsNativePlayback: source.supportsNativePlayback,
-                        providerPriority: source.providerPriority
+                        providerPriority: result.providerPriority
                     )
                 }
 
@@ -210,6 +212,7 @@ struct PlaybackSourceCoordinator: Sendable {
 private struct ProviderSearchResult: Sendable {
     let providerID: String
     let providerName: String
+    let providerPriority: Int
     let sources: [PlaybackSource]
     let failure: PlaybackProviderFailure?
 }
