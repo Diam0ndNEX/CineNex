@@ -44,13 +44,7 @@ struct EmbedPlaybackProvider: Identifiable, Equatable, Sendable {
             }
         }
 
-        let identifier: String
-        if let tmdbID = request.tmdbID {
-            identifier = String(tmdbID)
-        } else {
-            identifier = request.title
-        }
-
+        let identifier = request.tmdbID.map(String.init) ?? request.title
         let pathTemplate: String
         switch request.mediaKind {
         case .movie:
@@ -65,15 +59,24 @@ struct EmbedPlaybackProvider: Identifiable, Equatable, Sendable {
             pathTemplate = seriesPath
         }
 
-        let rawPath = pathTemplate
-            .replacingOccurrences(of: "{id}", with: identifier)
-            .replacingOccurrences(of: "{season}", with: String(request.seasonNumber ?? 0))
-            .replacingOccurrences(of: "{episode}", with: String(request.episodeNumber ?? 0))
         let segmentCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
-        let encodedSegments = rawPath.split(separator: "/", omittingEmptySubsequences: false).map { segment in
-            String(segment).addingPercentEncoding(withAllowedCharacters: segmentCharacters) ?? ""
+        let encodedSegments = pathTemplate.split(separator: "/", omittingEmptySubsequences: false).map { templateSegment -> String in
+            let value: String
+            switch templateSegment {
+            case "{id}":
+                value = identifier
+            case "{season}":
+                value = String(request.seasonNumber ?? 0)
+            case "{episode}":
+                value = String(request.episodeNumber ?? 0)
+            default:
+                value = String(templateSegment)
+            }
+            return value.addingPercentEncoding(withAllowedCharacters: segmentCharacters) ?? ""
         }
-        guard !encodedSegments.contains(where: { $0.isEmpty }) else {
+
+        guard !encodedSegments.isEmpty,
+              !encodedSegments.contains(where: { $0.isEmpty }) else {
             return nil
         }
 
