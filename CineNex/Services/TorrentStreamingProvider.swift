@@ -19,6 +19,7 @@ struct TorrentPreparedFile: Sendable {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !fileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         length > 0 &&
+        !contentType.isEmpty &&
         contentType.utf8.allSatisfy { $0 >= 32 && $0 < 127 }
     }
 }
@@ -273,6 +274,29 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
         return url
     }
 
+    @discardableResult
+    func unregister(_ url: URL) -> Bool {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.scheme == "http",
+              components.host == "127.0.0.1",
+              components.query == nil,
+              components.fragment == nil,
+              let port = components.port else {
+            return false
+        }
+        let parts = components.path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard parts.count == 3, parts[0] == "v1" else { return false }
+
+        lock.lock()
+        defer { lock.unlock() }
+        guard !stopped,
+              Int(listener?.port?.rawValue ?? 0) == port,
+              parts[1] == bearerToken else {
+            return false
+        }
+        return resources.removeValue(forKey: parts[2]) != nil
+    }
+
     func stop() {
         lock.lock()
         guard !stopped else {
@@ -506,22 +530,29 @@ struct TorrentPlaybackProvider: PlaybackSourceProvider, Sendable {
         guard !preparedFiles.isEmpty else { return [] }
         _ = try await server.start()
         var sources: [PlaybackSource] = []
-        for file in preparedFiles {
-            let url = try server.register(file)
-            sources.append(PlaybackSource(
-                id: "\(file.id)-\(UUID().uuidString)",
-                providerID: id,
-                providerName: displayName,
-                title: file.title,
-                url: url,
-                qualityLabel: nil,
-                languageCode: nil,
-                subtitleLanguages: [],
-                supportsNativePlayback: true,
-                providerPriority: priority
-            ))
+        var registeredURLs: [URL] = []
+        do {
+            for file in preparedFiles {
+                let url = try server.register(file)
+                registeredURLs.append(url)
+                sources.append(PlaybackSource(
+                    id: "\(file.id)-\(UUID().uuidString)",
+                    providerID: id,
+                    providerName: displayName,
+                    title: file.title,
+                    url: url,
+                    qualityLabel: nil,
+                    languageCode: nil,
+                    subtitleLanguages: [],
+                    supportsNativePlayback: true,
+                    providerPriority: priority
+                ))
+            }
+            return sources
+        } catch {
+            registeredURLs.forEach { _ = server.unregister($0) }
+            throw error
         }
-        return sources
     }
 
     func stop() async {

@@ -189,6 +189,31 @@ final class TorrentLoopbackHTTPServerTests: XCTestCase {
         XCTAssertTrue(data.isEmpty)
     }
 
+    func testUnregisterInvalidatesSourceURL() async throws {
+        let expected = Data("temporary".utf8)
+        let file = TorrentPreparedFile(
+            id: "temporary-file",
+            title: "Temporary",
+            fileName: "temporary.mp4",
+            length: Int64(expected.count),
+            contentType: "video/mp4",
+            reader: MemoryReader(expected)
+        )
+        let server = TorrentLoopbackHTTPServer()
+        defer { server.stop() }
+        _ = try await server.start()
+        let url = try server.register(file)
+
+        XCTAssertTrue(server.unregister(url))
+        XCTAssertFalse(server.unregister(url))
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 8
+        let (_, response) = try await URLSession.shared.data(for: request)
+        let http = try XCTUnwrap(response as? HTTPURLResponse)
+        XCTAssertEqual(http.statusCode, 404)
+    }
+
     func testInvalidBearerTokenDoesNotExposeFile() async throws {
         let expected = Data("private".utf8)
         let file = TorrentPreparedFile(
