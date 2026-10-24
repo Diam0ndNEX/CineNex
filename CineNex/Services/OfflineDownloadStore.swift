@@ -5,6 +5,7 @@ import Foundation
 enum OfflineDownloadStatus: String, Codable, Equatable {
     case queued
     case downloading
+    case paused
     case completed
     case failed
     case cancelled
@@ -156,6 +157,51 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
         return record
     }
 
+    func pause(id: String) {
+        guard let index = downloads.firstIndex(where: { $0.id == id }),
+              downloads[index].status == .downloading else {
+            return
+        }
+
+        tasks[id]?.suspend()
+        downloads[index].status = .paused
+        downloads[index].updatedAt = Date()
+        persist()
+    }
+
+    func resume(id: String) {
+        guard let index = downloads.firstIndex(where: { $0.id == id }),
+              downloads[index].status == .paused || downloads[index].status == .queued else {
+            return
+        }
+
+        if let task = tasks[id] {
+            switch task.state {
+            case .suspended:
+                task.resume()
+                downloads[index].status = .downloading
+                downloads[index].updatedAt = Date()
+                persist()
+                return
+            case .running:
+                downloads[index].status = .downloading
+                downloads[index].updatedAt = Date()
+                persist()
+                return
+            case .canceling, .completed:
+                tasks[id] = nil
+            @unknown default:
+                tasks[id] = nil
+            }
+        }
+
+        downloads[index].progress = 0
+        downloads[index].status = .queued
+        downloads[index].updatedAt = Date()
+        persist()
+        startDownload(for: downloads[index])
+    }
+
     func cancel(id: String) {
         guard let index = downloads.firstIndex(where: { $0.id == id }) else { return }
         tasks[id]?.cancel()
@@ -223,8 +269,18 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
                 for task in activeTasks {
                     guard let id = task.taskDescription else { continue }
                     self.tasks[id] = task
-                    if let index = self.downloads.firstIndex(where: { $0.id == id }) {
+                    guard let index = self.downloads.firstIndex(where: { $0.id == id }) else { continue }
+                    switch task.state {
+                    case .suspended:
+                        self.downloads[index].status = .paused
+                    case .running:
                         self.downloads[index].status = .downloading
+                    case .canceling:
+                        self.downloads[index].status = .cancelled
+                    case .completed:
+                        break
+                    @unknown default:
+                        break
                     }
                 }
 
