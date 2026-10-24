@@ -60,6 +60,51 @@ final class EmbedPlaybackProviderTests: XCTestCase {
             for: PlaybackSourceRequest(title: "Example Movie", mediaKind: .movie, tmdbID: 42)
         ))
     }
+    func testProviderRejectsInvalidTemplateSegments() {
+        let provider = EmbedPlaybackProvider(
+            id: "test",
+            displayName: "Test",
+            baseURL: URL(string: "https://media.example.test/embed/")!,
+            priority: 1,
+            moviePath: "movie//{id}"
+        )
+        XCTAssertNil(provider.embedURL(
+            for: PlaybackSourceRequest(title: "Example Movie", mediaKind: .movie, tmdbID: 42)
+        ))
+    }
+
+    func testProviderRejectsPathTraversalTemplate() {
+        let provider = EmbedPlaybackProvider(
+            id: "unsafe",
+            displayName: "Unsafe",
+            baseURL: URL(string: "https://media.example.test/embed/")!,
+            priority: 1,
+            moviePath: "../{id}"
+        )
+        XCTAssertNil(provider.embedURL(
+            for: PlaybackSourceRequest(title: "Example Movie", mediaKind: .movie, tmdbID: 42)
+        ))
+    }
+
+    func testProviderRejectsUnsupportedMediaKind() {
+        let provider = EmbedPlaybackProvider(
+            id: "movie-only",
+            displayName: "Movie only",
+            baseURL: URL(string: "https://media.example.test/embed/")!,
+            priority: 1,
+            supportedMediaKinds: [.movie]
+        )
+        XCTAssertNil(provider.embedURL(
+            for: PlaybackSourceRequest(
+                title: "Example Series",
+                mediaKind: .series,
+                tmdbID: 42,
+                seasonNumber: 1,
+                episodeNumber: 1
+            )
+        ))
+    }
+
     func testTitleIdentifierIsEncodedAsSinglePathSegment() throws {
         let provider = EmbedPlaybackProvider(
             id: "test",

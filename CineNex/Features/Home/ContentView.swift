@@ -174,7 +174,7 @@ struct ContentView: View {
             PlayerView(item: item, progressStore: playbackProgressStore)
         }
         .sheet(item: $watchHubItem) { item in
-            WatchHubView(item: item, onPlayDirect: { play($0) })
+            WatchHubView(item: item, onPlayDirect: { play($0) }, onSelectItem: { watchHubItem = $0 })
         }
         .alert("Playback unavailable", isPresented: $showingUnavailableSource) {
             Button("OK", role: .cancel) {}

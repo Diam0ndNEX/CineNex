@@ -59,6 +59,17 @@ struct EmbedPlaybackProvider: Identifiable, Equatable, Sendable {
             pathTemplate = seriesPath
         }
 
+        let templateSegments = pathTemplate.split(separator: "/", omittingEmptySubsequences: false)
+        guard !templateSegments.isEmpty,
+              templateSegments.allSatisfy({ segment in
+                  !segment.isEmpty
+                      && segment != "."
+                      && segment != ".."
+                      && (!segment.contains("{") && !segment.contains("}") || ["{id}", "{season}", "{episode}"].contains(String(segment)))
+              }) else {
+            return nil
+        }
+
         let segmentCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
         let encodedSegments = pathTemplate.split(separator: "/", omittingEmptySubsequences: false).map { templateSegment -> String in
             let value: String
