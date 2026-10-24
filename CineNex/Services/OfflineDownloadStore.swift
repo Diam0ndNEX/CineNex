@@ -95,7 +95,7 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
         reconnectTasks()
     }
 
-    static func supportsOfflineDownload(from url: URL) -> Bool {
+    nonisolated static func supportsOfflineDownload(from url: URL) -> Bool {
         url.scheme?.lowercased() == "https"
             && url.pathExtension.lowercased() == "m3u8"
             && url.host != nil
