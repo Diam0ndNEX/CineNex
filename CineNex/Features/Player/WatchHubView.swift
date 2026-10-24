@@ -1,3 +1,4 @@
+import AVKit
 import SwiftUI
 
 struct WatchHubView: View {
@@ -7,7 +8,12 @@ struct WatchHubView: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("cinenex.defaultPlaybackProvider") private var defaultProviderID = "smart"
+    @AppStorage("cinenex.stremioAddonManifestURLs") private var stremioAddonManifestURLs = ""
     @State private var selectedProvider: ResolvedEmbedSource?
+    @State private var selectedDiscoveredSource: PlaybackSource?
+    @State private var discoveredSources: [PlaybackSource] = []
+    @State private var searchingAddonSources = false
+    @State private var addonSearchMessage: String?
     @State private var availableProviders: [ResolvedEmbedSource] = []
     @State private var seasonNumber = 1
     @State private var episodeNumber = 1
@@ -53,6 +59,9 @@ struct WatchHubView: View {
             }
             .sheet(item: $selectedProvider) { provider in
                 EmbedWebPlaybackView(title: item.title, url: provider.url)
+            }
+            .sheet(item: $selectedDiscoveredSource) { source in
+                DiscoveredSourcePlaybackView(source: source)
             }
             .task(id: item.id) {
                 resolveSources()
@@ -158,6 +167,77 @@ struct WatchHubView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(Color.cineNexSurface, in: Capsule())
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Button {
+                    Task { await searchStremioAddonSources() }
+                } label: {
+                    HStack(spacing: 10) {
+                        if searchingAddonSources {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                        }
+                        Text(searchingAddonSources ? "Searching add-ons…" : "Search add-on sources")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Image(systemName: "arrow.clockwise")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
+                }
+                .buttonStyle(.plain)
+                .disabled(searchingAddonSources)
+                .accessibilityHint("Queries configured Stremio-compatible add-ons for this title or episode")
+
+                Text("Optional advanced setup: paste one HTTPS add-on manifest URL per line. No add-ons are preconfigured until a maintained, vetted default list is available.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $stremioAddonManifestURLs)
+                    .font(.caption.monospaced())
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 76, maxHeight: 120)
+                    .padding(8)
+                    .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityLabel("Stremio add-on manifest URLs")
+                if let addonSearchMessage {
+                    Text(addonSearchMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(discoveredSources) { source in
+                    Button {
+                        selectedDiscoveredSource = source
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: source.supportsNativePlayback ? "play.fill" : "play.rectangle.fill")
+                                .font(.title2)
+                                .foregroundStyle(Color.cineNexAccent)
+                                .frame(width: 44, height: 44)
+                                .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(source.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                Text([source.providerName, source.qualityLabel].compactMap { $0 }.joined(separator: " · "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(12)
+                        .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Play source: \(source.title)")
+                }
             }
 
             if item.streamURL != nil {
@@ -444,6 +524,49 @@ struct WatchHubView: View {
         }
     }
 
+    @MainActor
+    private func searchStremioAddonSources() async {
+        let manifestURLs = stremioAddonManifestURLs
+            .split(whereSeparator: \.isNewline)
+            .compactMap { line -> URL? in
+                let value = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !value.isEmpty else { return nil }
+                return URL(string: value)
+            }
+        guard !manifestURLs.isEmpty else {
+            addonSearchMessage = "Add at least one HTTPS add-on manifest URL above. CineNex does not silently install unverified third-party providers."
+            discoveredSources = []
+            return
+        }
+        guard let token = TMDBTokenStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !token.isEmpty else {
+            addonSearchMessage = "A TMDB Read Access Token is needed to resolve this title to the IMDb ID used by many add-ons."
+            discoveredSources = []
+            return
+        }
+
+        searchingAddonSources = true
+        addonSearchMessage = nil
+        defer { searchingAddonSources = false }
+
+        do {
+            let provider = try StremioAddonPlaybackProvider(
+                manifestURLs: manifestURLs,
+                externalIDResolver: TMDBExternalIDResolver(readAccessToken: token)
+            )
+            let result = try await PlaybackSourceCoordinator(providers: [provider]).search(for: request)
+            discoveredSources = result.sources
+            addonSearchMessage = result.sources.isEmpty
+                ? "No direct playable URLs were returned. Add-ons may be unavailable, may require authentication, or may return torrent descriptors that need a separate torrent engine."
+                : "Found \(result.sources.count) direct source(s). Availability and playback compatibility are not guaranteed until playback starts."
+        } catch is CancellationError {
+            addonSearchMessage = "Source search was cancelled."
+        } catch {
+            addonSearchMessage = error.localizedDescription
+            discoveredSources = []
+        }
+    }
+
     private func resolveSources() {
         let candidates = EmbedPlaybackProviderCatalog.candidates
         availableProviders = candidates.compactMap { provider in
@@ -514,6 +637,44 @@ private struct EmbedWebPlaybackView: View {
                         Image(systemName: "arrow.clockwise")
                     }
                     .accessibilityLabel("Reload player")
+                }
+            }
+        }
+        .tint(Color.cineNexAccent)
+    }
+}
+
+
+private struct DiscoveredSourcePlaybackView: View {
+    let source: PlaybackSource
+    @Environment(\.dismiss) private var dismiss
+    @State private var player: AVPlayer
+
+    init(source: PlaybackSource) {
+        self.source = source
+        _player = State(initialValue: AVPlayer(url: source.url))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if source.supportsNativePlayback {
+                    NativePlaybackView(player: player)
+                        .onAppear { player.play() }
+                        .onDisappear { player.pause() }
+                        .background(.black)
+                        .ignoresSafeArea(edges: .bottom)
+                } else {
+                    EmbedWebView(url: source.url, onFailure: {})
+                        .background(.black)
+                        .ignoresSafeArea(edges: .bottom)
+                }
+            }
+            .navigationTitle(source.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Sources") { dismiss() }
                 }
             }
         }
