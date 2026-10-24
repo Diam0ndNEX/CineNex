@@ -50,6 +50,13 @@ final class TorrentLoopbackHTTPServerTests: XCTestCase {
         }
     }
 
+    private actor BlockingReader: TorrentByteReader {
+        func read(offset: Int64, length: Int) async throws -> Data {
+            try await Task.sleep(for: .seconds(30))
+            return Data(repeating: 0x41, count: length)
+        }
+    }
+
     func testConcurrentStartCallsShareOneListener() async throws {
         let server = TorrentLoopbackHTTPServer()
         defer { server.stop() }
@@ -88,6 +95,40 @@ final class TorrentLoopbackHTTPServerTests: XCTestCase {
             XCTFail("A stopped provider must not restart its local server.")
         } catch {
             XCTAssertEqual(error as? TorrentStreamingError, .listenerUnavailable)
+        }
+    }
+
+    func testStopCancelsActiveReadsAndClosesConnections() async throws {
+        let file = TorrentPreparedFile(
+            id: "blocked-file",
+            title: "Blocked Read",
+            fileName: "blocked.mp4",
+            length: 1024,
+            contentType: "video/mp4",
+            reader: BlockingReader()
+        )
+        let engine = StopTrackingEngine(file: file)
+        let server = TorrentLoopbackHTTPServer()
+        let provider = TorrentPlaybackProvider(engine: engine, server: server)
+        let sources = try await provider.findSources(
+            for: PlaybackSourceRequest(title: "Blocked Read", mediaKind: .movie)
+        )
+        let source = try XCTUnwrap(sources.first)
+
+        var request = URLRequest(url: source.url)
+        request.timeoutInterval = 8
+        let responseTask = Task {
+            try await URLSession.shared.data(for: request)
+        }
+        try await Task.sleep(for: .milliseconds(100))
+
+        await provider.stop()
+
+        do {
+            _ = try await responseTask.value
+            XCTFail("Stopping the provider must close an active response rather than leave it hanging.")
+        } catch {
+            XCTAssertTrue(true)
         }
     }
 

@@ -140,6 +140,8 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
     private var stopped = false
     private var startupTask: Task<UInt16, Error>?
     private var startupID: UUID?
+    private var activeConnections: [UUID: NWConnection] = [:]
+    private var activeTasks: [UUID: Task<Void, Never>] = [:]
 
     func start() async throws -> UInt16 {
         let selection: (task: Task<UInt16, Error>, id: UUID) = try lock.withLock {
@@ -210,8 +212,17 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
                     connection.cancel()
                     return
                 }
+                let connectionID = UUID()
+                guard self.registerConnection(connection, id: connectionID) else {
+                    connection.cancel()
+                    return
+                }
                 connection.start(queue: self.queue)
-                Task { await self.handle(connection) }
+                let task = Task {
+                    await self.handle(connection)
+                    self.finishConnection(id: connectionID)
+                }
+                self.registerTask(task, id: connectionID)
             }
             newListener.start(queue: queue)
         }
@@ -275,8 +286,39 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
         startupID = nil
         let currentListener = listener
         listener = nil
+        let connectionsToCancel = Array(activeConnections.values)
+        let tasksToCancel = Array(activeTasks.values)
+        activeConnections.removeAll()
+        activeTasks.removeAll()
         lock.unlock()
+        tasksToCancel.forEach { $0.cancel() }
+        connectionsToCancel.forEach { $0.cancel() }
         currentListener?.cancel()
+    }
+
+    private func registerConnection(_ connection: NWConnection, id: UUID) -> Bool {
+        lock.withLock {
+            guard !stopped else { return false }
+            activeConnections[id] = connection
+            return true
+        }
+    }
+
+    private func registerTask(_ task: Task<Void, Never>, id: UUID) {
+        let shouldCancel = lock.withLock {
+            guard !stopped, activeConnections[id] != nil else { return true }
+            activeTasks[id] = task
+            return false
+        }
+        if shouldCancel { task.cancel() }
+    }
+
+    private func finishConnection(id: UUID) {
+        let connection = lock.withLock {
+            activeTasks.removeValue(forKey: id)
+            return activeConnections.removeValue(forKey: id)
+        }
+        connection?.cancel()
     }
 
     private func handle(_ connection: NWConnection) async {
