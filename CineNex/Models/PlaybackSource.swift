@@ -29,7 +29,12 @@ struct PlaybackSourceRequest: Codable, Equatable, Sendable {
         self.episodeNumber = episodeNumber
     }
 
-    var isValid: Bool {
+    var hasSecureWebURL: Bool {
+        guard let scheme = url.scheme?.lowercased(), url.host != nil else { return false }
+        return scheme == "https"
+    }
+
+    var isValid: Bool {    var isValid: Bool {
         !title.isEmpty
             && (tmdbID == nil || tmdbID! > 0)
             && (releaseYear == nil || releaseYear! > 0)
