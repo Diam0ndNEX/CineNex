@@ -8,7 +8,13 @@ struct WatchHubView: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("cinenex.defaultPlaybackProvider") private var defaultProviderID = "smart"
-    @AppStorage("cinenex.stremioAddonManifestURLs") private var stremioAddonManifestURLs = ""
+    @AppStorage("cinenex.stremioAddonManifestURLs") private var stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+
+    private static let defaultStremioAddonManifestURLText = "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
+    private static let defaultStremioAddonManifestURLs: [URL] = [
+        URL(string: "https://torrentio.strem.fun/manifest.json")!,
+        URL(string: "https://mediafusion.elfhosted.com/manifest.json")!
+    ]
     @State private var selectedProvider: ResolvedEmbedSource?
     @State private var selectedDiscoveredSource: PlaybackSource?
     @State private var discoveredSources: [PlaybackSource] = []
@@ -212,7 +218,7 @@ struct WatchHubView: View {
                 .disabled(searchingAddonSources)
                 .accessibilityHint("Queries configured Stremio-compatible add-ons for this title or episode")
 
-                Text("Optional advanced setup: paste one HTTPS add-on manifest URL per line. No add-ons are preconfigured until a maintained, vetted default list is available.")
+                Text("Torrentio and MediaFusion are preconfigured. Edit the manifest URLs to use your own instance or a configured add-on URL with custom filters or debrid settings.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 TextEditor(text: $stremioAddonManifestURLs)
@@ -222,6 +228,13 @@ struct WatchHubView: View {
                     .padding(8)
                     .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
                     .accessibilityLabel("Stremio add-on manifest URLs")
+                    .onAppear {
+                        if stremioAddonManifestURLs
+                            .split(whereSeparator: \.isNewline)
+                            .allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                            stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+                        }
+                    }
                 if let addonSearchMessage {
                     Text(addonSearchMessage)
                         .font(.caption)
@@ -656,17 +669,23 @@ struct WatchHubView: View {
 
     @MainActor
     private func searchStremioAddonSources() async {
-        let manifestURLs = stremioAddonManifestURLs
+        let configuredManifestURLs = stremioAddonManifestURLs
             .split(whereSeparator: \.isNewline)
             .compactMap { line -> URL? in
                 let value = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !value.isEmpty else { return nil }
-                return URL(string: value)
+                guard !value.isEmpty,
+                      let url = URL(string: value),
+                      url.scheme?.lowercased() == "https",
+                      url.host != nil,
+                      url.user == nil,
+                      url.password == nil else { return nil }
+                return url
             }
-        guard !manifestURLs.isEmpty else {
-            addonSearchMessage = "Add at least one HTTPS add-on manifest URL above. CineNex does not silently install unverified third-party providers."
-            discoveredSources = []
-            return
+        let manifestURLs = configuredManifestURLs.isEmpty
+            ? Self.defaultStremioAddonManifestURLs
+            : configuredManifestURLs
+        if configuredManifestURLs.isEmpty {
+            stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
         }
         guard request.tmdbID != nil else {
             addonSearchMessage = "This catalog item has no TMDB identifier, so CineNex cannot resolve its IMDb ID for add-on lookup."
