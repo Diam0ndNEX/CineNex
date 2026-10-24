@@ -120,7 +120,17 @@ enum LetterboxdCSVService {
         }
     }
 
-    static func makeDiaryCSV(from records: [LetterboxdRecord]) -> String {
+    static func exportFilename(for kind: LetterboxdRecordKind) -> String {
+        switch kind {
+        case .diary: return "diary.csv"
+        case .watched: return "watched.csv"
+        case .ratings: return "ratings.csv"
+        case .watchlist: return "watchlist.csv"
+        case .other: return "cinenex-export.csv"
+        }
+    }
+
+    static func makeDiaryCSV(from records: [LetterboxdRecord]) -> String {    static func makeDiaryCSV(from records: [LetterboxdRecord]) -> String {
         makeCSV(from: records, kind: .diary)
     }
 
