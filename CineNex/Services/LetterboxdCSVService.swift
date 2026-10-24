@@ -100,12 +100,7 @@ enum LetterboxdCSVService {
             let stableFilmID = uri ?? "\(title.lowercased())|\(year.map(String.init) ?? "")"
             let uniqueSuffix = kind == .diary ? (watchedDate ?? dateAdded ?? "") : ""
             let id = "\(kind.rawValue)|\(stableFilmID)|\(uniqueSuffix)"
-            let rating = value(ratingColumn).flatMap { rawValue -> Double? in
-                guard let parsed = Double(rawValue), parsed.isFinite, (0...5).contains(parsed) else {
-                    return nil
-                }
-                return parsed
-            }
+            let rating = value(ratingColumn).flatMap(Double.init)
             let rewatchValue = value(rewatchColumn)?.lowercased()
             let rewatch = rewatchValue.map { ["yes", "true", "1", "y"].contains($0) }
 

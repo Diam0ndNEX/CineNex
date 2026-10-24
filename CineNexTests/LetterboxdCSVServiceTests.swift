@@ -20,7 +20,14 @@ final class LetterboxdCSVServiceTests: XCTestCase {
     }
 
     func testRatingsOutsideLetterboxdRangeAreIgnored() throws {
-        let csv = "Name,Rating\\nZero,0\\nMaximum,5\\nToo high,5.5\\nNegative,-1\\nNot a number,NaN"
+        let csv = """
+        Name,Rating
+        Zero,0
+        Maximum,5
+        Too high,5.5
+        Negative,-1
+        Not a number,NaN
+        """
         let records = try LetterboxdCSVService.parse(csv, filename: "ratings.csv")
         XCTAssertEqual(records.map(\.title), ["Zero", "Maximum", "Too high", "Negative", "Not a number"])
         XCTAssertEqual(records.map(\.rating), [0, 5, nil, nil, nil])
