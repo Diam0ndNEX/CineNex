@@ -285,9 +285,22 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
                 }
 
                 for index in self.downloads.indices where self.downloads[index].status == .downloading {
-                    if !activeIDs.contains(self.downloads[index].id) {
-                        self.downloads[index].status = .queued
+                    let id = self.downloads[index].id
+                    guard !activeIDs.contains(id) else { continue }
+                    if let task = self.tasks[id] {
+                        switch task.state {
+                        case .running:
+                            continue
+                        case .suspended:
+                            self.downloads[index].status = .paused
+                            continue
+                        case .canceling, .completed:
+                            self.tasks[id] = nil
+                        @unknown default:
+                            self.tasks[id] = nil
+                        }
                     }
+                    self.downloads[index].status = .queued
                 }
                 self.persist()
 
