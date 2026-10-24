@@ -249,7 +249,7 @@ private enum PlaybackProviderTimeoutError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .timedOut(let timeout):
-            return "Provider timed out after \(Int(timeout.rounded())) seconds."
+            return "Provider timed out after \(String(format: "%.1f", timeout)) seconds."
         }
     }
 }
