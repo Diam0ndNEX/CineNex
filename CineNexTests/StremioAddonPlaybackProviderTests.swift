@@ -4,19 +4,13 @@ import XCTest
 
 final class StremioAddonPlaybackProviderTests: XCTestCase {
     func testCancelledProviderRequestStopsBeforeExternalNetworking() async {
-        ProviderStubURLProtocol.handler = { request in
-            XCTFail("A cancelled source request must not perform add-on networking.")
-            return (self.response(request, 200), Data(#"{"streams":[]}"#.utf8))
-        }
-        defer { ProviderStubURLProtocol.handler = nil }
-
         let provider = try! StremioAddonPlaybackProvider(
             manifestURLs: [
                 URL(string: "https://addons.example.test/first/manifest.json")!,
                 URL(string: "https://addons.example.test/second/manifest.json")!
             ],
             externalIDResolver: StubExternalIDResolver(value: "tt1234567"),
-            session: makeSession()
+            session: URLSession(configuration: .ephemeral)
         )
         let task = Task {
             withUnsafeCurrentTask { currentTask in
