@@ -538,6 +538,11 @@ struct WatchHubView: View {
             discoveredSources = []
             return
         }
+        guard request.tmdbID != nil else {
+            addonSearchMessage = "This catalog item has no TMDB identifier, so CineNex cannot resolve its IMDb ID for add-on lookup."
+            discoveredSources = []
+            return
+        }
         guard let token = TMDBTokenStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines),
               !token.isEmpty else {
             addonSearchMessage = "A TMDB Read Access Token is needed to resolve this title to the IMDb ID used by many add-ons."
