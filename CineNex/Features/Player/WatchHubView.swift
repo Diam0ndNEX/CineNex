@@ -187,6 +187,8 @@ struct WatchHubView: View {
                     .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Play directly: \(item.title)")
+                .accessibilityHint("Plays the supplied media URL in CineNex's native player")
             }
 
             if availableProviders.isEmpty {
@@ -237,6 +239,9 @@ struct WatchHubView: View {
                         .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Try \(source.provider.displayName) playback source")
+                    .accessibilityHint("Opens an experimental source candidate that has not been checked for live availability")
                 }
             }
         }
@@ -293,6 +298,8 @@ struct WatchHubView: View {
                                 .frame(width: 124, alignment: .leading)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel("Watch \(recommendation.title)")
                             .accessibilityHint("Opens the Watch Hub for this recommendation")
                         }
                     }
