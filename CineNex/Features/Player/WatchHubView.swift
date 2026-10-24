@@ -689,11 +689,17 @@ struct WatchHubView: View {
                 manifestURLs: manifestURLs,
                 externalIDResolver: TMDBExternalIDResolver(readAccessToken: token)
             )
-            let result = try await PlaybackSourceCoordinator(providers: [provider]).search(for: request)
-            discoveredSources = result.sources
-            addonSearchMessage = result.sources.isEmpty
-                ? "No direct playable URLs were returned. Add-ons may be unavailable, may require authentication, or may return torrent descriptors that need a separate torrent engine."
-                : "Found \(result.sources.count) direct source(s). Availability and playback compatibility are not guaranteed until playback starts."
+            let discovery = try await provider.discover(for: request)
+            discoveredSources = discovery.sources
+            if !discovery.sources.isEmpty, !discovery.torrentDescriptors.isEmpty {
+                addonSearchMessage = "Found \(discovery.sources.count) direct source(s) and \(discovery.torrentDescriptors.count) torrent descriptor(s). Only direct URLs are playable until native torrent playback is integrated."
+            } else if !discovery.sources.isEmpty {
+                addonSearchMessage = "Found \(discovery.sources.count) direct source(s). Availability and playback compatibility are not guaranteed until playback starts."
+            } else if !discovery.torrentDescriptors.isEmpty {
+                addonSearchMessage = "Found \(discovery.torrentDescriptors.count) torrent descriptor(s), but native torrent playback is not integrated yet."
+            } else {
+                addonSearchMessage = "No playable direct URLs or valid torrent descriptors were returned. Add-ons may be unavailable or may require authentication."
+            }
         } catch is CancellationError {
             addonSearchMessage = "Source search was cancelled."
         } catch {
