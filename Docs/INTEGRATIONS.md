@@ -1,5 +1,11 @@
 # Tracking Integrations
 
+## Internet Archive playback
+
+CineNex automatically searches Internet Archive for films matching the selected movie title. It makes direct API requests from the app; no personal server, API token, or add-on URL is required. The initial integration only offers direct MP4 files when the record title matches, the file is not marked private, the reported format is supported, and the record's `licenseurl` matches a conservative allowlist of public-domain mark or Creative Commons Zero license paths. Series episodes are not supported by this provider.
+
+The license label is metadata supplied by the archive record and is not independent proof of rights. CineNex does not bypass authentication, DRM, or access controls. Results can be empty if an exact-title match or eligible file is unavailable; the existing playback choices remain available. Direct sources are handed to AVPlayer and may still fail if the server response or encoding is incompatible.
+
 ## Trakt
 
 CineNex supports Trakt device authorization and movie scrobbling. A user supplies the Client ID from their own Trakt API application, authorizes in Trakt's browser page, and can enable automatic scrobbling. OAuth tokens are stored in iOS Keychain and refreshed using the rotating refresh token. CineNex never asks for the user's Trakt password.

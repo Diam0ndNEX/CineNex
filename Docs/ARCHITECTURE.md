@@ -20,7 +20,7 @@ CineNex is an iPhone-first media discovery and playback app. It separates catalo
 ## Planned boundaries
 
 - Catalog providers: search, metadata, artwork, seasons, episodes, and external identifiers.
-- Media providers: authorized playback URLs and source-specific capabilities.
+- Media providers: embedded API clients that discover authorized or openly licensed playback URLs, validate formats and source metadata, and expose source-specific capabilities.
 - Playback services: AVPlayer lifecycle, playback state, track selection, and error reporting.
 - Tracking adapters: Trakt API and Letterboxd official data import/export.
 - Library persistence: favorites, recent playback, and progress.
