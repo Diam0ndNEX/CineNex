@@ -47,6 +47,26 @@ final class OfflineDownloadTests: XCTestCase {
         XCTAssertEqual(decoded.progress, 0.45)
     }
 
+    func testDirectorySizeCountsRegularFilesRecursively() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let nested = root.appendingPathComponent("segments", isDirectory: true)
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try Data(repeating: 0x41, count: 1_024).write(to: root.appendingPathComponent("playlist.bin"))
+        try Data(repeating: 0x42, count: 256).write(to: nested.appendingPathComponent("segment.bin"))
+
+        XCTAssertEqual(OfflineDownloadStore.directorySize(at: root), 1_280)
+    }
+
+    func testDirectorySizeReturnsZeroForMissingPath() {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+
+        XCTAssertEqual(OfflineDownloadStore.directorySize(at: missing), 0)
+    }
+
     func testCompletedDownloadOnlyExposesAnExistingLocalDirectory() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

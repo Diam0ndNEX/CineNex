@@ -6,6 +6,42 @@ struct OfflineLibraryView: View {
     @State private var showingRetryError = false
     let onPlay: (OfflineDownload, URL) -> Void
 
+    private var completedDownloadCount: Int {
+        store.downloads.filter { download in
+            download.status == .completed && store.localPlaybackURL(for: download.id) != nil
+        }.count
+    }
+
+    private var storageSummary: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "internaldrive")
+                .font(.title2)
+                .foregroundStyle(Color.cineNexAccent)
+                .frame(width: 44, height: 44)
+                .background(Color.cineNexAccent.opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Offline storage")
+                    .font(.headline)
+                Text("\(ByteCountFormatter.string(fromByteCount: store.storageUsageBytes, countStyle: .file)) used")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 8)
+
+            Text("\(completedDownloadCount) saved")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Offline storage, \(ByteCountFormatter.string(fromByteCount: store.storageUsageBytes, countStyle: .file)) used, \(completedDownloadCount) saved downloads")
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -15,6 +51,8 @@ struct OfflineLibraryView: View {
                     Text("Manage media saved on this device.")
                         .foregroundStyle(.secondary)
                 }
+
+                storageSummary
 
                 if store.downloads.isEmpty {
                     ContentUnavailableView(

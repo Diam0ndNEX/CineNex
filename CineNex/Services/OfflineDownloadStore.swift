@@ -101,6 +101,15 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
             && url.host != nil
     }
 
+    var storageUsageBytes: Int64 {
+        downloads.reduce(Int64(0)) { total, record in
+            guard let localURL = record.localAssetURL(in: downloadsDirectory) else {
+                return total
+            }
+            return total + Self.directorySize(at: localURL)
+        }
+    }
+
     @discardableResult
     func enqueue(title: String, sourceURL: URL) throws -> OfflineDownload {
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -111,10 +120,21 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
             throw OfflineDownloadError.unsupportedSource
         }
 
-        if let existing = downloads.first(where: {
+        if let index = downloads.firstIndex(where: {
             $0.sourceURL == sourceURL && $0.status != .cancelled && $0.status != .failed
         }) {
-            return existing
+            let existing = downloads[index]
+            if existing.status != .completed {
+                return existing
+            }
+            if existing.localAssetURL(in: downloadsDirectory) != nil {
+                return existing
+            }
+
+            downloads[index].status = .failed
+            downloads[index].errorMessage = "The downloaded media file is missing. Download it again to restore offline playback."
+            downloads[index].updatedAt = Date()
+            persist()
         }
 
         try prepareDownloadsDirectory()
@@ -221,6 +241,31 @@ final class OfflineDownloadStore: NSObject, ObservableObject, AVAssetDownloadDel
                 }
             }
         }
+    }
+
+    nonisolated static func directorySize(at directoryURL: URL) -> Int64 {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: directoryURL.path, isDirectory: &isDirectory),
+              isDirectory.boolValue,
+              let enumerator = FileManager.default.enumerator(
+                at: directoryURL,
+                includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+                options: []
+              ) else {
+            return 0
+        }
+
+        var totalBytes: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            guard let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+                  values.isRegularFile == true,
+                  let fileSize = values.fileSize,
+                  fileSize > 0 else {
+                continue
+            }
+            totalBytes += Int64(fileSize)
+        }
+        return totalBytes
     }
 
     private func prepareDownloadsDirectory() throws {
