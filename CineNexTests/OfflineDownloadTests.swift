@@ -61,12 +61,12 @@ final class OfflineDownloadTests: XCTestCase {
             updatedAt: Date(),
             status: .completed,
             progress: 1,
-            localDirectoryName: "download-2",
+            localDirectoryName: "download-2.movpkg",
             errorMessage: nil
         )
 
         XCTAssertNil(record.localAssetURL(in: root))
-        let localDirectory = root.appendingPathComponent("download-2", isDirectory: true)
+        let localDirectory = root.appendingPathComponent("download-2.movpkg", isDirectory: true)
         try FileManager.default.createDirectory(at: localDirectory, withIntermediateDirectories: true)
         XCTAssertEqual(record.localAssetURL(in: root), localDirectory)
     }
