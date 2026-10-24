@@ -2,6 +2,31 @@ import XCTest
 @testable import CineNex
 
 final class PlaybackSourceCoordinatorTests: XCTestCase {
+    func testCoordinatorPropagatesCancellation() async {
+        let slow = StubPlaybackProvider(
+            id: "slow",
+            name: "Slow provider",
+            priority: 1,
+            delayNanoseconds: 5_000_000_000
+        )
+        let coordinator = PlaybackSourceCoordinator(providers: [slow])
+        let task = Task {
+            try await coordinator.search(
+                for: PlaybackSourceRequest(title: "Example Film", mediaKind: .movie)
+            )
+        }
+        task.cancel()
+
+        do {
+            _ = try await task.value
+            XCTFail("A cancelled provider search must throw cancellation.")
+        } catch is CancellationError {
+            XCTAssertTrue(true)
+        } catch {
+            XCTFail("Expected CancellationError, received \(error).")
+        }
+    }
+
     func testRequestRequiresTitleAndCompleteEpisodeCoordinates() {
         XCTAssertFalse(
             PlaybackSourceRequest(title: " ", mediaKind: .movie).isValid
