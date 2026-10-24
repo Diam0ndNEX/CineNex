@@ -221,6 +221,11 @@ struct WatchHubView: View {
                 Text("Torrentio and MediaFusion are preconfigured. Edit the manifest URLs to use your own instance or a configured add-on URL with custom filters or debrid settings.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                HStack(spacing: 14) {
+                    Link("Configure Torrentio", destination: URL(string: "https://torrentio.strem.fun/configure")!)
+                    Link("Configure MediaFusion", destination: URL(string: "https://mediafusion.elfhosted.com")!)
+                }
+                .font(.caption.weight(.medium))
                 TextEditor(text: $stremioAddonManifestURLs)
                     .font(.caption.monospaced())
                     .scrollContentBackground(.hidden)
