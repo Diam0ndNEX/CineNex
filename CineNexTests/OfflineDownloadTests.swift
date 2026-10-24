@@ -140,16 +140,16 @@ final class OfflineDownloadTests: XCTestCase {
             localDirectoryName: "completed.movpkg",
             errorMessage: nil
         )
-        let queued = OfflineDownload(
-            id: "queued",
-            title: "Queued Film",
-            sourceURL: URL(string: "https://media.example.org/queued.m3u8")!,
+        let failed = OfflineDownload(
+            id: "failed",
+            title: "Failed Film",
+            sourceURL: URL(string: "https://media.example.org/failed.m3u8")!,
             createdAt: date.addingTimeInterval(1),
             updatedAt: date,
-            status: .queued,
+            status: .failed,
             progress: 0,
             localDirectoryName: nil,
-            errorMessage: nil
+            errorMessage: "Previous download failed"
         )
         let paused = OfflineDownload(
             id: "paused",
@@ -162,7 +162,7 @@ final class OfflineDownloadTests: XCTestCase {
             localDirectoryName: nil,
             errorMessage: nil
         )
-        defaults.set(try JSONEncoder().encode([completed, queued, paused]), forKey: "offline.test.records")
+        defaults.set(try JSONEncoder().encode([completed, failed, paused]), forKey: "offline.test.records")
 
         let store = OfflineDownloadStore(
             defaults: defaults,
@@ -172,13 +172,13 @@ final class OfflineDownloadTests: XCTestCase {
 
         XCTAssertEqual(store.removeCompletedDownloads(), 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: completedDirectory.path))
-        XCTAssertEqual(Set(store.downloads.map(\.id)), Set(["queued", "paused"]))
-        XCTAssertEqual(store.downloads.first(where: { $0.id == "queued" })?.status, .queued)
+        XCTAssertEqual(Set(store.downloads.map(\.id)), Set(["failed", "paused"]))
+        XCTAssertEqual(store.downloads.first(where: { $0.id == "failed" })?.status, .failed)
         XCTAssertEqual(store.downloads.first(where: { $0.id == "paused" })?.status, .paused)
 
         let persistedData = try XCTUnwrap(defaults.data(forKey: "offline.test.records"))
         let persistedRecords = try JSONDecoder().decode([OfflineDownload].self, from: persistedData)
-        XCTAssertEqual(Set(persistedRecords.map(\.id)), Set(["queued", "paused"]))
+        XCTAssertEqual(Set(persistedRecords.map(\.id)), Set(["failed", "paused"]))
     }
 
     @MainActor
