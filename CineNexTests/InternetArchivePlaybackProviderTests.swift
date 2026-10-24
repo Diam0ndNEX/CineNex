@@ -87,6 +87,41 @@ final class InternetArchivePlaybackProviderTests: XCTestCase {
         ).isEmpty)
     }
 
+
+    func testFindSourcesAutomaticallySearchesAndResolvesAnEligibleFilm() async throws {
+        MockArchiveURLProtocol.responseHandler = { request in
+            switch request.url?.path {
+            case "/advancedsearch.php":
+                return (
+                    200,
+                    Data(#"{"response":{"docs":[{"identifier":"example-film","title":"Example Film","year":"1932"}]}}"#.utf8)
+                )
+            case "/metadata/example-film":
+                return (
+                    200,
+                    Data(#"{"metadata":{"title":"Example Film","year":"1932","licenseurl":"https://creativecommons.org/publicdomain/zero/1.0/"},"files":[{"name":"film.mp4","format":"MPEG4"}]}"#.utf8)
+                )
+            default:
+                return (404, Data(#"{"error":"not found"}"#.utf8))
+            }
+        }
+        defer { MockArchiveURLProtocol.responseHandler = nil }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockArchiveURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+
+        let provider = InternetArchivePlaybackProvider(session: session)
+        let result = try await provider.findSources(
+            for: PlaybackSourceRequest(title: "Example Film", mediaKind: .movie, releaseYear: 1932)
+        )
+
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result.first?.url.absoluteString, "https://archive.org/download/example-film/film.mp4")
+        XCTAssertEqual(result.first?.providerID, "internet-archive")
+    }
+
     func testRejectsUnsafeIdentifiersAndSeriesRequests() {
         let licensed: [String: Any] = [
             "metadata": [
@@ -107,4 +142,44 @@ final class InternetArchivePlaybackProviderTests: XCTestCase {
             request: PlaybackSourceRequest(title: "Example Film", mediaKind: .series, seasonNumber: 1, episodeNumber: 1)
         ).isEmpty)
     }
+}
+
+
+private final class MockArchiveURLProtocol: URLProtocol {
+    static var responseHandler: ((URLRequest) -> (statusCode: Int, data: Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host == "archive.org"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let responseHandler = Self.responseHandler,
+              let url = request.url,
+              let response = HTTPURLResponse(
+                url: url,
+                statusCode: responseHandler(request).statusCode,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+              ) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+
+        let result = responseHandler(request)
+        let finalResponse = HTTPURLResponse(
+            url: url,
+            statusCode: result.statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        ) ?? response
+        client?.urlProtocol(self, didReceive: finalResponse, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: result.data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
