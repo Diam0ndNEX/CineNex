@@ -70,8 +70,6 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
     let priority: Int
     private let clients: [StremioAddonClient]
     private let externalIDResolver: any PlaybackExternalIDResolving
-    private let session: URLSession
-
     init(
         id: String = "stremio-addons",
         displayName: String = "Stremio-compatible add-ons",
@@ -87,7 +85,6 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
         self.id = id
         self.displayName = displayName
         self.priority = priority
-        self.session = session
         self.clients = try manifestURLs.map { try StremioAddonClient(manifestURL: $0, session: session) }
         self.externalIDResolver = externalIDResolver
     }
@@ -99,7 +96,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
             return []
         }
 
-        return await withTaskGroup(of: [PlaybackSource].self, returning: [PlaybackSource].self) { group in
+        return await withTaskGroup(of: (sources: [PlaybackSource], failure: String?).self, returning: [PlaybackSource].self) { group in
             for (index, client) in clients.enumerated() {
                 group.addTask { () -> (sources: [PlaybackSource], failure: String?) in
                     do {
