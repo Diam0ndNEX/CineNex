@@ -297,6 +297,7 @@ private struct EmbedWebPlaybackView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var loadFailed = false
+    @State private var reloadID = UUID()
 
     var body: some View {
         NavigationStack {
@@ -307,11 +308,12 @@ private struct EmbedWebPlaybackView: View {
                     } description: {
                         Text("This source may be unavailable or incompatible with iOS. Return to the source list and try another provider.")
                     } actions: {
-                        Button("Try Again") { loadFailed = false }
+                        Button("Try Again") {\n                            loadFailed = false\n                            reloadID = UUID()\n                        }
                             .buttonStyle(.borderedProminent)
                     }
                 } else {
                     EmbedWebView(url: url, onFailure: { loadFailed = true })
+                        .id(reloadID)
                         .background(.black)
                         .ignoresSafeArea(edges: .bottom)
                 }
@@ -325,6 +327,7 @@ private struct EmbedWebPlaybackView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         loadFailed = false
+                        reloadID = UUID()
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
