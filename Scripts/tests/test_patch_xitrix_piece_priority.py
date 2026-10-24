@@ -26,7 +26,7 @@ class PatchXitrixPiecePriorityTests(unittest.TestCase):
         file_entry_internal = root / "LibTorrent/Core/FileEntry/FileEntry_Internal.h"
         snapshot = root / "LibTorrent/Core/TorrentHandleSnapshot/TorrentHandleSnapshot.mm"
         snapshot_header = root / "LibTorrent/Core/TorrentHandleSnapshot/TorrentHandleSnapshot.h"
-        header.parent.mkdir(parents=True)
+        header.parent.mkdir(parents=True, exist_ok=True)
         implementation.parent.mkdir(parents=True, exist_ok=True)
         file_entry.parent.mkdir(parents=True, exist_ok=True)
         snapshot.parent.mkdir(parents=True, exist_ok=True)
