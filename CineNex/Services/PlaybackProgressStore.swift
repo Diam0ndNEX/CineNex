@@ -42,7 +42,7 @@ final class PlaybackProgressStore: ObservableObject {
         guard !itemID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               position.isFinite, duration.isFinite, position >= 0, duration >= 0 else { return }
         let effectiveDuration = duration > 0 ? duration : (entries[itemID]?.duration ?? 0)
-        if effectiveDuration > 0, position >= effectiveDuration - 30 {
+        if Self.isCompleted(position: position, duration: effectiveDuration) {
             entries.removeValue(forKey: itemID)
             persist()
             return
@@ -82,7 +82,7 @@ final class PlaybackProgressStore: ObservableObject {
                 return false
             }
 
-            if value.duration > 0, value.position >= value.duration - 30 {
+            if Self.isCompleted(position: value.position, duration: value.duration) {
                 return false
             }
 
@@ -99,6 +99,12 @@ final class PlaybackProgressStore: ObservableObject {
         if entries.count != decoded.count {
             persist()
         }
+    }
+
+    private static func isCompleted(position: Double, duration: Double) -> Bool {
+        guard duration.isFinite, duration > 0, position.isFinite, position >= 0 else { return false }
+        let completionThreshold = duration > 30 ? duration - 30 : duration * 0.98
+        return position >= completionThreshold
     }
 
     private func trimEntriesToLimit() {
