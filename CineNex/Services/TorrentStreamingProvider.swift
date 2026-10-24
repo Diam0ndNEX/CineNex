@@ -109,6 +109,19 @@ struct TorrentHTTPRequest: Equatable, Sendable {
     }
 }
 
+private final class TorrentContinuationGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumed = false
+
+    func claim() -> Bool {
+        lock.withLock {
+            guard !resumed else { return false }
+            resumed = true
+            return true
+        }
+    }
+}
+
 final class TorrentLoopbackHTTPServer: @unchecked Sendable {
     private struct Resource {
         let file: TorrentPreparedFile
@@ -123,16 +136,9 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
     private var stopped = false
 
     func start() async throws -> UInt16 {
-        lock.lock()
-        if started, let port = listener?.port?.rawValue {
-            lock.unlock()
-            return port
-        }
-        guard !stopped else {
-            lock.unlock()
-            throw TorrentStreamingError.listenerUnavailable
-        }
-        lock.unlock()
+        let state = lock.withLock { (started, stopped, listener?.port?.rawValue) }
+        if state.0, let port = state.2 { return port }
+        guard !state.1 else { throw TorrentStreamingError.listenerUnavailable }
 
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
@@ -144,22 +150,17 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
         }
 
         let port: UInt16 = try await withCheckedThrowingContinuation { continuation in
-            let stateLock = NSLock()
-            var resumed = false
+            let gate = TorrentContinuationGate()
             newListener.stateUpdateHandler = { state in
-                stateLock.lock()
-                defer { stateLock.unlock() }
-                guard !resumed else { return }
+                guard gate.claim() else { return }
                 switch state {
                 case .ready:
-                    resumed = true
                     if let port = newListener.port?.rawValue {
                         continuation.resume(returning: port)
                     } else {
                         continuation.resume(throwing: TorrentStreamingError.listenerUnavailable)
                     }
                 case .failed, .cancelled:
-                    resumed = true
                     continuation.resume(throwing: TorrentStreamingError.listenerUnavailable)
                 default:
                     break
@@ -177,16 +178,17 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
             newListener.start(queue: queue)
         }
 
-        lock.lock()
-        guard !stopped else {
-            lock.unlock()
+        let accepted = lock.withLock {
+            guard !stopped else { return false }
+            listener = newListener
+            bearerToken = Self.makeToken()
+            started = true
+            return true
+        }
+        guard accepted else {
             newListener.cancel()
             throw TorrentStreamingError.listenerUnavailable
         }
-        listener = newListener
-        bearerToken = Self.makeToken()
-        started = true
-        lock.unlock()
         return port
     }
 
@@ -327,12 +329,12 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
     }
 
     private func send(_ data: Data, connection: NWConnection) async throws {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: data, completion: .contentProcessed { error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else {
-                    continuation.resume()
+                    continuation.resume(returning: ())
                 }
             })
         }
