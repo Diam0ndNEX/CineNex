@@ -85,6 +85,70 @@ final class PlaybackProviderHealthStoreTests: XCTestCase {
         XCTAssertTrue(atRetry)
     }
 
+    func testLoadingSanitizesProviderIdentifiersFailuresAndErrorMessages() async throws {
+        let suiteName = "CineNexTests.PlaybackProviderHealth.Sanitization.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let date = Date(timeIntervalSince1970: 1_760_000_000)
+        let storedRecords = [
+            PlaybackProviderHealth(
+                providerID: " provider-a ",
+                consecutiveFailures: 80,
+                lastFailureAt: date,
+                nextRetryAt: date.addingTimeInterval(120),
+                lastErrorMessage: "  " + String(repeating: "x", count: 500) + "  ",
+                lastSuccessAt: nil
+            ),
+            PlaybackProviderHealth(
+                providerID: "provider-a",
+                consecutiveFailures: 2,
+                lastFailureAt: date,
+                nextRetryAt: date.addingTimeInterval(30),
+                lastErrorMessage: "Duplicate record",
+                lastSuccessAt: nil
+            ),
+            PlaybackProviderHealth(
+                providerID: "   ",
+                consecutiveFailures: 1,
+                lastFailureAt: date,
+                nextRetryAt: date.addingTimeInterval(10),
+                lastErrorMessage: "Blank provider",
+                lastSuccessAt: nil
+            ),
+            PlaybackProviderHealth(
+                providerID: "provider-negative",
+                consecutiveFailures: -1,
+                lastFailureAt: date,
+                nextRetryAt: date,
+                lastErrorMessage: "Invalid count",
+                lastSuccessAt: nil
+            ),
+            PlaybackProviderHealth(
+                providerID: "provider-healthy",
+                consecutiveFailures: 0,
+                lastFailureAt: date,
+                nextRetryAt: date.addingTimeInterval(10),
+                lastErrorMessage: "Stale failure",
+                lastSuccessAt: date
+            )
+        ]
+        defaults.set(try JSONEncoder().encode(storedRecords), forKey: "health")
+
+        let store = PlaybackProviderHealthStore(defaults: defaults, storageKey: "health")
+        let normalizedValue = await store.health(for: "provider-a")
+        let normalized = try XCTUnwrap(normalizedValue)
+        let healthyValue = await store.health(for: "provider-healthy")
+        let healthy = try XCTUnwrap(healthyValue)
+        let allRecords = await store.allRecords()
+
+        XCTAssertEqual(normalized.providerID, "provider-a")
+        XCTAssertEqual(normalized.consecutiveFailures, 30)
+        XCTAssertEqual(normalized.lastErrorMessage?.count, 300)
+        XCTAssertNil(healthy.nextRetryAt)
+        XCTAssertNil(healthy.lastErrorMessage)
+        XCTAssertEqual(Set(allRecords.map(\.providerID)), ["provider-a", "provider-healthy"])
+    }
+
     func testErrorMessageIsTrimmedAndBounded() async throws {
         let store = makeStore()
         await store.recordFailure(providerID: "provider-a", message: "  " + String(repeating: "x", count: 500) + "  ")
