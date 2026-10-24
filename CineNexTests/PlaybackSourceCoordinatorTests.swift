@@ -97,6 +97,38 @@ final class PlaybackSourceCoordinatorTests: XCTestCase {
         XCTAssertEqual(result.failures.first?.message, "Provider unavailable")
     }
 
+    func testSlowProviderTimesOutWithoutDiscardingFasterProviderResults() async throws {
+        let fastSource = makeSource(
+            id: "fast-source",
+            providerID: "fast",
+            url: URL(string: "https://media.example.test/fast.m3u8")!,
+            priority: 5
+        )
+        let fast = StubPlaybackProvider(
+            id: "fast",
+            name: "Fast provider",
+            priority: 5,
+            sources: [fastSource]
+        )
+        let slow = StubPlaybackProvider(
+            id: "slow",
+            name: "Slow provider",
+            priority: 1,
+            delayNanoseconds: 500_000_000
+        )
+
+        let result = try await PlaybackSourceCoordinator(
+            providers: [fast, slow],
+            providerTimeout: 0.1
+        ).search(
+            for: PlaybackSourceRequest(title: "Example Film", mediaKind: .movie)
+        )
+
+        XCTAssertEqual(result.sources.map(\.id), ["fast-source"])
+        XCTAssertEqual(result.failures.map(\.providerID), ["slow"])
+        XCTAssertEqual(result.failures.first?.message, "Provider timed out after 0.1 seconds.")
+    }
+
     func testCoordinatorRejectsUnsafeAndMalformedSourceURLs() async throws {
         let provider = StubPlaybackProvider(
             id: "provider",
@@ -223,22 +255,28 @@ private struct StubPlaybackProvider: PlaybackSourceProvider {
     let priority: Int
     var sources: [PlaybackSource] = []
     var errorMessage: String?
+    var delayNanoseconds: UInt64
 
     init(
         id: String,
         name: String,
         priority: Int,
         sources: [PlaybackSource] = [],
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        delayNanoseconds: UInt64 = 0
     ) {
         self.id = id
         self.displayName = name
         self.priority = priority
         self.sources = sources
         self.errorMessage = errorMessage
+        self.delayNanoseconds = delayNanoseconds
     }
 
     func findSources(for request: PlaybackSourceRequest) async throws -> [PlaybackSource] {
+        if delayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: delayNanoseconds)
+        }
         if let errorMessage {
             throw StubProviderError.unavailable(errorMessage)
         }

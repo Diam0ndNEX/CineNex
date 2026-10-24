@@ -1,3 +1,4 @@
+import AVKit
 import SwiftUI
 
 struct WatchHubView: View {
@@ -7,7 +8,12 @@ struct WatchHubView: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("cinenex.defaultPlaybackProvider") private var defaultProviderID = "smart"
+    @AppStorage("cinenex.stremioAddonManifestURLs") private var stremioAddonManifestURLs = ""
     @State private var selectedProvider: ResolvedEmbedSource?
+    @State private var selectedDiscoveredSource: PlaybackSource?
+    @State private var discoveredSources: [PlaybackSource] = []
+    @State private var searchingAddonSources = false
+    @State private var addonSearchMessage: String?
     @State private var availableProviders: [ResolvedEmbedSource] = []
     @State private var seasonNumber = 1
     @State private var episodeNumber = 1
@@ -52,7 +58,15 @@ struct WatchHubView: View {
                 }
             }
             .sheet(item: $selectedProvider) { provider in
-                EmbedWebPlaybackView(title: item.title, url: provider.url)
+                EmbedWebPlaybackView(
+                    title: item.title,
+                    providerID: provider.provider.id,
+                    providerName: provider.provider.displayName,
+                    url: provider.url
+                )
+            }
+            .sheet(item: $selectedDiscoveredSource) { source in
+                DiscoveredSourcePlaybackView(source: source)
             }
             .task(id: item.id) {
                 resolveSources()
@@ -158,6 +172,77 @@ struct WatchHubView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(Color.cineNexSurface, in: Capsule())
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Button {
+                    Task { await searchStremioAddonSources() }
+                } label: {
+                    HStack(spacing: 10) {
+                        if searchingAddonSources {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                        }
+                        Text(searchingAddonSources ? "Searching add-ons…" : "Search add-on sources")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Image(systemName: "arrow.clockwise")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
+                }
+                .buttonStyle(.plain)
+                .disabled(searchingAddonSources)
+                .accessibilityHint("Queries configured Stremio-compatible add-ons for this title or episode")
+
+                Text("Optional advanced setup: paste one HTTPS add-on manifest URL per line. No add-ons are preconfigured until a maintained, vetted default list is available.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $stremioAddonManifestURLs)
+                    .font(.caption.monospaced())
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 76, maxHeight: 120)
+                    .padding(8)
+                    .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityLabel("Stremio add-on manifest URLs")
+                if let addonSearchMessage {
+                    Text(addonSearchMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(discoveredSources) { source in
+                    Button {
+                        selectedDiscoveredSource = source
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: source.supportsNativePlayback ? "play.fill" : "play.rectangle.fill")
+                                .font(.title2)
+                                .foregroundStyle(Color.cineNexAccent)
+                                .frame(width: 44, height: 44)
+                                .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(source.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                Text([source.providerName, source.qualityLabel].compactMap { $0 }.joined(separator: " · "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(12)
+                        .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Play source: \(source.title)")
+                }
             }
 
             if item.streamURL != nil {
@@ -444,6 +529,54 @@ struct WatchHubView: View {
         }
     }
 
+    @MainActor
+    private func searchStremioAddonSources() async {
+        let manifestURLs = stremioAddonManifestURLs
+            .split(whereSeparator: \.isNewline)
+            .compactMap { line -> URL? in
+                let value = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !value.isEmpty else { return nil }
+                return URL(string: value)
+            }
+        guard !manifestURLs.isEmpty else {
+            addonSearchMessage = "Add at least one HTTPS add-on manifest URL above. CineNex does not silently install unverified third-party providers."
+            discoveredSources = []
+            return
+        }
+        guard request.tmdbID != nil else {
+            addonSearchMessage = "This catalog item has no TMDB identifier, so CineNex cannot resolve its IMDb ID for add-on lookup."
+            discoveredSources = []
+            return
+        }
+        guard let token = TMDBTokenStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !token.isEmpty else {
+            addonSearchMessage = "A TMDB Read Access Token is needed to resolve this title to the IMDb ID used by many add-ons."
+            discoveredSources = []
+            return
+        }
+
+        searchingAddonSources = true
+        addonSearchMessage = nil
+        defer { searchingAddonSources = false }
+
+        do {
+            let provider = try StremioAddonPlaybackProvider(
+                manifestURLs: manifestURLs,
+                externalIDResolver: TMDBExternalIDResolver(readAccessToken: token)
+            )
+            let result = try await PlaybackSourceCoordinator(providers: [provider]).search(for: request)
+            discoveredSources = result.sources
+            addonSearchMessage = result.sources.isEmpty
+                ? "No direct playable URLs were returned. Add-ons may be unavailable, may require authentication, or may return torrent descriptors that need a separate torrent engine."
+                : "Found \(result.sources.count) direct source(s). Availability and playback compatibility are not guaranteed until playback starts."
+        } catch is CancellationError {
+            addonSearchMessage = "Source search was cancelled."
+        } catch {
+            addonSearchMessage = error.localizedDescription
+            discoveredSources = []
+        }
+    }
+
     private func resolveSources() {
         let candidates = EmbedPlaybackProviderCatalog.candidates
         availableProviders = candidates.compactMap { provider in
@@ -472,11 +605,27 @@ private struct ResolvedEmbedSource: Identifiable, Equatable {
 
 private struct EmbedWebPlaybackView: View {
     let title: String
+    let providerID: String
+    let providerName: String
     let url: URL
 
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(PlaybackCleanerPolicy.enabledStorageKey) private var cleanerGloballyEnabled = true
+    @AppStorage(PlaybackCleanerPolicy.disabledProvidersStorageKey) private var disabledProviderStorage = ""
     @State private var loadFailed = false
     @State private var reloadID = UUID()
+
+    private var disabledProviderIDs: Set<String> {
+        PlaybackCleanerPolicy.disabledProviderIDs(from: disabledProviderStorage)
+    }
+
+    private var cleanerEnabled: Bool {
+        PlaybackCleanerPolicy.isEnabled(
+            globallyEnabled: cleanerGloballyEnabled,
+            providerID: providerID,
+            disabledProviderIDs: disabledProviderIDs
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -494,7 +643,7 @@ private struct EmbedWebPlaybackView: View {
                             .buttonStyle(.borderedProminent)
                     }
                 } else {
-                    EmbedWebView(url: url, onFailure: { loadFailed = true })
+                    EmbedWebView(url: url, cleanerEnabled: cleanerEnabled, onFailure: { loadFailed = true })
                         .id(reloadID)
                         .background(.black)
                         .ignoresSafeArea(edges: .bottom)
@@ -506,7 +655,31 @@ private struct EmbedWebPlaybackView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Sources") { dismiss() }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Menu {
+                        Toggle("Block ads & trackers", isOn: $cleanerGloballyEnabled)
+                        Toggle(
+                            "Disable for \(providerName)",
+                            isOn: Binding(
+                                get: { disabledProviderIDs.contains(providerID) },
+                                set: { isDisabled in
+                                    var updated = disabledProviderIDs
+                                    if isDisabled {
+                                        updated.insert(providerID)
+                                    } else {
+                                        updated.remove(providerID)
+                                    }
+                                    disabledProviderStorage = PlaybackCleanerPolicy.storedValue(for: updated)
+                                }
+                            )
+                        )
+                        Text("Filters known ad networks and rejects pop-up windows. Some providers may need filtering disabled.")
+                            .font(.caption)
+                    } label: {
+                        Image(systemName: cleanerEnabled ? "shield.lefthalf.filled" : "shield.slash")
+                    }
+                    .accessibilityLabel("Playback Cleaner settings")
+
                     Button {
                         loadFailed = false
                         reloadID = UUID()
@@ -514,6 +687,62 @@ private struct EmbedWebPlaybackView: View {
                         Image(systemName: "arrow.clockwise")
                     }
                     .accessibilityLabel("Reload player")
+                }
+            }
+        }
+        .tint(Color.cineNexAccent)
+        .onChange(of: cleanerGloballyEnabled) { _, _ in
+            loadFailed = false
+            reloadID = UUID()
+        }
+        .onChange(of: disabledProviderStorage) { _, _ in
+            loadFailed = false
+            reloadID = UUID()
+        }
+    }
+}
+
+
+private struct DiscoveredSourcePlaybackView: View {
+    let source: PlaybackSource
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(PlaybackCleanerPolicy.enabledStorageKey) private var cleanerGloballyEnabled = true
+    @AppStorage(PlaybackCleanerPolicy.disabledProvidersStorageKey) private var disabledProviderStorage = ""
+    @State private var player: AVPlayer
+
+    private var cleanerEnabled: Bool {
+        PlaybackCleanerPolicy.isEnabled(
+            globallyEnabled: cleanerGloballyEnabled,
+            providerID: source.providerID,
+            disabledProviderIDs: PlaybackCleanerPolicy.disabledProviderIDs(from: disabledProviderStorage)
+        )
+    }
+
+    init(source: PlaybackSource) {
+        self.source = source
+        _player = State(initialValue: AVPlayer(url: source.url))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if source.supportsNativePlayback {
+                    NativePlaybackView(player: player)
+                        .onAppear { player.play() }
+                        .onDisappear { player.pause() }
+                        .background(.black)
+                        .ignoresSafeArea(edges: .bottom)
+                } else {
+                    EmbedWebView(url: source.url, cleanerEnabled: cleanerEnabled, onFailure: {})
+                        .background(.black)
+                        .ignoresSafeArea(edges: .bottom)
+                }
+            }
+            .navigationTitle(source.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Sources") { dismiss() }
                 }
             }
         }
