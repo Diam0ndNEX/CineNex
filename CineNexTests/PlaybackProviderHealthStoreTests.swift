@@ -147,6 +147,10 @@ final class PlaybackProviderHealthStoreTests: XCTestCase {
         XCTAssertNil(healthy.nextRetryAt)
         XCTAssertNil(healthy.lastErrorMessage)
         XCTAssertEqual(Set(allRecords.map(\.providerID)), ["provider-a", "provider-healthy"])
+        let persistedData = try XCTUnwrap(defaults.data(forKey: "health"))
+        let persistedRecords = try JSONDecoder().decode([PlaybackProviderHealth].self, from: persistedData)
+        XCTAssertEqual(Set(persistedRecords.map(\.providerID)), ["provider-a", "provider-healthy"])
+        XCTAssertEqual(persistedRecords.first(where: { $0.providerID == "provider-a" })?.consecutiveFailures, 30)
     }
 
     func testErrorMessageIsTrimmedAndBounded() async throws {
