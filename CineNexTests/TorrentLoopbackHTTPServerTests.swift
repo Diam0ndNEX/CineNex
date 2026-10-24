@@ -29,6 +29,27 @@ final class TorrentLoopbackHTTPServerTests: XCTestCase {
         func stop() async {}
     }
 
+    private actor StopTrackingEngine: TorrentPlaybackEngine {
+        let file: TorrentPreparedFile
+        private var stopped = false
+
+        init(file: TorrentPreparedFile) {
+            self.file = file
+        }
+
+        func prepareFiles(for request: PlaybackSourceRequest) async throws -> [TorrentPreparedFile] {
+            [file]
+        }
+
+        func stop() async {
+            stopped = true
+        }
+
+        func wasStopped() -> Bool {
+            stopped
+        }
+    }
+
     func testConcurrentStartCallsShareOneListener() async throws {
         let server = TorrentLoopbackHTTPServer()
         defer { server.stop() }
@@ -38,6 +59,36 @@ final class TorrentLoopbackHTTPServerTests: XCTestCase {
         let ports = try await [first, second]
 
         XCTAssertEqual(ports[0], ports[1])
+    }
+
+    func testProviderStopStopsEngineAndPreventsRestart() async throws {
+        let bytes = Data("sample-video".utf8)
+        let file = TorrentPreparedFile(
+            id: "lifecycle-file",
+            title: "Lifecycle Test",
+            fileName: "lifecycle.mp4",
+            length: Int64(bytes.count),
+            contentType: "video/mp4",
+            reader: MemoryReader(bytes)
+        )
+        let engine = StopTrackingEngine(file: file)
+        let server = TorrentLoopbackHTTPServer()
+        let provider = TorrentPlaybackProvider(engine: engine, server: server)
+        let request = PlaybackSourceRequest(title: "Lifecycle Test", mediaKind: .movie)
+
+        let sources = try await provider.findSources(for: request)
+        XCTAssertEqual(sources.count, 1)
+
+        await provider.stop()
+
+        let engineStopped = await engine.wasStopped()
+        XCTAssertTrue(engineStopped)
+        do {
+            _ = try await provider.findSources(for: request)
+            XCTFail("A stopped provider must not restart its local server.")
+        } catch {
+            XCTAssertEqual(error as? TorrentStreamingError, .listenerUnavailable)
+        }
     }
 
     func testProviderReturnsLoopbackURLAndServesPartialBytes() async throws {

@@ -158,7 +158,14 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
         }
 
         do {
-            return try await selection.task.value
+            let port = try await selection.task.value
+            lock.withLock {
+                if startupID == selection.id {
+                    startupTask = nil
+                    startupID = nil
+                }
+            }
+            return port
         } catch {
             lock.withLock {
                 if startupID == selection.id {
@@ -264,6 +271,8 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
         stopped = true
         resources.removeAll()
         bearerToken = ""
+        startupTask = nil
+        startupID = nil
         let currentListener = listener
         listener = nil
         lock.unlock()
