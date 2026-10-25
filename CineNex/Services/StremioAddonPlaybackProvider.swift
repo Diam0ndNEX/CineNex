@@ -75,8 +75,12 @@ struct CinemetaExternalIDResolver: PlaybackExternalIDResolving, Sendable {
         let title = request.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return nil }
 
-        var components = URLComponents(string: "https://v3-cinemeta.strem.io/catalog/\(request.mediaKind == .movie ? "movie" : "series")/top.json")
-        components?.queryItems = [URLQueryItem(name: "search", value: title)]
+        let catalogType = request.mediaKind == .movie ? "movie" : "series"
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+        guard let encodedTitle = title.addingPercentEncoding(withAllowedCharacters: allowed) else {
+            throw StremioAddonClientError.invalidRequest
+        }
+        var components = URLComponents(string: "https://v3-cinemeta.strem.io/catalog/\(catalogType)/top/search=\(encodedTitle).json")
         guard let url = components?.url,
               url.scheme == "https",
               url.host == "v3-cinemeta.strem.io" else {
@@ -100,6 +104,9 @@ struct CinemetaExternalIDResolver: PlaybackExternalIDResolving, Sendable {
 
         guard let http = response as? HTTPURLResponse,
               (200..<300).contains(http.statusCode),
+              http.url?.scheme == "https",
+              let finalHost = http.url?.host?.lowercased(),
+              ["v3-cinemeta.strem.io", "cinemeta-catalogs.strem.io"].contains(finalHost),
               data.count <= 1_000_000 else {
             throw StremioAddonClientError.invalidResponse
         }
@@ -155,6 +162,29 @@ private struct CinemetaCatalogEntry: Decodable {
     let type: String
     let name: String
     let releaseInfo: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case imdbID = "imdb_id"
+        case type
+        case name
+        case releaseInfo
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard let identifier = try container.decodeIfPresent(String.self, forKey: .id)
+                ?? container.decodeIfPresent(String.self, forKey: .imdbID) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.id,
+                DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Cinemeta entry has no IMDb identifier.")
+            )
+        }
+        id = identifier
+        type = try container.decode(String.self, forKey: .type)
+        name = try container.decode(String.self, forKey: .name)
+        releaseInfo = try container.decodeIfPresent(String.self, forKey: .releaseInfo)
+    }
 }
 
 struct AutomaticExternalIDResolver: PlaybackExternalIDResolving, Sendable {

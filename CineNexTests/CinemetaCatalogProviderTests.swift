@@ -14,8 +14,8 @@ final class CinemetaCatalogProviderTests: XCTestCase {
             XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
             let isMovie = request.url?.path.contains("/movie/") == true
             let body = isMovie
-                ? #"{"metas":[{"id":"tt1234567","type":"movie","name":"Example Film","poster":"https://images.example.test/poster.jpg","description":"A story.","releaseInfo":"2024","genres":["Drama"],"imdbRating":"8.2"}]}"#
-                : #"{"metas":[{"id":"tt7654321","type":"series","name":"Example Series","releaseInfo":"2022","genres":["Mystery"]}]}"#
+                ? #"{"metas":[{"imdb_id":"tt1234567","type":"movie","name":"Example Film","poster":"https://images.example.test/poster.jpg","description":"A story.","releaseInfo":"2024","genres":["Drama"],"imdbRating":"8.2"}]}"#
+                : #"{"metas":[{"imdb_id":"tt7654321","type":"series","name":"Example Series","releaseInfo":"2022","genres":["Mystery"]}]}"#
             return (self.response(request, 200), Data(body.utf8))
         }
 
@@ -30,8 +30,8 @@ final class CinemetaCatalogProviderTests: XCTestCase {
 
     func testSearchEncodesQueryAndRejectsInvalidImageURLs() async throws {
         CinemetaStubURLProtocol.handler = { request in
-            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
-            XCTAssertEqual(components?.queryItems?.first(where: { $0.name == "search" })?.value, "A & B")
+            let encodedPath = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.percentEncodedPath
+            XCTAssertTrue(encodedPath?.contains("/search=A%20%26%20B.json") == true)
             let body = #"{"metas":[{"id":"tt1234567","type":"movie","name":"Example Film","poster":"http://images.example.test/poster.jpg","releaseInfo":"2024"}]}"#
             return (self.response(request, 200), Data(body.utf8))
         }

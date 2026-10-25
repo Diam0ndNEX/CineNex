@@ -33,10 +33,15 @@ struct CinemetaCatalogProvider: Sendable {
         guard type == "movie" || type == "series" else {
             throw CinemetaCatalogError.invalidRequest
         }
-        var components = URLComponents(string: "https://v3-cinemeta.strem.io/catalog/\(type)/top.json")
+        var components = URLComponents(string: "https://v3-cinemeta.strem.io/catalog/\(type)/top")
         if let query {
-            components?.queryItems = [URLQueryItem(name: "search", value: query)]
+            let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+            guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: allowed) else {
+                throw CinemetaCatalogError.invalidRequest
+            }
+            components?.path += "/search=\(encodedQuery)"
         }
+        components?.path += ".json"
         guard let url = components?.url,
               url.scheme == "https",
               url.host == "v3-cinemeta.strem.io" else {
@@ -61,7 +66,8 @@ struct CinemetaCatalogProvider: Sendable {
         guard let http = response as? HTTPURLResponse,
               (200..<300).contains(http.statusCode),
               http.url?.scheme == "https",
-              http.url?.host == "v3-cinemeta.strem.io",
+              let finalHost = http.url?.host?.lowercased(),
+              ["v3-cinemeta.strem.io", "cinemeta-catalogs.strem.io"].contains(finalHost),
               data.count <= 2_000_000 else {
             throw CinemetaCatalogError.invalidResponse
         }
@@ -136,6 +142,7 @@ private struct CinemetaCatalogMeta: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case id
+        case imdbID = "imdb_id"
         case type
         case name
         case poster
@@ -143,6 +150,25 @@ private struct CinemetaCatalogMeta: Decodable {
         case releaseInfo
         case genres
         case imdbRating
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard let identifier = try container.decodeIfPresent(String.self, forKey: .id)
+                ?? container.decodeIfPresent(String.self, forKey: .imdbID) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.id,
+                DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Cinemeta metadata has no IMDb identifier.")
+            )
+        }
+        id = identifier
+        type = try container.decode(String.self, forKey: .type)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        poster = try container.decodeIfPresent(String.self, forKey: .poster)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        releaseInfo = try container.decodeIfPresent(String.self, forKey: .releaseInfo)
+        genres = try container.decodeIfPresent([String].self, forKey: .genres)
+        imdbRating = try container.decodeIfPresent(String.self, forKey: .imdbRating)
     }
 }
 
