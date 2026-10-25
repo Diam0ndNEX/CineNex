@@ -65,6 +65,10 @@ jobs:
             -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphoneos/LibTorrent.framework \
             -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphonesimulator/LibTorrent.framework \
             -output Thirdparty/LibTorrent-Swift/Build/LibTorrent.xcframework
+          xcodebuild -create-xcframework \
+            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphoneos/OpenSSL.framework \
+            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphonesimulator/OpenSSL.framework \
+            -output Thirdparty/LibTorrent-Swift/Build/OpenSSL.xcframework
 
       - name: Install XcodeGen
         run: brew install xcodegen
