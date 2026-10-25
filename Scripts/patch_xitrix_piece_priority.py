@@ -54,8 +54,7 @@ DEADLINE_IMPLEMENTATION = """- (BOOL)setPieceDeadline:(NSInteger)milliseconds at
 
         handle.set_piece_deadline(
             lt::piece_index_t(static_cast<int>(pieceIndex)),
-            static_cast<int>(milliseconds),
-            lt::torrent_handle::alert_when_available
+            static_cast<int>(milliseconds)
         );
         didSetDeadline = YES;
     }];
