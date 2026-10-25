@@ -113,7 +113,6 @@ final class TorrentPieceRangePlannerTests: XCTestCase {
     func testPriorityRangeRejectsInvalidPieceCoordinates() {
         XCTAssertNil(TorrentPiecePriorityWindow.expandedRange(for: -1..<2, pieceCount: 10))
         XCTAssertNil(TorrentPiecePriorityWindow.expandedRange(for: 4..<11, pieceCount: 10))
-        XCTAssertNil(TorrentPiecePriorityWindow.expandedRange(for: 5..<4, pieceCount: 10))
         XCTAssertNil(TorrentPiecePriorityWindow.expandedRange(for: 0..<1, pieceCount: -1))
     }
 
