@@ -84,7 +84,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         settings.validateHttpsTrackers = true
 
         let session = Session(
-            with: root,
+            root,
             torrentsPath: torrentsDirectory,
             fastResumePath: resumeDirectory,
             settings: settings,
@@ -134,8 +134,8 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             throw TorrentStreamingError.unsafeFilePath
         }
 
-        handle.setAllFilesPriority(.dontDownload)
-        handle.setFilePriority(.topPriority, at: Int(selectedFile.index))
+        handle.setAllFilesPriority(FileEntry.Priority.dontDownload)
+        handle.setFilePriority(FileEntry.Priority.topPriority, at: Int(selectedFile.index))
         handle.setSequentialDownload(true)
         handle.setFirstLastPriorityDownload(true)
 
