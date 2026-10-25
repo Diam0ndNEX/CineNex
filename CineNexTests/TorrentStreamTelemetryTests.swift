@@ -30,6 +30,19 @@ final class TorrentStreamTelemetryTests: XCTestCase {
         )
     }
 
+    func testByteAndDurationCountersSaturateInsteadOfOverflowing() {
+        let telemetry = TorrentStreamTelemetry()
+        telemetry.recordBytesServed(Int.max)
+        telemetry.recordBytesServed(Int.max)
+        telemetry.recordReadDuration(milliseconds: Int64.max)
+        telemetry.recordReadDuration(milliseconds: Int64.max)
+
+        let snapshot = telemetry.snapshot()
+        XCTAssertEqual(snapshot.bytesServed, Int64.max)
+        XCTAssertEqual(snapshot.totalReadMilliseconds, Int64.max)
+        XCTAssertEqual(snapshot.maximumReadMilliseconds, Int64.max)
+    }
+
     func testConnectionCountNeverBecomesNegative() {
         let telemetry = TorrentStreamTelemetry()
         telemetry.setActiveConnectionCount(-4)
