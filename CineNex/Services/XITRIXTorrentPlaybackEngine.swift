@@ -167,12 +167,15 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
     private var startupPiecePriorities: [Int64: Int] = [:]
     private var deadlinePieces = Set<Int64>()
     private var lifecycleGeneration: UInt64 = 0
+    private var isStopping = false
+    private var stopWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(descriptor: StremioTorrentDescriptor) {
         self.descriptor = descriptor
     }
 
     func prepareFiles(for request: PlaybackSourceRequest) async throws -> [TorrentPreparedFile] {
+        await waitForStopCompletion()
         guard request.isValid else { throw TorrentStreamingError.invalidRequest }
         if let preparedFile { return [preparedFile] }
 
@@ -425,7 +428,18 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
     }
 
     func stop() async {
+        if isStopping {
+            await waitForStopCompletion()
+            return
+        }
+        isStopping = true
         lifecycleGeneration &+= 1
+        defer {
+            isStopping = false
+            let waiters = stopWaiters
+            stopWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+        }
         if let reader {
             try? await reader.close()
         }
@@ -445,6 +459,13 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         self.handle = nil
         self.session = nil
         self.downloadRoot = nil
+    }
+
+    private func waitForStopCompletion() async {
+        guard isStopping else { return }
+        await withCheckedContinuation { continuation in
+            stopWaiters.append(continuation)
+        }
     }
 
     private func ensureCurrentLifecycle(_ expectedGeneration: UInt64) throws {
