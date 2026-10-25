@@ -28,6 +28,7 @@ struct WatchHubView: View {
     @State private var preparingTorrentDescriptorID: String?
     @State private var torrentPreparationMessage: String?
     @State private var torrentPreparationTask: Task<Void, Never>?
+    @State private var torrentPreparationGeneration = UUID()
     @State private var searchingAddonSources = false
     @State private var addonSearchMessage: String?
     @State private var availableProviders: [ResolvedEmbedSource] = []
@@ -103,6 +104,11 @@ struct WatchHubView: View {
             .onDisappear {
                 torrentPreparationTask?.cancel()
                 torrentPreparationTask = nil
+                torrentPreparationGeneration = UUID()
+                sourceSearchGeneration = UUID()
+                Task {
+                    await TorrentPlaybackSessionRegistry.shared.stopAll()
+                }
             }
         }
         .tint(Color.cineNexAccent)
@@ -856,25 +862,33 @@ struct WatchHubView: View {
         }
         preparingTorrentDescriptorID = descriptor.id
         torrentPreparationMessage = "Preparing native playback. Torrent metadata may take a moment to load."
+        let preparationID = UUID()
+        torrentPreparationGeneration = preparationID
         torrentPreparationTask = Task {
-            await prepareTorrentPlayback(for: descriptor)
+            await prepareTorrentPlayback(for: descriptor, preparationID: preparationID)
         }
     }
 
     @MainActor
-    private func prepareTorrentPlayback(for descriptor: StremioTorrentDescriptor) async {
+    private func prepareTorrentPlayback(for descriptor: StremioTorrentDescriptor, preparationID: UUID) async {
         let engine = XITRIXTorrentPlaybackEngine(descriptor: descriptor)
         let provider = TorrentPlaybackProvider(engine: engine)
         defer {
             if preparingTorrentDescriptorID == descriptor.id {
                 preparingTorrentDescriptorID = nil
             }
-            torrentPreparationTask = nil
+            if torrentPreparationGeneration == preparationID {
+                torrentPreparationTask = nil
+            }
         }
 
         do {
             let sources = try await provider.findSources(for: request)
             try Task.checkCancellation()
+            guard torrentPreparationGeneration == preparationID else {
+                await provider.stop()
+                return
+            }
             guard let source = sources.first else {
                 await provider.stop()
                 torrentPreparationMessage = "This torrent did not contain a playable file supported by CineNex."
@@ -884,10 +898,14 @@ struct WatchHubView: View {
             torrentPreparationMessage = "Torrent source is ready. Opening the native player."
         } catch is CancellationError {
             await provider.stop()
-            torrentPreparationMessage = "Torrent preparation was cancelled."
+            if torrentPreparationGeneration == preparationID {
+                torrentPreparationMessage = "Torrent preparation was cancelled."
+            }
         } catch {
             await provider.stop()
-            torrentPreparationMessage = error.localizedDescription
+            if torrentPreparationGeneration == preparationID {
+                torrentPreparationMessage = "Native torrent playback failed: \(error.localizedDescription). Try another source."
+            }
         }
     }
 
