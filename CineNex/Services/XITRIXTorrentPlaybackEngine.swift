@@ -91,6 +91,34 @@ struct TorrentStartupPiecePriorityPlan: Equatable {
     }
 }
 
+struct TorrentPieceDeadlinePlan: Equatable {
+    let deadlinesMilliseconds: [Int64: Int]
+
+    static func make(
+        for requested: Range<Int64>,
+        pieceCount: Int64,
+        stepMilliseconds: Int = 80,
+        maximumMilliseconds: Int = 60_000
+    ) -> TorrentPieceDeadlinePlan? {
+        guard pieceCount >= 0,
+              requested.lowerBound >= 0,
+              requested.upperBound >= requested.lowerBound,
+              requested.upperBound <= pieceCount,
+              stepMilliseconds >= 0,
+              maximumMilliseconds >= 0 else {
+            return nil
+        }
+
+        var deadlines: [Int64: Int] = [:]
+        var deadline = 0
+        for piece in requested {
+            deadlines[piece] = deadline
+            deadline = min(deadline + stepMilliseconds, maximumMilliseconds)
+        }
+        return TorrentPieceDeadlinePlan(deadlinesMilliseconds: deadlines)
+    }
+}
+
 struct TorrentPiecePriorityWindow: Equatable {
     let piecesToDemote: [Int64]
     let piecesToPromote: [Int64]
@@ -314,7 +342,13 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             throw TorrentStreamingError.invalidTorrentLayout
         }
         let requestedPieces = Set(expandedRange)
-        let requestedDeadlinePieces = Set(pieces)
+        guard let deadlinePlan = TorrentPieceDeadlinePlan.make(
+            for: pieces,
+            pieceCount: pieceCount
+        ) else {
+            throw TorrentStreamingError.invalidTorrentLayout
+        }
+        let requestedDeadlinePieces = Set(deadlinePlan.deadlinesMilliseconds.keys)
 
         for piece in deadlinePieces.subtracting(requestedDeadlinePieces).sorted() {
             try Task.checkCancellation()
@@ -322,13 +356,11 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
                 throw TorrentStreamingError.invalidTorrentLayout
             }
         }
-        var deadlineMilliseconds = 0
-        for piece in pieces {
+        for (piece, milliseconds) in deadlinePlan.deadlinesMilliseconds.sorted(by: { $0.key < $1.key }) {
             try Task.checkCancellation()
-            guard handle.setPieceDeadline(deadlineMilliseconds, at: Int(piece)) else {
+            guard handle.setPieceDeadline(milliseconds, at: Int(piece)) else {
                 throw TorrentStreamingError.invalidTorrentLayout
             }
-            deadlineMilliseconds = min(deadlineMilliseconds + 80, 60_000)
         }
 
         let priorityWindow = TorrentPiecePriorityWindow(current: prioritizedPieces, requested: requestedPieces)
