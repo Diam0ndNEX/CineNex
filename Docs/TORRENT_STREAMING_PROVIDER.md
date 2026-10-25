@@ -2,29 +2,33 @@
 
 ## Architecture
 
-CineNex's native torrent provider is split into three boundaries:
+CineNex's native torrent provider is split across four boundaries:
 
-- `TorrentPlaybackProvider` adapts a prepared torrent file into a normal `PlaybackSource`.
-- `TorrentLoopbackHTTPServer` serves AVPlayer-compatible HTTP responses from loopback only. Each URL carries a random bearer token and an opaque resource identifier.
-- `TorrentDiskByteReader` performs bounded random-access reads from the selected on-disk file only after a `TorrentRangeAvailability` implementation confirms that the requested bytes are ready.
-- `TorrentPieceRangePlanner` maps a file-relative byte range to the half-open global torrent-piece range, accounting for pieces shared across file boundaries and rejecting overflow.
-- `TorrentPlaybackEngine` and `TorrentRangeAvailability` are the integration boundary for the selected libtorrent engine.
+- `StremioTorrentDescriptor` validates the selected Stremio torrent result and carries the magnet URI, info hash, and optional file index.
+- `XITRIXTorrentPlaybackEngine` owns the libtorrent session, acquires metadata, selects a playable file, configures download priorities, and implements piece-aware availability scheduling.
+- `TorrentLoopbackHTTPServer` serves AVPlayer-compatible HTTP responses from IPv4 loopback only. Each URL carries a random bearer token and an opaque resource identifier.
+- `TorrentDiskByteReader` performs bounded random-access reads from the selected on-disk file only after the requested byte range is reported available.
 
-The server supports GET, HEAD, single byte ranges, bounded 128 KiB reads, and closes each connection after one response. Request headers are capped at 16 KiB; duplicate headers, request bodies, transfer encodings, control characters, and ambiguous request targets are rejected. Registered resource URLs expire after two hours, and each server limits its active resource registry to 64 entries.
+`TorrentPieceRangePlanner` maps file-relative byte ranges to half-open global torrent-piece ranges, accounting for pieces shared across file boundaries and rejecting invalid or overflowing ranges. `TorrentPieceRangeAvailability` coordinates prioritization and waits for those pieces before allowing reads.
 
-## Engine adapter requirements
+The HTTP server supports GET, HEAD, and single byte ranges, limits each read to 128 KiB, caps request headers at 16 KiB, and closes each connection after one response. It rejects duplicate headers, request bodies, transfer encodings, control characters, malformed or ambiguous request targets, and invalid bearer tokens. Registered resource URLs expire after two hours, and each server limits its active resource registry to 64 entries.
 
-A concrete libtorrent adapter must:
+## XITRIX engine behavior
 
-1. Add a magnet link or torrent descriptor and wait for metadata.
-2. Select the intended playable file using normalized torrent-relative paths, never HTTP-provided filesystem paths.
-3. Report the exact file size and a suitable MIME type.
-4. Implement `TorrentByteReader.read(offset:length:)` so it validates bounds and returns exactly the requested number of bytes only after those bytes are available, or throws when the torrent fails or the operation is cancelled.
-5. Use `TorrentPieceRangePlanner` to map requested file bytes to global piece indices, then prioritize pieces needed for startup and seeks rather than relying only on sequential downloading.
-6. Stop torrent sessions and release resources when the playback session is explicitly ended.
+The current engine adapter:
 
-The disk reader validates offsets without integer overflow, checks the file size when opened, waits for the exact requested range, checks cancellation before and after the wait, and rejects short reads. The HTTP server deliberately does not fake availability by returning zero-filled or partial data. A reader returning fewer bytes than requested terminates that connection.
+1. Creates a per-info-hash cache location and starts a libtorrent session from the selected magnet URI.
+2. Waits for torrent metadata with cancellation checks and a bounded timeout.
+3. Uses the explicitly selected file index when supplied; otherwise it selects the largest supported playable file.
+4. Confines resolved file paths to the torrent's download root and rejects traversal or symlink escapes.
+5. Sets all files to do-not-download, promotes the selected file, enables sequential download and first/last-piece prioritization, and raises priority for exact global piece ranges needed by playback reads.
+6. Waits for the requested pieces to become available before reading, checks cancellation, validates byte ranges and file sizes, and rejects short reads rather than returning fabricated or incomplete data.
+7. Exposes the prepared file as a normal CineNex playback source and stops the reader, torrent handle, session, and per-session download files when the playback session ends.
 
-## Integration status and licensing
+The currently recognized file extensions are MP4, M4V, MOV, MP3, M4A, AAC, and WAV. This is an extension-based allowlist, not a full media-codec probe; files in other containers are not currently offered by this adapter.
 
-The server, disk reader, and provider boundary are implemented independently of any torrent library. Tests cover loopback HTTP range/HEAD behavior, invalid bearer tokens, exact disk reads, bounds checking, cancellation while waiting, and short-read rejection. This does not yet include a concrete libtorrent adapter, metadata acquisition, piece prioritization, or verified end-to-end torrent playback. The XITRIX wrapper's redistribution terms and reproducible simulator/device build still need resolution before bundling that wrapper into CineNex. No wrapper source is copied here.
+## Validation status
+
+The merged GitHub Actions workflow passed for the XITRIX wrapper builds for iOS and simulator, simulator app build, XCTest suite, unsigned device build, and unsigned IPA packaging. Tests cover HTTP range and HEAD behavior, invalid bearer tokens and malformed requests, disk-reader bounds and short reads, cancellation, piece-range mapping, file path confinement, descriptor validation, and the wrapper patcher.
+
+A green simulator workflow does not prove real-world torrent playback on a physical iPhone. Before claiming end-to-end playback success, test a known legal/public-domain torrent on-device, including metadata acquisition, startup buffering, seeking, cancellation, and cleanup. The XITRIX wrapper repository currently has no GitHub license declaration; resolve its redistribution terms before publicly distributing an app that bundles the dependency. The generated CI IPA is unsigned and must be signed before installation.
