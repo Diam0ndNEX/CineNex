@@ -47,6 +47,7 @@ final class AnimeProgressStoreTests: XCTestCase {
         store.resetProgress(for: anime.id)
 
         XCTAssertEqual(store.watchedEpisodeCount(for: anime), 0)
+        XCTAssertTrue(store.trackedAnime.isEmpty)
     }
 
     private func makeAnime(id: Int, episodeCount: Int?) -> AnimeTitle {
