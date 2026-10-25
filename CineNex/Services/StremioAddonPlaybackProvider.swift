@@ -295,7 +295,9 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
 
     func discover(for request: PlaybackSourceRequest) async throws -> StremioAddonDiscovery {
         guard request.isValid else { throw StremioAddonClientError.invalidRequest }
-        guard !clients.isEmpty else { return StremioAddonDiscovery(sources: [], torrentDescriptors: []) }
+        guard !clients.isEmpty else {
+            return StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: [])
+        }
         guard let imdbID = try await externalIDResolver.imdbID(for: request) else {
             let statuses = clientDisplayNames.enumerated().map { index, name in
                 StremioAddonProviderStatus(
