@@ -56,7 +56,7 @@ A concrete reference implementation exists in [XITRIX/iTorrent_Framework](https:
 2. Expose a narrow Swift-safe API for magnet/torrent ingestion, metadata, file selection, progress, cancellation, piece deadlines, and bounded cache control. Do not expose raw native pointers to UI code.
 3. Serve media only through a loopback-bound byte-range server with a per-session unguessable path token, correct `200`, `206`, and `416` responses, request cancellation, and strict byte-range limits.
 4. Validate torrent names and path components before filesystem access, keep all writes inside a unique cache directory, cap concurrent downloads and cache size, and clean up on cancellation, dismissal, and app termination.
-5. Add deterministic unit tests for metadata/path traversal, range parsing, priority windows, and cleanup. Add an end-to-end test using a licensed test asset distributed by its rights holder; do not use Internet Archive.
+5. Add deterministic unit tests for metadata/path traversal, range parsing, priority windows, and cleanup. Add an end-to-end test using a licensed test asset distributed directly by its rights holder.
 6. Connect torrent results to Watch Hub only after the engine builds reproducibly and the range server passes authorized playback tests. Until then, Stremio torrent descriptors remain non-playable metadata, not a source CineNex claims it can play.
 
 
