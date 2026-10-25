@@ -12,7 +12,20 @@ final class StremioTorrentDescriptorTests: XCTestCase {
 
         XCTAssertEqual(descriptor.infoHash, validHash)
         XCTAssertEqual(descriptor.fileIndex, 2)
-        XCTAssertEqual(descriptor.id, "\(validHash):2")
+        XCTAssertEqual(descriptor.id, "stremio-add-on:\(validHash):2")
+    }
+
+    func testSameTorrentFromDifferentProvidersHasDifferentIdentity() throws {
+        let torrentio = try XCTUnwrap(
+            StremioTorrentDescriptor(infoHash: validHash, fileIndex: 0, providerName: "Torrentio")
+        )
+        let mediaFusion = try XCTUnwrap(
+            StremioTorrentDescriptor(infoHash: validHash, fileIndex: 0, providerName: "MediaFusion")
+        )
+
+        XCTAssertEqual(torrentio.infoHash, mediaFusion.infoHash)
+        XCTAssertEqual(torrentio.fileIndex, mediaFusion.fileIndex)
+        XCTAssertNotEqual(torrentio.id, mediaFusion.id)
     }
 
     func testBuildsValidMagnetURLWithoutEmbeddingFileSelection() throws {
@@ -28,7 +41,7 @@ final class StremioTorrentDescriptorTests: XCTestCase {
         let descriptor = try XCTUnwrap(StremioTorrentDescriptor(infoHash: validHash, fileIndex: nil))
 
         XCTAssertNil(descriptor.fileIndex)
-        XCTAssertEqual(descriptor.id, "\(validHash):all")
+        XCTAssertEqual(descriptor.id, "stremio-add-on:\(validHash):all")
     }
 
     func testRejectsMissingMalformedAndWrongLengthHashes() {
