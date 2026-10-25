@@ -167,6 +167,46 @@ final class StremioAddonPlaybackProviderTests: XCTestCase {
         XCTAssertEqual(Set(discovery.torrentDescriptors.map(\.providerName)), Set(["Torrentio", "MediaFusion"]))
     }
 
+    func testOneAddonFailureDoesNotHideTheOtherAddonsResults() async throws {
+        ProviderStubURLProtocol.handler = { request in
+            if request.url?.host == "mediafusion.elfhosted.com" {
+                throw URLError(.timedOut)
+            }
+            return (
+                self.response(request, 200),
+                Data(#"{"streams":[{"name":"1080p Torrent","infoHash":"0123456789abcdef0123456789abcdef01234567","fileIdx":0}]}"#.utf8)
+            )
+        }
+        let provider = try StremioAddonPlaybackProvider(
+            manifestURLs: [
+                URL(string: "https://torrentio.strem.fun/manifest.json")!,
+                URL(string: "https://mediafusion.elfhosted.com/manifest.json")!
+            ],
+            externalIDResolver: StubExternalIDResolver(value: "tt1234567"),
+            session: makeSession()
+        )
+
+        let discovery = try await provider.discover(
+            for: PlaybackSourceRequest(title: "Example", mediaKind: .movie, imdbID: "tt1234567")
+        )
+
+        XCTAssertEqual(discovery.torrentDescriptors.count, 1)
+        XCTAssertEqual(discovery.torrentDescriptors.first?.providerName, "Torrentio")
+        XCTAssertEqual(discovery.providerStatuses.count, 2)
+        XCTAssertTrue(discovery.providerStatuses.contains {
+            $0.name == "Torrentio" && {
+                if case .found(_, torrentSourceCount: 1) = $0.outcome { return true }
+                return false
+            }()
+        })
+        XCTAssertTrue(discovery.providerStatuses.contains {
+            $0.name == "MediaFusion" && {
+                if case .failed = $0.outcome { return true }
+                return false
+            }()
+        })
+    }
+
     func testProviderUsesExactSeriesEpisodeCoordinates() async throws {
         ProviderStubURLProtocol.handler = { request in
             if request.url?.path == "/manifest.json" {
