@@ -280,8 +280,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
 
     func findSources(for request: PlaybackSourceRequest) async throws -> [PlaybackSource] {
         let discovery = try await discover(for: request)
-        if discovery.sources.isEmpty,
-           discovery.torrentDescriptors.isEmpty {
+        if discovery.sources.isEmpty {
             let failures = discovery.providerStatuses.compactMap { status -> String? in
                 if case .failed(let message) = status.outcome { return message }
                 return nil
