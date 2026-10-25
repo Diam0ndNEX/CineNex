@@ -92,6 +92,38 @@ final class TorrentPieceRangePlannerTests: XCTestCase {
         }
     }
 
+    func testPriorityRangeAddsBoundedLookBehindAndLookAhead() {
+        XCTAssertEqual(
+            TorrentPiecePriorityWindow.expandedRange(for: 40..<44, pieceCount: 100),
+            38..<68
+        )
+    }
+
+    func testPriorityRangeClampsToTorrentBoundaries() {
+        XCTAssertEqual(
+            TorrentPiecePriorityWindow.expandedRange(for: 1..<3, pieceCount: 5),
+            0..<5
+        )
+        XCTAssertEqual(
+            TorrentPiecePriorityWindow.expandedRange(for: 96..<100, pieceCount: 100),
+            94..<100
+        )
+    }
+
+    func testPriorityRangeRejectsInvalidPieceCoordinates() {
+        XCTAssertNil(TorrentPiecePriorityWindow.expandedRange(for: -1..<2, pieceCount: 10))
+        XCTAssertNil(TorrentPiecePriorityWindow.expandedRange(for: 4..<11, pieceCount: 10))
+        XCTAssertNil(TorrentPiecePriorityWindow.expandedRange(for: 5..<4, pieceCount: 10))
+        XCTAssertNil(TorrentPiecePriorityWindow.expandedRange(for: 0..<1, pieceCount: -1))
+    }
+
+    func testEmptyPriorityRangeStaysEmpty() {
+        XCTAssertEqual(
+            TorrentPiecePriorityWindow.expandedRange(for: 5..<5, pieceCount: 10),
+            5..<5
+        )
+    }
+
     func testInitialPriorityWindowPromotesAllRequestedPieces() {
         let window = TorrentPiecePriorityWindow(current: [], requested: [4, 5, 6])
 
