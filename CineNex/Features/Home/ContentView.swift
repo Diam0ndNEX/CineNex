@@ -1,5 +1,32 @@
 import SwiftUI
 
+private enum HomeCategory: String, CaseIterable, Identifiable {
+    case forYou
+    case movies
+    case series
+    case myList
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .forYou: return "For You"
+        case .movies: return "Movies"
+        case .series: return "Series"
+        case .myList: return "My List"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .forYou: return "sparkles"
+        case .movies: return "film"
+        case .series: return "tv"
+        case .myList: return "bookmark"
+        }
+    }
+}
+
 struct ContentView: View {
     @State private var selectedTab = AppTab.home
     @State private var searchText = ""
@@ -15,6 +42,7 @@ struct ContentView: View {
     @State private var watchHubItem: MediaItem?
     @State private var showingUnavailableSource = false
     @State private var showingAppearanceSettings = false
+    @State private var selectedHomeCategory = HomeCategory.forYou
 
     @State private var catalog = CatalogCacheStore.shared.load()?.items ?? MediaItem.demoCatalog
     @State private var catalogLoading = false
@@ -95,6 +123,32 @@ struct ContentView: View {
             let item = progress.itemSnapshot ?? catalog.first(where: { $0.id == progress.itemID })
             guard let item, item.id == progress.itemID, item.streamURL != nil else { return nil }
             return item
+        }
+    }
+
+    private var featuredHomeItem: MediaItem? {
+        switch selectedHomeCategory {
+        case .forYou:
+            return catalog.first
+        case .movies:
+            return catalog.first(where: { $0.kind == .movie })
+        case .series:
+            return catalog.first(where: { $0.kind == .series })
+        case .myList:
+            return nil
+        }
+    }
+
+    private var homeCategoryItems: [MediaItem] {
+        switch selectedHomeCategory {
+        case .forYou:
+            return catalog
+        case .movies:
+            return catalog.filter { $0.kind == .movie }
+        case .series:
+            return catalog.filter { $0.kind == .series }
+        case .myList:
+            return favoriteItems
         }
     }
 
@@ -186,8 +240,21 @@ struct ContentView: View {
 
     private var homeScreen: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: 24) {
                 header
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Find your next obsession")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .tracking(-0.7)
+                    Text("A world of stories, picked for your mood.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 20)
+                .accessibilityElement(children: .combine)
+
+                homeCategoryPicker
 
                 if let catalogError {
                     Label(catalogError, systemImage: "exclamationmark.triangle")
@@ -197,7 +264,7 @@ struct ContentView: View {
                         .padding(.horizontal, 20)
                 }
 
-                if let featured = catalog.first {
+                if let featured = featuredHomeItem {
                     FeaturedBanner(item: featured) {
                         selectedItem = featured
                     } onPlay: {
@@ -205,23 +272,98 @@ struct ContentView: View {
                     }
                 }
 
-                if !continueWatchingItems.isEmpty {
-                    mediaSection(title: "Continue Watching", subtitle: "Pick up where you left off", items: continueWatchingItems, showProgress: true)
+                switch selectedHomeCategory {
+                case .forYou:
+                    if !continueWatchingItems.isEmpty {
+                        mediaSection(title: "Continue Watching", subtitle: "Pick up right where you left off", items: continueWatchingItems, showProgress: true)
+                    }
+                    mediaSection(title: "Popular right now", subtitle: "Discover something worth watching", items: catalog)
+                    let movies = catalog.filter { $0.kind == .movie }
+                    if !movies.isEmpty {
+                        mediaSection(title: "Movies for every mood", subtitle: "Big stories, one great night", items: movies)
+                    }
+                    let series = catalog.filter { $0.kind == .series }
+                    if !series.isEmpty {
+                        mediaSection(title: "Series to get into", subtitle: "Your next episode starts here", items: series)
+                    }
+                case .movies:
+                    if homeCategoryItems.isEmpty {
+                        emptyHomeCategory(title: "No movies yet", message: "Refresh the catalog or connect TMDB in Tracking to discover movies.")
+                    } else {
+                        mediaSection(title: "Explore movies", subtitle: "Choose your next feature", items: homeCategoryItems)
+                    }
+                case .series:
+                    if homeCategoryItems.isEmpty {
+                        emptyHomeCategory(title: "No series yet", message: "Refresh the catalog or connect TMDB in Tracking to discover series.")
+                    } else {
+                        mediaSection(title: "Explore series", subtitle: "Find a story to stay with", items: homeCategoryItems)
+                    }
+                case .myList:
+                    if homeCategoryItems.isEmpty {
+                        ContentUnavailableView(
+                            "Your list is empty",
+                            systemImage: "bookmark",
+                            description: Text("Save a title from its details to keep it close at hand.")
+                        )
+                        .padding(.horizontal, 20)
+                        .padding(.top, 18)
+                    } else {
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
+                            ForEach(homeCategoryItems) { item in
+                                MediaPosterCard(item: item) {
+                                    selectedItem = item
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                    }
                 }
-
-                mediaSection(title: "Popular on CineNex", subtitle: "A first look at your next favorite", items: catalog)
-
-                let movies = catalog.filter { $0.kind == .movie }
-                mediaSection(title: "Movies", subtitle: "Stories for every mood", items: movies)
-
-                let series = catalog.filter { $0.kind == .series }
-                mediaSection(title: "Series", subtitle: "Find your next episode", items: series)
             }
-            .padding(.bottom, 24)
+            .padding(.top, 4)
+            .padding(.bottom, 30)
         }
         .background(Color.cineNexBackground.ignoresSafeArea())
         .refreshable { await loadCatalog(force: true) }
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private var homeCategoryPicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(HomeCategory.allCases) { category in
+                    let isSelected = selectedHomeCategory == category
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedHomeCategory = category
+                        }
+                    } label: {
+                        Label(category.title, systemImage: category.symbol)
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 15)
+                            .padding(.vertical, 11)
+                            .foregroundStyle(isSelected ? .white : .secondary)
+                            .background(
+                                isSelected ? Color.cineNexAccent : Color.cineNexSurface,
+                                in: Capsule()
+                            )
+                            .overlay {
+                                Capsule()
+                                    .strokeBorder(isSelected ? Color.clear : Color.white.opacity(0.06), lineWidth: 1)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .accessibilityLabel("Home categories")
+    }
+
+    private func emptyHomeCategory(title: String, message: String) -> some View {
+        ContentUnavailableView(title, systemImage: "square.stack", description: Text(message))
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
     }
 
     private var searchScreen: some View {
@@ -678,61 +820,85 @@ private struct FeaturedBanner: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: 24)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.20, green: 0.16, blue: 0.43),
-                            Color(red: 0.08, green: 0.12, blue: 0.25),
-                            Color.cineNexSurface
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            CachedPosterImage(
+                url: item.posterURL,
+                fallbackSymbol: item.symbol,
+                symbolSize: 94
+            )
+            LinearGradient(
+                stops: [
+                    .init(color: .black.opacity(0.02), location: 0),
+                    .init(color: Color(red: 0.035, green: 0.043, blue: 0.065).opacity(0.42), location: 0.36),
+                    .init(color: Color(red: 0.035, green: 0.043, blue: 0.065).opacity(0.98), location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            LinearGradient(
+                colors: [Color.cineNexAccent.opacity(0.26), .clear],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
             Circle()
-                .fill(Color.white.opacity(0.06))
-                .frame(width: 240, height: 240)
-                .offset(x: 180, y: -90)
-            Image(systemName: item.symbol)
-                .font(.system(size: 94, weight: .light))
-                .foregroundStyle(.white.opacity(0.20))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                .padding(24)
+                .fill(Color.white.opacity(0.07))
+                .frame(width: 220, height: 220)
+                .blur(radius: 1)
+                .offset(x: 185, y: -110)
 
             VStack(alignment: .leading, spacing: 12) {
-                Label("FEATURED SAMPLE", systemImage: "sparkles")
+                Label(item.metadataProvider == "tmdb" ? "TRENDING PICK" : "FEATURED SAMPLE", systemImage: "sparkles")
                     .font(.caption.weight(.bold))
                     .tracking(1.3)
-                    .foregroundStyle(Color(red: 0.78, green: 0.73, blue: 1))
+                    .foregroundStyle(Color.cineNexAccent)
                 Text(item.title)
                     .font(.system(size: 32, weight: .heavy, design: .rounded))
+                    .tracking(-0.5)
                     .lineLimit(2)
-                Text("\(item.year)  •  \(item.genre)  •  \(item.runtime)")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.78))
+                    .shadow(color: .black.opacity(0.35), radius: 12, y: 2)
+                HStack(spacing: 7) {
+                    if let year = item.yearLabel {
+                        Text(year)
+                        Text("·")
+                    }
+                    Text(item.kind.rawValue)
+                    Text("·")
+                    Text(item.genre)
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white.opacity(0.82))
+                .lineLimit(1)
+                if let rating = item.rating {
+                    Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color(red: 1.0, green: 0.78, blue: 0.28))
+                }
                 HStack(spacing: 10) {
                     Button(action: onPlay) {
-                        Label("Play", systemImage: "play.fill")
+                        Label("Find a source", systemImage: "play.fill")
                             .font(.subheadline.bold())
                             .padding(.horizontal, 18)
                             .padding(.vertical, 12)
-                            .foregroundStyle(.black)
-                            .background(.white, in: Capsule())
+                            .foregroundStyle(.white)
+                            .background(Color.cineNexAccent, in: Capsule())
                     }
+                    .accessibilityHint("Finds available playback sources for this title")
                     Button(action: onDetails) {
                         Label("Details", systemImage: "info.circle")
                             .font(.subheadline.bold())
                             .padding(.horizontal, 18)
                             .padding(.vertical, 12)
-                            .background(.white.opacity(0.13), in: Capsule())
+                            .background(.white.opacity(0.14), in: Capsule())
                     }
                 }
             }
             .padding(22)
         }
-        .frame(height: 330)
+        .frame(height: 360)
         .clipShape(RoundedRectangle(cornerRadius: 24))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24)
+                .strokeBorder(.white.opacity(0.07), lineWidth: 1)
+        }
         .padding(.horizontal, 20)
     }
 }
