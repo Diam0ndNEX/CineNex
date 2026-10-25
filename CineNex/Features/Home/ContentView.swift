@@ -48,6 +48,11 @@ struct ContentView: View {
     @State private var animeCatalog: [AnimeTitle] = []
     @State private var animeLoading = false
     @State private var animeError: String?
+    @State private var animeSearchText = ""
+    @State private var animeSearchResults: [AnimeTitle] = []
+    @State private var animeSearchLoading = false
+    @State private var animeSearchError: String?
+    @State private var hasSearchedAnime = false
     @StateObject private var animeProgressStore = AnimeProgressStore.shared
 
     @State private var catalog = CatalogCacheStore.shared.load()?.items ?? MediaItem.demoCatalog
@@ -202,7 +207,7 @@ struct ContentView: View {
                         )
                     }
             }
-            .tabItem { Label("My List", systemImage: "bookmark.fill") }
+            .tabItem { Label(selectedHomeExperience == "anime" ? "Anime List" : "My List", systemImage: "bookmark.fill") }
             .tag(AppTab.library)
 
             NavigationStack {
@@ -482,6 +487,105 @@ struct ContentView: View {
     }
 
     private var searchScreen: some View {
+        Group {
+            if selectedHomeExperience == "anime" {
+                animeSearchScreen
+            } else {
+                moviesAndSeriesSearchScreen
+            }
+        }
+        .sheet(item: $selectedAnime) { anime in
+            AnimeDetailView(anime: anime, progressStore: animeProgressStore)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+    }
+
+    private var animeSearchScreen: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Find anime")
+                    .font(.largeTitle.bold())
+                Text("Search AniList for anime titles, films, and series.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                TextField("Search anime titles…", text: $animeSearchText)
+                    .textFieldStyle(.plain)
+                    .padding(14)
+                    .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14))
+                    .accessibilityLabel("Search anime titles")
+                    .submitLabel(.search)
+                    .onSubmit { Task { await searchAniList() } }
+
+                Button {
+                    Task { await searchAniList() }
+                } label: {
+                    HStack(spacing: 10) {
+                        if animeSearchLoading {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: "magnifyingglass")
+                        }
+                        Text(animeSearchLoading ? "Searching AniList…" : "Search AniList")
+                        Spacer()
+                        Image(systemName: "arrow.right")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .padding(14)
+                    .background(Color.cineNexAccent, in: RoundedRectangle(cornerRadius: 14))
+                    .foregroundStyle(.white)
+                }
+                .disabled(animeSearchLoading || animeSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                if let animeSearchError {
+                    Label(animeSearchError, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if animeSearchLoading && animeSearchResults.isEmpty {
+                    ProgressView("Searching anime…")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 35)
+                } else if hasSearchedAnime && animeSearchResults.isEmpty && animeSearchError == nil {
+                    ContentUnavailableView(
+                        "No anime found",
+                        systemImage: "magnifyingglass",
+                        description: Text("Try a different title or spelling.")
+                    )
+                    .padding(.top, 24)
+                } else if !animeSearchResults.isEmpty {
+                    Text("\(animeSearchResults.count) results")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
+                        ForEach(animeSearchResults) { anime in
+                            AnimePosterCard(
+                                anime: anime,
+                                watchedEpisodes: animeProgressStore.watchedEpisodeCount(for: anime)
+                            ) {
+                                selectedAnime = anime
+                            }
+                        }
+                    }
+                } else {
+                    ContentUnavailableView(
+                        "Search anime",
+                        systemImage: "sparkles",
+                        description: Text("Enter an anime title to find results from AniList.")
+                    )
+                    .padding(.top, 20)
+                }
+            }
+            .padding(20)
+        }
+        .background(Color.cineNexBackground.ignoresSafeArea())
+        .navigationTitle("Anime Search")
+    }
+
+    private var moviesAndSeriesSearchScreen: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Discover")
@@ -592,6 +696,56 @@ struct ContentView: View {
     }
 
     private var libraryScreen: some View {
+        Group {
+            if selectedHomeExperience == "anime" {
+                animeLibraryScreen
+            } else {
+                moviesAndSeriesLibraryScreen
+            }
+        }
+        .sheet(item: $selectedAnime) { anime in
+            AnimeDetailView(anime: anime, progressStore: animeProgressStore)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+    }
+
+    private var animeLibraryScreen: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Anime List")
+                    .font(.largeTitle.bold())
+                Text("Anime you have started tracking, with progress saved on this device.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                if animeProgressStore.trackedAnime.isEmpty {
+                    ContentUnavailableView(
+                        "No anime tracked yet",
+                        systemImage: "bookmark",
+                        description: Text("Open an anime title and update Episodes watched to add it to your Anime List.")
+                    )
+                    .padding(.top, 40)
+                } else {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
+                        ForEach(animeProgressStore.trackedAnime) { anime in
+                            AnimePosterCard(
+                                anime: anime,
+                                watchedEpisodes: animeProgressStore.watchedEpisodeCount(for: anime)
+                            ) {
+                                selectedAnime = anime
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(20)
+        }
+        .background(Color.cineNexBackground.ignoresSafeArea())
+        .navigationTitle("Anime List")
+    }
+
+    private var moviesAndSeriesLibraryScreen: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Text("My List")
@@ -725,6 +879,34 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 20)
             }
+        }
+    }
+
+    @MainActor
+    private func searchAniList() async {
+        let query = animeSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            animeSearchError = "Enter an anime title to search AniList."
+            animeSearchResults = []
+            hasSearchedAnime = false
+            return
+        }
+        guard !animeSearchLoading else { return }
+
+        animeSearchLoading = true
+        animeSearchError = nil
+        hasSearchedAnime = true
+        defer { animeSearchLoading = false }
+
+        do {
+            let results = try await AniListCatalogProvider().searchAnime(query: query)
+            guard !Task.isCancelled else { return }
+            animeSearchResults = results
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled else { return }
+            animeSearchError = error.localizedDescription
         }
     }
 
