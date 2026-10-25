@@ -405,12 +405,14 @@ struct WatchHubView: View {
                                 .frame(width: 44, height: 44)
                                 .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Torrent · \(String(descriptor.infoHash.prefix(12)))")
+                                Text(descriptor.title)
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(.primary)
-                                Text(descriptor.fileIndex.map { "Torrent file index \($0)" } ?? "Auto-select a playable video file")
+                                    .lineLimit(2)
+                                Text([descriptor.providerName, descriptor.fileIndex.map { "File index \($0)" }].compactMap { $0 }.joined(separator: " · "))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                    .lineLimit(2)
                             }
                             Spacer()
                             if preparingTorrentDescriptorID == descriptor.id {
@@ -831,6 +833,16 @@ struct WatchHubView: View {
     @MainActor
     private func startTorrentPlayback(for descriptor: StremioTorrentDescriptor) {
         guard torrentPreparationTask == nil else { return }
+        guard StremioTorrentDescriptor(
+            infoHash: descriptor.infoHash,
+            fileIndex: descriptor.fileIndex,
+            trackers: descriptor.trackers,
+            title: descriptor.title,
+            providerName: descriptor.providerName
+        ) != nil else {
+            torrentPreparationMessage = "This torrent result is malformed. Choose another source."
+            return
+        }
         preparingTorrentDescriptorID = descriptor.id
         torrentPreparationMessage = "Preparing native playback. Torrent metadata may take a moment to load."
         torrentPreparationTask = Task {

@@ -54,7 +54,7 @@ struct ContentView: View {
     @State private var hasSearchedAnime = false
     @StateObject private var animeProgressStore = AnimeProgressStore.shared
 
-    @State private var catalog = CatalogCacheStore.shared.load()?.items ?? MediaItem.demoCatalog
+    @State private var catalog = CatalogCacheStore.shared.load()?.items ?? []
     @State private var catalogLoading = false
     @State private var catalogError: String?
     @State private var remoteSearchResults: [MediaItem] = []
@@ -963,7 +963,7 @@ struct ContentView: View {
         } catch {
             catalogError = error.localizedDescription
             if catalog.isEmpty {
-                catalog = CatalogCacheStore.shared.load()?.items ?? MediaItem.demoCatalog
+                catalog = CatalogCacheStore.shared.load()?.items ?? []
             }
         }
     }

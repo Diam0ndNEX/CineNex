@@ -223,6 +223,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
     let displayName: String
     let priority: Int
     private let clients: [StremioAddonClient]
+    private let clientDisplayNames: [String]
     private let externalIDResolver: any PlaybackExternalIDResolving
     init(
         id: String = "stremio-addons",
@@ -240,6 +241,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
         self.displayName = displayName
         self.priority = priority
         self.clients = try manifestURLs.map { try StremioAddonClient(manifestURL: $0, session: session) }
+        self.clientDisplayNames = manifestURLs.map(Self.displayName(for:))
         self.externalIDResolver = externalIDResolver
     }
 
@@ -302,13 +304,18 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                 batch.entries,
                 index: batch.index,
                 providerID: id,
-                displayName: displayName,
+                displayName: clientDisplayNames.indices.contains(batch.index) ? clientDisplayNames[batch.index] : displayName,
                 priority: priority
             )
         }
         var seenDescriptors = Set<String>()
         let descriptors = batches.flatMap { batch in
-            batch.entries.compactMap { StremioTorrentDescriptor(stream: $0) }
+            batch.entries.compactMap {
+                StremioTorrentDescriptor(
+                    stream: $0,
+                    providerName: clientDisplayNames.indices.contains(batch.index) ? clientDisplayNames[batch.index] : displayName
+                )
+            }
         }.filter { seenDescriptors.insert($0.id).inserted }
 
         if sources.isEmpty, descriptors.isEmpty, !failures.isEmpty {
@@ -343,6 +350,17 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                 providerPriority: priority
             )
         }
+    }
+
+    private static func displayName(for manifestURL: URL) -> String {
+        let host = (manifestURL.host ?? "").lowercased()
+        if host.contains("torrentio") { return "Torrentio" }
+        if host.contains("mediafusion") { return "MediaFusion" }
+        let label = host.split(separator: ".").first.map(String.init) ?? "External add-on"
+        return label.replacingOccurrences(of: "-", with: " ")
+            .split(whereSeparator: \.isWhitespace)
+            .map { $0.capitalized }
+            .joined(separator: " ")
     }
 
     private static func supportsNativePlayback(_ url: URL) -> Bool {

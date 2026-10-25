@@ -8,29 +8,29 @@ struct CinemetaCatalogProvider: Sendable {
     }
 
     func fetchCatalog() async throws -> [MediaItem] {
-        async let movieTask = fetchMetadata(type: "movie", query: nil)
-        async let seriesTask = fetchMetadata(type: "series", query: nil)
-        let movies: [MediaItem]
-        do {
-            movies = try await movieTask
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            movies = []
+        let requests: [(type: String, genre: String?)] = [
+            ("movie", nil), ("series", nil),
+            ("movie", "Action"), ("movie", "Comedy"), ("movie", "Science Fiction"),
+            ("series", "Drama"), ("series", "Comedy"), ("series", "Crime")
+        ]
+        return try await withThrowingTaskGroup(of: [MediaItem].self) { group in
+            for catalogRequest in requests {
+                group.addTask {
+                    do {
+                        return try await fetchMetadata(type: catalogRequest.type, query: nil, genre: catalogRequest.genre)
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        return []
+                    }
+                }
+            }
+            var combined: [MediaItem] = []
+            for try await results in group { combined.append(contentsOf: results) }
+            let unique = Self.uniqueItems(combined)
+            guard !unique.isEmpty else { throw CinemetaCatalogError.noResults }
+            return unique
         }
-        let series: [MediaItem]
-        do {
-            series = try await seriesTask
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            series = []
-        }
-        let combined = Self.uniqueItems(movies + series)
-        guard !combined.isEmpty else {
-            throw CinemetaCatalogError.noResults
-        }
-        return combined
     }
 
     func search(query: String) async throws -> [MediaItem] {
@@ -57,13 +57,22 @@ struct CinemetaCatalogProvider: Sendable {
         return Self.uniqueItems(movies + series)
     }
 
-    private func fetchMetadata(type: String, query: String?) async throws -> [MediaItem] {
+    private func fetchMetadata(type: String, query: String?, genre: String? = nil) async throws -> [MediaItem] {
         guard type == "movie" || type == "series" else {
             throw CinemetaCatalogError.invalidRequest
         }
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+        let genrePath: String
+        if let genre {
+            guard let encodedGenre = genre.addingPercentEncoding(withAllowedCharacters: allowed) else {
+                throw CinemetaCatalogError.invalidRequest
+            }
+            genrePath = "/genre=\(encodedGenre)"
+        } else {
+            genrePath = ""
+        }
         let searchPath: String
         if let query {
-            let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
             guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: allowed) else {
                 throw CinemetaCatalogError.invalidRequest
             }
@@ -71,7 +80,7 @@ struct CinemetaCatalogProvider: Sendable {
         } else {
             searchPath = ""
         }
-        guard let url = URL(string: "https://v3-cinemeta.strem.io/catalog/\(type)/top\(searchPath).json"),
+        guard let url = URL(string: "https://v3-cinemeta.strem.io/catalog/\(type)/top\(genrePath)\(searchPath).json"),
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               components.scheme == "https",
               components.host == "v3-cinemeta.strem.io" else {

@@ -28,6 +28,23 @@ final class CinemetaCatalogProviderTests: XCTestCase {
         XCTAssertEqual(items.first(where: { $0.title == "Example Film" })?.posterURL?.absoluteString, "https://images.example.test/poster.jpg")
     }
 
+    func testCatalogRequestsMultipleGenresAndDeduplicatesAcrossFeeds() async throws {
+        let requestedPaths = CatalogRequestRecorder()
+        CinemetaStubURLProtocol.handler = { request in
+            requestedPaths.insert(request.url?.path ?? "")
+            let isMovie = request.url?.path.contains("/movie/") == true
+            let body = isMovie
+                ? #"{\"metas\":[{\"id\":\"tt1234567\",\"type\":\"movie\",\"name\":\"Example Film\",\"releaseInfo\":\"2024\"}]}"#
+                : #"{\"metas\":[{\"id\":\"tt7654321\",\"type\":\"series\",\"name\":\"Example Series\",\"releaseInfo\":\"2022\"}]}"#
+            return (self.response(request, 200), Data(body.utf8))
+        }
+        let items = try await CinemetaCatalogProvider(session: makeSession()).fetchCatalog()
+        XCTAssertEqual(items.count, 2)
+        XCTAssertTrue(requestedPaths.values.contains("/catalog/movie/top.json"))
+        XCTAssertTrue(requestedPaths.values.contains("/catalog/movie/top/genre=Action.json"))
+        XCTAssertTrue(requestedPaths.values.contains("/catalog/series/top/genre=Drama.json"))
+    }
+
     func testSearchEncodesQueryAndRejectsInvalidImageURLs() async throws {
         CinemetaStubURLProtocol.handler = { request in
             let encodedPath = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.percentEncodedPath
@@ -63,6 +80,21 @@ final class CinemetaCatalogProviderTests: XCTestCase {
 
     private func response(_ request: URLRequest, _ statusCode: Int) -> HTTPURLResponse {
         HTTPURLResponse(url: request.url!, statusCode: statusCode, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+    }
+}
+
+private final class CatalogRequestRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var paths = Set<String>()
+    var values: Set<String> {
+        lock.lock()
+        defer { lock.unlock() }
+        return paths
+    }
+    func insert(_ path: String) {
+        lock.lock()
+        paths.insert(path)
+        lock.unlock()
     }
 }
 
