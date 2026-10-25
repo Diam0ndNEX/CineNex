@@ -134,6 +134,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
     private var preparedFile: TorrentPreparedFile?
     private var prioritizedPieces = Set<Int64>()
     private var startupPiecePriorities: [Int64: Int] = [:]
+    private var deadlinePieces = Set<Int64>()
 
     init(descriptor: StremioTorrentDescriptor) {
         self.descriptor = descriptor
@@ -313,6 +314,22 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             throw TorrentStreamingError.invalidTorrentLayout
         }
         let requestedPieces = Set(expandedRange)
+        let requestedDeadlinePieces = Set(pieces)
+
+        for piece in deadlinePieces.subtracting(requestedDeadlinePieces).sorted() {
+            try Task.checkCancellation()
+            guard handle.clearPieceDeadlineAt(Int(piece)) else {
+                throw TorrentStreamingError.invalidTorrentLayout
+            }
+        }
+        var deadlineMilliseconds = 0
+        for piece in pieces {
+            try Task.checkCancellation()
+            guard handle.setPieceDeadline(deadlineMilliseconds, at: Int(piece)) else {
+                throw TorrentStreamingError.invalidTorrentLayout
+            }
+            deadlineMilliseconds = min(deadlineMilliseconds + 80, 60_000)
+        }
 
         let priorityWindow = TorrentPiecePriorityWindow(current: prioritizedPieces, requested: requestedPieces)
         for piece in priorityWindow.piecesToDemote {
@@ -329,6 +346,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             }
         }
         prioritizedPieces = requestedPieces
+        deadlinePieces = requestedDeadlinePieces
     }
 
     func waitUntilAvailable(pieces: Range<Int64>) async throws {
@@ -371,6 +389,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         self.preparedFile = nil
         self.prioritizedPieces.removeAll()
         self.startupPiecePriorities.removeAll()
+        self.deadlinePieces.removeAll()
         self.handle = nil
         self.session = nil
         self.downloadRoot = nil
