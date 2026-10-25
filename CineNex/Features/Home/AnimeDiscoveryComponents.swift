@@ -153,6 +153,7 @@ struct AnimePosterCard: View {
 }
 
 struct AnimeDetailView: View {
+    @State private var selectedWatchProvider: AnimeWebsiteProvider?
     let anime: AnimeTitle
     @ObservedObject var progressStore: AnimeProgressStore
     @Environment(\.dismiss) private var dismiss
@@ -211,6 +212,10 @@ struct AnimeDetailView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
+                    AnimeWatchProviderSection(anime: anime) { provider in
+                        selectedWatchProvider = provider
+                    }
+
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Episode progress")
                             .font(.title3.bold())
@@ -252,6 +257,9 @@ struct AnimeDetailView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .sheet(item: $selectedWatchProvider) { provider in
+                AnimeWebsitePlaybackSheet(anime: anime, provider: provider)
             }
         }
         .tint(Color.cineNexAccent)
