@@ -19,6 +19,17 @@ final class TorrentPieceDeadlinePlanTests: XCTestCase {
         XCTAssertEqual(plan.deadlinesMilliseconds, [0: 0, 1: 100, 2: 150, 3: 150, 4: 150])
     }
 
+    func testLargeStepSaturatesWithoutIntegerOverflow() throws {
+        let plan = try XCTUnwrap(TorrentPieceDeadlinePlan.make(
+            for: 0..<3,
+            pieceCount: 3,
+            stepMilliseconds: Int.max,
+            maximumMilliseconds: 60_000
+        ))
+
+        XCTAssertEqual(plan.deadlinesMilliseconds, [0: 0, 1: 60_000, 2: 60_000])
+    }
+
     func testEmptyRangeProducesNoDeadlines() throws {
         let plan = try XCTUnwrap(TorrentPieceDeadlinePlan.make(for: 3..<3, pieceCount: 10))
 
