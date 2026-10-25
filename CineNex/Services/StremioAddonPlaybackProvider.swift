@@ -301,7 +301,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
         guard let imdbID = try await externalIDResolver.imdbID(for: request) else {
             let statuses = clientDisplayNames.enumerated().map { index, name in
                 StremioAddonProviderStatus(
-                    id: "(index)-(name.lowercased())",
+                    id: "\(index)-\(name.lowercased())",
                     name: name,
                     outcome: .identifierUnavailable
                 )
@@ -316,7 +316,6 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
             episodeNumber: request.episodeNumber
         )
         var batches: [(index: Int, entries: [StremioStreamEntry])] = []
-        var failures: [String] = []
         var failuresByIndex: [Int: String] = [:]
 
         if clients.count == 1 {
@@ -325,37 +324,37 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                failures = ["\(clientDisplayNames.first ?? displayName): \(error.localizedDescription)"]
+                failuresByIndex[0] = error.localizedDescription
             }
         } else {
             let aggregated = await withTaskGroup(
                 of: (index: Int, entries: [StremioStreamEntry], failure: String?).self,
-                returning: (batches: [(index: Int, entries: [StremioStreamEntry])], failures: [String]).self
+                returning: (batches: [(index: Int, entries: [StremioStreamEntry])], failuresByIndex: [Int: String]).self
             ) { group in
                 for (index, client) in clients.enumerated() {
                     group.addTask {
                         do {
                             return (index, try await client.fetchStreams(for: streamRequest), nil)
+                        } catch is CancellationError {
+                            return (index, [], "Request cancelled.")
                         } catch {
-                            let providerName = clientDisplayNames.indices.contains(index) ? clientDisplayNames[index] : displayName
-                            return (index, [], "\(providerName): \(error.localizedDescription)")
+                            return (index, [], error.localizedDescription)
                         }
                     }
                 }
                 var fetched: [(index: Int, entries: [StremioStreamEntry])] = []
-                var errors: [String] = []
+                var errorsByIndex: [Int: String] = [:]
                 for await result in group {
                     if let failure = result.failure {
-                        errors.append(failure)
-                        failuresByIndex[result.index] = failure
+                        errorsByIndex[result.index] = failure
                     } else {
                         fetched.append((result.index, result.entries))
                     }
                 }
-                return (fetched, errors)
+                return (fetched, errorsByIndex)
             }
             batches = aggregated.batches
-            failures = aggregated.failures
+            failuresByIndex = aggregated.failuresByIndex
         }
 
         try Task.checkCancellation()
@@ -382,7 +381,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
         }
 
         let providerStatuses = clientDisplayNames.enumerated().map { index, name in
-            let statusID = "(index)-(name.lowercased())"
+            let statusID = "\(index)-\(name.lowercased())"
             if let failure = failuresByIndex[index] {
                 return StremioAddonProviderStatus(id: statusID, name: name, outcome: .failed(failure))
             }
