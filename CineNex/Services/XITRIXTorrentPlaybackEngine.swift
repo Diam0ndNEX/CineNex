@@ -40,6 +40,17 @@ enum XITRIXTorrentFileSupport {
     }
 }
 
+
+struct TorrentPiecePriorityWindow: Equatable {
+    let piecesToDemote: [Int64]
+    let piecesToPromote: [Int64]
+
+    init(current: Set<Int64>, requested: Set<Int64>) {
+        piecesToDemote = current.subtracting(requested).sorted()
+        piecesToPromote = requested.subtracting(current).sorted()
+    }
+}
+
 actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabilityScheduling {
     private let descriptor: StremioTorrentDescriptor
     private var session: Session?
@@ -47,6 +58,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
     private var downloadRoot: URL?
     private var reader: TorrentDiskByteReader?
     private var preparedFile: TorrentPreparedFile?
+    private var prioritizedPieces = Set<Int64>()
 
     init(descriptor: StremioTorrentDescriptor) {
         self.descriptor = descriptor
@@ -134,9 +146,17 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             throw TorrentStreamingError.unsafeFilePath
         }
 
-        handle.setAllFilesPriority(FileEntry.Priority.lowPriority)
-        handle.setFilePriority(FileEntry.Priority.topPriority, at: Int(selectedFile.index))
-        handle.setSequentialDownload(true)
+        let selectedFileIndex = Int(selectedFile.index)
+        let otherFileIndexes = snapshot.files
+            .map { Int($0.index) }
+            .filter { $0 != selectedFileIndex }
+        if !otherFileIndexes.isEmpty {
+            handle.setFilesPriority(
+                FileEntry.Priority.dontDownload,
+                at: otherFileIndexes.map { NSNumber(value: $0) }
+            )
+        }
+        handle.setFilePriority(FileEntry.Priority.lowPriority, at: selectedFileIndex)
 
         try await waitForFile(at: fileURL, expectedLength: Int64(selectedFile.size))
         guard let verifiedFileURL = XITRIXTorrentFileSupport.safeFileURL(
@@ -172,18 +192,42 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
     func prioritize(pieces: Range<Int64>) async throws {
         try Task.checkCancellation()
         guard let handle else { throw TorrentStreamingError.engineUnavailable }
-        for piece in pieces {
+        let requestedPieces = Set(pieces)
+        guard !requestedPieces.isEmpty else { return }
+
+        handle.updateSnapshot()
+        guard let pieceStates = handle.snapshot.pieces else {
+            throw TorrentStreamingError.invalidTorrentLayout
+        }
+        let pieceCount = Int64(pieceStates.count)
+        guard requestedPieces.allSatisfy({ $0 >= 0 && $0 < pieceCount && $0 <= Int64(Int.max) }) else {
+            throw TorrentStreamingError.invalidTorrentLayout
+        }
+
+        let priorityWindow = TorrentPiecePriorityWindow(current: prioritizedPieces, requested: requestedPieces)
+        for piece in priorityWindow.piecesToDemote {
             try Task.checkCancellation()
-            guard piece >= 0,
-                  piece <= Int64(Int.max),
-                  handle.setPiecePriority(7, at: Int(piece)) else {
+            guard handle.setPiecePriority(1, at: Int(piece)) else {
                 throw TorrentStreamingError.invalidTorrentLayout
             }
         }
+        for piece in priorityWindow.piecesToPromote {
+            try Task.checkCancellation()
+            guard handle.setPiecePriority(7, at: Int(piece)) else {
+                throw TorrentStreamingError.invalidTorrentLayout
+            }
+        }
+        prioritizedPieces = requestedPieces
     }
 
     func waitUntilAvailable(pieces: Range<Int64>) async throws {
         guard let handle else { throw TorrentStreamingError.engineUnavailable }
+        guard !pieces.isEmpty else { return }
+        handle.updateSnapshot()
+        guard let initialPieceStates = handle.snapshot.pieces,
+              pieces.allSatisfy({ $0 >= 0 && $0 < Int64(initialPieceStates.count) }) else {
+            throw TorrentStreamingError.invalidTorrentLayout
+        }
         for _ in 0..<360 {
             try Task.checkCancellation()
             handle.updateSnapshot()
@@ -214,6 +258,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         }
         self.reader = nil
         self.preparedFile = nil
+        self.prioritizedPieces.removeAll()
         self.handle = nil
         self.session = nil
         self.downloadRoot = nil
