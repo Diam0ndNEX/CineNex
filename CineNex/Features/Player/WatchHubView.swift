@@ -874,10 +874,10 @@ struct WatchHubView: View {
         let engine = XITRIXTorrentPlaybackEngine(descriptor: descriptor)
         let provider = TorrentPlaybackProvider(engine: engine)
         defer {
-            if preparingTorrentDescriptorID == descriptor.id {
-                preparingTorrentDescriptorID = nil
-            }
             if torrentPreparationGeneration == preparationID {
+                if preparingTorrentDescriptorID == descriptor.id {
+                    preparingTorrentDescriptorID = nil
+                }
                 torrentPreparationTask = nil
             }
         }
