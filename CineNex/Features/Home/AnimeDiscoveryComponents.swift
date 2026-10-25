@@ -199,6 +199,18 @@ struct AnimeDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
+                    if let myAnimeListID = anime.myAnimeListID,
+                       let myAnimeListURL = URL(string: "https://myanimelist.net/anime/\(myAnimeListID)") {
+                        Link(destination: myAnimeListURL) {
+                            Label("View on MyAnimeList", systemImage: "arrow.up.right.square")
+                                .font(.subheadline.weight(.semibold))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .background(Color.cineNexSurface, in: Capsule())
+                        }
+                        .accessibilityHint("Opens this anime's MyAnimeList entry")
+                    }
+
                     if !anime.genres.isEmpty {
                         Text(anime.genres.joined(separator: " · "))
                             .font(.subheadline.weight(.medium))

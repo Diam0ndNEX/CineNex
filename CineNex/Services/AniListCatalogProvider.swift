@@ -12,6 +12,7 @@ struct AnimeTitle: Codable, Identifiable, Hashable {
     let genres: [String]
     let format: String?
     let status: String?
+    var myAnimeListID: Int? = nil
 }
 
 struct AniListCatalogProvider {
@@ -179,7 +180,8 @@ struct AniListCatalogProvider {
                     }
                 },
                 format: result.format,
-                status: result.status
+                status: result.status,
+                myAnimeListID: result.idMal.flatMap { $0 > 0 ? $0 : nil }
             )
         }
     }
@@ -189,6 +191,7 @@ struct AniListCatalogProvider {
       Page(page: $page, perPage: $perPage) {
         media(type: ANIME, search: $search, sort: SEARCH_MATCH, isAdult: false) {
           id
+          idMal
           title {
             romaji
             english
@@ -271,6 +274,7 @@ private struct AniListPage: Decodable {
 
 private struct AniListMedia: Decodable {
     let id: Int
+    let idMal: Int?
     let title: AniListTitle?
     let description: String?
     let episodes: Int?

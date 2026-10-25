@@ -10,6 +10,7 @@ final class AniListCatalogProviderTests: XCTestCase {
               "media": [
                 {
                   "id": 21,
+                  "idMal": 123,
                   "title": {
                     "romaji": "Kimi no Na wa",
                     "english": "Your Name",
@@ -36,6 +37,7 @@ final class AniListCatalogProviderTests: XCTestCase {
 
         XCTAssertEqual(items.count, 1)
         XCTAssertEqual(items[0].id, 21)
+        XCTAssertEqual(items[0].myAnimeListID, 123)
         XCTAssertEqual(items[0].title, "Your Name")
         XCTAssertEqual(items[0].nativeTitle, "君の名は。")
         XCTAssertEqual(items[0].synopsis, "A beautiful story & more. After that.")
