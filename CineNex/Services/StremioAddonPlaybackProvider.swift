@@ -80,7 +80,7 @@ struct CinemetaExternalIDResolver: PlaybackExternalIDResolving, Sendable {
         guard let encodedTitle = title.addingPercentEncoding(withAllowedCharacters: allowed) else {
             throw StremioAddonClientError.invalidRequest
         }
-        var components = URLComponents(string: "https://v3-cinemeta.strem.io/catalog/\(catalogType)/top/search=\(encodedTitle).json")
+        let components = URLComponents(string: "https://v3-cinemeta.strem.io/catalog/\(catalogType)/top/search=\(encodedTitle).json")
         guard let url = components?.url,
               url.scheme == "https",
               url.host == "v3-cinemeta.strem.io" else {

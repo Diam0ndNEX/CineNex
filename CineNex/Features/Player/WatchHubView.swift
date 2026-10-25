@@ -8,14 +8,19 @@ struct WatchHubView: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("cinenex.defaultPlaybackProvider") private var defaultProviderID = "smart"
-    @State private var stremioAddonManifestURLs = "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusionfortheweebs.midnightignite.me/manifest.json"
+    @State private var stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
     @State private var manifestStorageError: String?
+    @State private var manifestConfigurationLoaded = false
+    @State private var sourceSearchGeneration = UUID()
 
-    private static let legacyDefaultStremioAddonManifestURLText = "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
-    private static let defaultStremioAddonManifestURLText = "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusionfortheweebs.midnightignite.me/manifest.json"
+    private static let legacyDefaultStremioAddonManifestURLTexts: Set<String> = [
+        "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json",
+        "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusionfortheweebs.midnightignite.me/manifest.json"
+    ]
+    private static let defaultStremioAddonManifestURLText = "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
     private static let defaultStremioAddonManifestURLs: [URL] = [
         URL(string: "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json")!,
-        URL(string: "https://mediafusionfortheweebs.midnightignite.me/manifest.json")!
+        URL(string: "https://mediafusion.elfhosted.com/manifest.json")!
     ]
     @State private var selectedProvider: ResolvedEmbedSource?
     @State private var selectedDiscoveredSource: PlaybackSource?
@@ -82,13 +87,16 @@ struct WatchHubView: View {
                     discoveredSources.removeAll { $0.id == source.id }
                 }
             }
-            .task(id: item.id) {
-                loadStoredManifestConfiguration()
+            .task(id: request) {
+                if !manifestConfigurationLoaded {
+                    loadStoredManifestConfiguration()
+                    manifestConfigurationLoaded = true
+                }
                 resolveSources()
-                async let addonSearch: Void = searchStremioAddonSources()
-                async let catalogDetails: Void = loadCatalogDetails()
-                await addonSearch
-                await catalogDetails
+                await searchStremioAddonSources()
+            }
+            .task(id: item.id) {
+                await loadCatalogDetails()
             }
             .onDisappear {
                 torrentPreparationTask?.cancel()
@@ -716,7 +724,7 @@ struct WatchHubView: View {
                 .joined(separator: "\n")
             if let normalizedManifestURLs,
                !normalizedManifestURLs.isEmpty,
-               normalizedManifestURLs != Self.legacyDefaultStremioAddonManifestURLText {
+               !Self.legacyDefaultStremioAddonManifestURLTexts.contains(normalizedManifestURLs) {
                 stremioAddonManifestURLs = normalizedManifestURLs
             } else {
                 stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
@@ -748,13 +756,20 @@ struct WatchHubView: View {
         if configuredManifestURLs.isEmpty {
             stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
         }
+        let generation = UUID()
+        sourceSearchGeneration = generation
         await TorrentPlaybackSessionRegistry.shared.stopAll()
+        guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
         searchingAddonSources = true
         addonSearchMessage = nil
         torrentPreparationMessage = nil
         discoveredSources = []
         discoveredTorrentDescriptors = []
-        defer { searchingAddonSources = false }
+        defer {
+            if sourceSearchGeneration == generation {
+                searchingAddonSources = false
+            }
+        }
 
         do {
             let provider = try StremioAddonPlaybackProvider(
@@ -781,11 +796,13 @@ struct WatchHubView: View {
                 addonSearchMessage = "No playable sources were returned. CineNex searched by title automatically; try again later because add-ons can be temporarily unavailable or may require their own authentication."
             }
         } catch is CancellationError {
+            guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
             await TorrentPlaybackSessionRegistry.shared.stopAll()
             addonSearchMessage = "Source search was cancelled."
             discoveredSources = []
             discoveredTorrentDescriptors = []
         } catch {
+            guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
             addonSearchMessage = error.localizedDescription
             discoveredSources = []
             discoveredTorrentDescriptors = []
