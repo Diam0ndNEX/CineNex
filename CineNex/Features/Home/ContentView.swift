@@ -788,9 +788,15 @@ struct ContentView: View {
             }
             Spacer()
             Button {
-                Task { await loadCatalog(force: true) }
+                Task {
+                    if selectedHomeExperience == "anime" {
+                        await loadAnimeCatalog(force: true)
+                    } else {
+                        await loadCatalog(force: true)
+                    }
+                }
             } label: {
-                if catalogLoading {
+                if selectedHomeExperience == "anime" ? animeLoading : catalogLoading {
                     ProgressView()
                         .frame(width: 42, height: 42)
                 } else {
@@ -800,8 +806,8 @@ struct ContentView: View {
                         .background(Color.cineNexSurface, in: Circle())
                 }
             }
-            .disabled(catalogLoading)
-            .accessibilityLabel("Refresh catalog")
+            .disabled(selectedHomeExperience == "anime" ? animeLoading : catalogLoading)
+            .accessibilityLabel(selectedHomeExperience == "anime" ? "Refresh anime catalog" : "Refresh catalog")
             Button {
                 selectedTab = .search
             } label: {
