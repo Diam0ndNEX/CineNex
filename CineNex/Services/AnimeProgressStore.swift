@@ -20,18 +20,19 @@ final class AnimeProgressStore: ObservableObject {
         self.defaults = defaults
         self.storageKey = storageKey
 
+        let resolvedWatchedEpisodes: [Int: Int]
         if let data = defaults.data(forKey: storageKey),
            let saved = try? JSONDecoder().decode([Int: Int].self, from: data) {
-            watchedEpisodes = saved.reduce(into: [:]) { result, entry in
+            resolvedWatchedEpisodes = saved.reduce(into: [:]) { result, entry in
                 if entry.key > 0, entry.value > 0 {
                     result[entry.key] = entry.value
                 }
             }
         } else {
-            watchedEpisodes = [:]
+            resolvedWatchedEpisodes = [:]
         }
+        watchedEpisodes = resolvedWatchedEpisodes
 
-        let resolvedWatchedEpisodes = watchedEpisodes
         if let data = defaults.data(forKey: resolvedTitlesStorageKey),
            let saved = try? JSONDecoder().decode([AnimeTitle].self, from: data) {
             trackedAnime = saved
