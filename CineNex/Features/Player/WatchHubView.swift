@@ -150,6 +150,16 @@ struct WatchHubView: View {
             Button {
                 if (defaultProviderID == "smart" || defaultProviderID == "direct"), item.streamURL != nil {
                     onPlayDirect(item)
+                } else if defaultProviderID == "stremio-addons", let source = discoveredSources.first {
+                    selectedDiscoveredSource = source
+                } else if defaultProviderID == "libtorrent", let descriptor = discoveredTorrentDescriptors.first {
+                    startTorrentPlayback(for: descriptor)
+                } else if (defaultProviderID == "smart" || defaultProviderID == "direct"),
+                          let source = discoveredSources.first {
+                    selectedDiscoveredSource = source
+                } else if (defaultProviderID == "smart" || defaultProviderID == "libtorrent"),
+                          let descriptor = discoveredTorrentDescriptors.first {
+                    startTorrentPlayback(for: descriptor)
                 } else if (defaultProviderID == "smart" || defaultProviderID == "internet-archive"),
                           let source = internetArchiveSources.first {
                     playInternetArchiveSource(source)
@@ -157,6 +167,10 @@ struct WatchHubView: View {
                     selectedProvider = preferred
                 } else if let firstArchiveSource = internetArchiveSources.first {
                     playInternetArchiveSource(firstArchiveSource)
+                } else if let first = discoveredSources.first {
+                    selectedDiscoveredSource = first
+                } else if let descriptor = discoveredTorrentDescriptors.first {
+                    startTorrentPlayback(for: descriptor)
                 } else if let first = availableProviders.first {
                     selectedProvider = first
                 } else if item.streamURL != nil {
@@ -169,7 +183,7 @@ struct WatchHubView: View {
                     .padding(.vertical, 15)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(availableProviders.isEmpty && internetArchiveSources.isEmpty && item.streamURL == nil)
+            .disabled(availableProviders.isEmpty && internetArchiveSources.isEmpty && discoveredSources.isEmpty && discoveredTorrentDescriptors.isEmpty && item.streamURL == nil)
             .accessibilityHint("Starts the preferred available playback source")
 
             Picker("Default source", selection: $defaultProviderID) {
@@ -179,6 +193,12 @@ struct WatchHubView: View {
                 }
                 ForEach(availableProviders) { source in
                     Text(source.provider.displayName).tag(source.provider.id)
+                }
+                if !discoveredSources.isEmpty {
+                    Text("Stremio add-ons").tag("stremio-addons")
+                }
+                if !discoveredTorrentDescriptors.isEmpty {
+                    Text("Torrent streaming").tag("libtorrent")
                 }
                 if item.kind == .movie {
                     Text("Internet Archive · open-license metadata").tag("internet-archive")
@@ -200,7 +220,7 @@ struct WatchHubView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("\(availableProviders.count + internetArchiveSources.count + (item.streamURL == nil ? 0 : 1)) sources")
+                Text("\(availableProviders.count + internetArchiveSources.count + discoveredSources.count + discoveredTorrentDescriptors.count + (item.streamURL == nil ? 0 : 1)) sources")
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -365,6 +385,8 @@ struct WatchHubView: View {
 
             if availableProviders.isEmpty &&
                 internetArchiveSources.isEmpty &&
+                discoveredSources.isEmpty &&
+                discoveredTorrentDescriptors.isEmpty &&
                 !internetArchiveSourcesLoading &&
                 !searchingAddonSources &&
                 item.streamURL == nil {
