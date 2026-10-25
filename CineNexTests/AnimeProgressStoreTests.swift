@@ -16,6 +16,7 @@ final class AnimeProgressStoreTests: XCTestCase {
         XCTAssertEqual(store.watchedEpisodeCount(for: anime), 12)
         let restored = AnimeProgressStore(defaults: defaults, storageKey: key)
         XCTAssertEqual(restored.watchedEpisodeCount(for: anime), 12)
+        XCTAssertEqual(restored.trackedAnime.map(\.id), [anime.id])
     }
 
     func testUnknownEpisodeCountAllowsProgressAndNegativeValuesResetIt() {
@@ -27,9 +28,11 @@ final class AnimeProgressStoreTests: XCTestCase {
 
         store.setWatchedEpisodeCount(4, for: anime)
         XCTAssertEqual(store.watchedEpisodeCount(for: anime), 4)
+        XCTAssertEqual(store.trackedAnime.map(\.id), [anime.id])
 
         store.setWatchedEpisodeCount(-2, for: anime)
         XCTAssertEqual(store.watchedEpisodeCount(for: anime), 0)
+        XCTAssertTrue(store.trackedAnime.isEmpty)
     }
 
     func testResetProgressIsIdempotent() {
