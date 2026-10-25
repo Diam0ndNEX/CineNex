@@ -75,7 +75,7 @@ struct AniListCatalogProvider {
             throw AniListCatalogError.api(firstError)
         }
 
-        guard let results = envelope.data?.page.media else {
+        guard let results = envelope.data?.page?.media else {
             throw AniListCatalogError.invalidData
         }
 
