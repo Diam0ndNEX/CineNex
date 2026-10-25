@@ -64,6 +64,125 @@ private struct TMDBExternalIDsResponse: Decodable {
     }
 }
 
+struct CinemetaExternalIDResolver: PlaybackExternalIDResolving, Sendable {
+    private let session: URLSession
+
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
+
+    func imdbID(for request: PlaybackSourceRequest) async throws -> String? {
+        let title = request.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+
+        var components = URLComponents(string: "https://v3-cinemeta.strem.io/catalog/\(request.mediaKind == .movie ? "movie" : "series")/top.json")
+        components?.queryItems = [URLQueryItem(name: "search", value: title)]
+        guard let url = components?.url,
+              url.scheme == "https",
+              url.host == "v3-cinemeta.strem.io" else {
+            throw StremioAddonClientError.invalidRequest
+        }
+
+        var networkRequest = URLRequest(url: url)
+        networkRequest.timeoutInterval = 10
+        networkRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: networkRequest)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            if Task.isCancelled { throw CancellationError() }
+            throw StremioAddonClientError.transport("Cinemeta title lookup failed: \(error.localizedDescription)")
+        }
+
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode),
+              data.count <= 1_000_000 else {
+            throw StremioAddonClientError.invalidResponse
+        }
+
+        let catalog: CinemetaCatalogResponse
+        do {
+            catalog = try JSONDecoder().decode(CinemetaCatalogResponse.self, from: data)
+        } catch {
+            throw StremioAddonClientError.invalidResponse
+        }
+
+        let normalizedTitle = Self.normalized(title)
+        let expectedType = request.mediaKind == .movie ? "movie" : "series"
+        let exactMatches = catalog.metas.filter { meta in
+            meta.type == expectedType
+                && Self.normalized(meta.name) == normalizedTitle
+                && meta.id.range(of: "^tt[0-9]{5,12}$", options: .regularExpression) != nil
+        }
+        guard !exactMatches.isEmpty else { return nil }
+
+        if let releaseYear = request.releaseYear, releaseYear > 0 {
+            let yearMatches = exactMatches.filter { meta in
+                guard let releaseInfo = meta.releaseInfo,
+                      let year = Int(releaseInfo.prefix(4)) else { return false }
+                return year == releaseYear
+            }
+            if let match = yearMatches.first { return match.id }
+            let yearUnknown = exactMatches.filter { meta in
+                guard let releaseInfo = meta.releaseInfo else { return true }
+                return Int(releaseInfo.prefix(4)) == nil
+            }
+            return yearUnknown.count == 1 ? yearUnknown.first?.id : nil
+        }
+
+        let uniqueIDs = Array(Set(exactMatches.map(\.id)))
+        return uniqueIDs.count == 1 ? uniqueIDs.first : nil
+    }
+
+    private static func normalized(_ value: String) -> String {
+        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct CinemetaCatalogResponse: Decodable {
+    let metas: [CinemetaCatalogEntry]
+}
+
+private struct CinemetaCatalogEntry: Decodable {
+    let id: String
+    let type: String
+    let name: String
+    let releaseInfo: String?
+}
+
+struct AutomaticExternalIDResolver: PlaybackExternalIDResolving, Sendable {
+    private let tmdbReadAccessToken: String?
+    private let session: URLSession
+
+    init(tmdbReadAccessToken: String?, session: URLSession = .shared) {
+        let token = tmdbReadAccessToken?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.tmdbReadAccessToken = token.flatMap { $0.isEmpty ? nil : $0 }
+        self.session = session
+    }
+
+    func imdbID(for request: PlaybackSourceRequest) async throws -> String? {
+        if let token = tmdbReadAccessToken {
+            do {
+                if let imdbID = try await TMDBExternalIDResolver(readAccessToken: token, session: session).imdbID(for: request) {
+                    return imdbID
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                guard !Task.isCancelled else { throw CancellationError() }
+            }
+        }
+        return try await CinemetaExternalIDResolver(session: session).imdbID(for: request)
+    }
+}
+
 struct StremioAddonDiscovery: Equatable, Sendable {
     let sources: [PlaybackSource]
     let torrentDescriptors: [StremioTorrentDescriptor]

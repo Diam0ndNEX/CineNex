@@ -239,7 +239,7 @@ struct WatchHubView: View {
                 .disabled(searchingAddonSources || preparingTorrentDescriptorID != nil)
                 .accessibilityHint("Queries configured Stremio-compatible add-ons for this title or episode")
 
-                Text("Torrentio and MediaFusion are preconfigured. Edit the manifest URLs to use your own instance or a configured add-on URL with custom filters or debrid settings.")
+                Text("CineNex searches the built-in sources automatically. You do not need to add a TMDB token or configure a provider to start a search.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 HStack(spacing: 14) {
@@ -252,7 +252,7 @@ struct WatchHubView: View {
                     .font(.caption.weight(.medium))
                 }
                 .font(.caption.weight(.medium))
-                Text("One HTTPS manifest URL per line. Configured add-on URLs may include a custom path; keep private configuration URLs on your device.")
+                Text("Advanced: one HTTPS manifest URL per line. Custom add-on URLs stay in the iOS Keychain on this device.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 TextEditor(text: $stremioAddonManifestURLs)
@@ -682,20 +682,6 @@ struct WatchHubView: View {
         if configuredManifestURLs.isEmpty {
             stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
         }
-        guard request.tmdbID != nil else {
-            addonSearchMessage = "This catalog item has no TMDB identifier, so CineNex cannot resolve its IMDb ID for add-on lookup."
-            discoveredSources = []
-            discoveredTorrentDescriptors = []
-            return
-        }
-        guard let token = TMDBTokenStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !token.isEmpty else {
-            addonSearchMessage = "A TMDB Read Access Token is needed to resolve this title to the IMDb ID used by many add-ons."
-            discoveredSources = []
-            discoveredTorrentDescriptors = []
-            return
-        }
-
         await TorrentPlaybackSessionRegistry.shared.stopAll()
         searchingAddonSources = true
         addonSearchMessage = nil
@@ -707,7 +693,7 @@ struct WatchHubView: View {
         do {
             let provider = try StremioAddonPlaybackProvider(
                 manifestURLs: manifestURLs,
-                externalIDResolver: TMDBExternalIDResolver(readAccessToken: token)
+                externalIDResolver: AutomaticExternalIDResolver(tmdbReadAccessToken: TMDBTokenStore.load())
             )
             let discovery = try await provider.discover(for: request)
             let torrentDescriptors = Array(
@@ -726,7 +712,7 @@ struct WatchHubView: View {
             } else if !torrentDescriptors.isEmpty {
                 addonSearchMessage = "Found \(torrentDescriptors.count) torrent option(s). Select one to prepare native playback."
             } else {
-                addonSearchMessage = "No playable direct URLs or valid torrent descriptors were returned. Add-ons may be unavailable or may require authentication."
+                addonSearchMessage = "No playable sources were returned. CineNex searched by title automatically; try again later because add-ons can be temporarily unavailable or may require their own authentication."
             }
         } catch is CancellationError {
             await TorrentPlaybackSessionRegistry.shared.stopAll()

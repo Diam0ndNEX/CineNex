@@ -1526,25 +1526,29 @@ private struct MediaDetailView: View {
 
                 HStack(spacing: 12) {
                     Button(action: onPlay) {
-                        Label(item.streamURL == nil ? "Source unavailable" : "Play now", systemImage: "play.fill")
+                        Label(item.streamURL == nil ? "Find sources" : "Play now", systemImage: item.streamURL == nil ? "dot.radiowaves.left.and.right" : "play.fill")
+                            .font(.headline)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.vertical, 15)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(item.streamURL == nil)
+                    .accessibilityHint(item.streamURL == nil ? "Search built-in playback providers for this movie or series" : "Start playback")
 
                     Button(action: onFavoriteToggle) {
                         Label(isFavorite ? "Saved" : "Save", systemImage: isFavorite ? "bookmark.fill" : "bookmark")
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.vertical, 15)
                     }
                     .buttonStyle(.bordered)
                 }
+                .padding(14)
+                .background(Color.cineNexSurface.opacity(0.82), in: RoundedRectangle(cornerRadius: 18))
 
                 if item.streamURL == nil {
-                    Label("Playback will become available when a compatible provider supplies a source.", systemImage: "info.circle")
+                    Label("No direct link is attached to this title. Find sources opens CineNex's automatic provider search; it does not require a manual TMDB token.", systemImage: "dot.radiowaves.left.and.right")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else if let sourceURL = item.streamURL {
                     let eligible = OfflineDownloadStore.supportsOfflineDownload(from: sourceURL)
                     Button {

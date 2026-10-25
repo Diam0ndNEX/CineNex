@@ -3,6 +3,37 @@ import XCTest
 @testable import CineNex
 
 final class StremioAddonPlaybackProviderTests: XCTestCase {
+    func testCinemetaResolverFindsExactTitleWithoutTMDBToken() async throws {
+        ProviderStubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.host, "v3-cinemeta.strem.io")
+            XCTAssertEqual(request.url?.path, "/catalog/movie/top.json")
+            XCTAssertEqual(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "search" })?.value, "Example Film")
+            let payload = #"{"metas":[{"id":"tt1111111","type":"movie","name":"Different Film","releaseInfo":"2024"},{"id":"tt1234567","type":"movie","name":"Example Film","releaseInfo":"2024"}]}"#
+            return (self.response(request, 200), Data(payload.utf8))
+        }
+        let resolver = AutomaticExternalIDResolver(tmdbReadAccessToken: nil, session: makeSession())
+
+        let id = try await resolver.imdbID(
+            for: PlaybackSourceRequest(title: "Example Film", mediaKind: .movie, releaseYear: 2024)
+        )
+
+        XCTAssertEqual(id, "tt1234567")
+    }
+
+    func testCinemetaResolverRejectsSameTitleWithWrongYear() async throws {
+        ProviderStubURLProtocol.handler = { request in
+            let payload = #"{"metas":[{"id":"tt1234567","type":"movie","name":"Example Film","releaseInfo":"2018"}]}"#
+            return (self.response(request, 200), Data(payload.utf8))
+        }
+        let resolver = CinemetaExternalIDResolver(session: makeSession())
+
+        let id = try await resolver.imdbID(
+            for: PlaybackSourceRequest(title: "Example Film", mediaKind: .movie, releaseYear: 2024)
+        )
+
+        XCTAssertNil(id)
+    }
+
     func testCancelledProviderRequestStopsBeforeExternalNetworking() async {
         let provider = try! StremioAddonPlaybackProvider(
             manifestURLs: [
