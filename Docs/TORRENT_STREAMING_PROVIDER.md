@@ -34,3 +34,8 @@ The currently recognized file extensions are MP4, M4V, MOV, MP3, M4A, AAC, and W
 The merged GitHub Actions workflow passed for the XITRIX wrapper builds for iOS and simulator, simulator app build, XCTest suite, unsigned device build, and unsigned IPA packaging. Tests cover HTTP range and HEAD behavior, invalid bearer tokens and malformed requests, disk-reader bounds and short reads, cancellation, piece-range mapping, file path confinement, descriptor validation, and the wrapper patcher.
 
 A green simulator workflow does not prove real-world torrent playback on a physical iPhone. Before claiming end-to-end playback success, test a known legal/public-domain torrent on-device, including metadata acquisition, startup buffering, seeking, cancellation, and cleanup. The XITRIX wrapper repository currently has no GitHub license declaration; resolve its redistribution terms before publicly distributing an app that bundles the dependency. The generated CI IPA is unsigned and must be signed before installation.
+
+
+## SceneBox-inspired playback deadlines
+
+CineNex assigns libtorrent deadlines to the exact piece range required by each byte-range read. Pieces are scheduled in ascending playback order at 80 ms intervals, capped at 60 seconds for unusually large ranges. When a later read moves the playback window, deadlines for pieces no longer in the requested range are cleared. This supplements piece priorities: priorities guide general selection, while deadlines make the currently requested bytes urgent. The pure `TorrentPieceDeadlinePlan` validates ranges and delay bounds and is covered by unit tests. The native bridge is applied by the CI patcher and is built for both device and simulator targets before app tests run.
