@@ -15,6 +15,29 @@ FILE_ENTRY_INTERNAL_METHOD = "@property (readwrite, nonatomic) uint64_t fileOffs
 FILE_OFFSET_ASSIGNMENT = "fileEntry.fileOffset = static_cast<uint64_t>(layout.file_offset(fileIndex));"
 PIECE_LENGTH_METHOD = "@property (readonly) uint32_t pieceLength;"
 PIECE_LENGTH_GETTER = "- (uint32_t)pieceLength {"
+IMPLEMENTATION = """- (BOOL)setPiecePriority:(NSInteger)priority at:(NSInteger)pieceIndex {
+    if (pieceIndex < 0 || priority < 0 || priority > 7) {
+        return NO;
+    }
+
+    __block BOOL didSetPriority = NO;
+    [self performOperation:@"setPiecePriority" action:^(lt::torrent_handle const &handle) {
+        auto torrentInfo = handle.torrent_file();
+        if (torrentInfo == nullptr || pieceIndex >= torrentInfo->num_pieces()) {
+            return;
+        }
+
+        handle.piece_priority(
+            lt::piece_index_t(static_cast<int>(pieceIndex)),
+            lt::download_priority_t(static_cast<int>(priority))
+        );
+        didSetPriority = YES;
+    }];
+    return didSetPriority;
+}
+
+"""
+
 DEADLINE_IMPLEMENTATION = """- (BOOL)setPieceDeadline:(NSInteger)milliseconds at:(NSInteger)pieceIndex {
     if (pieceIndex < 0 || milliseconds < 0 || milliseconds > 60000) {
         return NO;
