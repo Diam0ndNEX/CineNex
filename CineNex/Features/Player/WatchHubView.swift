@@ -22,8 +22,7 @@ struct WatchHubView: View {
         URL(string: "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json")!,
         URL(string: "https://mediafusion.elfhosted.com/manifest.json")!
     ]
-    @State private var selectedProvider: ResolvedEmbedSource?
-    @State private var selectedDiscoveredSource: PlaybackSource?
+    @State private var activePlaybackSheet: WatchPlaybackSheet?
     @State private var discoveredSources: [PlaybackSource] = []
     @State private var discoveredTorrentDescriptors: [StremioTorrentDescriptor] = []
     @State private var preparingTorrentDescriptorID: String?
@@ -74,17 +73,19 @@ struct WatchHubView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .sheet(item: $selectedProvider) { provider in
-                EmbedWebPlaybackView(
-                    title: item.title,
-                    providerID: provider.provider.id,
-                    providerName: provider.provider.displayName,
-                    url: provider.url
-                )
-            }
-            .sheet(item: $selectedDiscoveredSource) { source in
-                DiscoveredSourcePlaybackView(source: source) {
-                    discoveredSources.removeAll { $0.id == source.id }
+            .sheet(item: $activePlaybackSheet) { playbackSheet in
+                switch playbackSheet {
+                case .embedded(let provider):
+                    EmbedWebPlaybackView(
+                        title: item.title,
+                        providerID: provider.provider.id,
+                        providerName: provider.provider.displayName,
+                        url: provider.url
+                    )
+                case .discovered(let source):
+                    DiscoveredSourcePlaybackView(source: source) {
+                        discoveredSources.removeAll { $0.id == source.id }
+                    }
                 }
             }
             .task(id: request) {
@@ -191,23 +192,23 @@ struct WatchHubView: View {
                 } else if (defaultProviderID == "smart" || defaultProviderID == "direct"), item.streamURL != nil {
                     onPlayDirect(item)
                 } else if defaultProviderID == "stremio-addons", let source = discoveredSources.first {
-                    selectedDiscoveredSource = source
+                    activePlaybackSheet = .discovered(source)
                 } else if defaultProviderID == "libtorrent", let descriptor = discoveredTorrentDescriptors.first {
                     startTorrentPlayback(for: descriptor)
                 } else if (defaultProviderID == "smart" || defaultProviderID == "direct"),
                           let source = discoveredSources.first {
-                    selectedDiscoveredSource = source
+                    activePlaybackSheet = .discovered(source)
                 } else if (defaultProviderID == "smart" || defaultProviderID == "libtorrent"),
                           let descriptor = discoveredTorrentDescriptors.first {
                     startTorrentPlayback(for: descriptor)
                 } else if let preferred = availableProviders.first(where: { $0.provider.id == defaultProviderID }) {
-                    selectedProvider = preferred
+                    activePlaybackSheet = .embedded(preferred)
                 } else if let first = discoveredSources.first {
-                    selectedDiscoveredSource = first
+                    activePlaybackSheet = .discovered(first)
                 } else if let descriptor = discoveredTorrentDescriptors.first {
                     startTorrentPlayback(for: descriptor)
                 } else if let first = availableProviders.first {
-                    selectedProvider = first
+                    activePlaybackSheet = .embedded(first)
                 } else if item.streamURL != nil {
                     onPlayDirect(item)
                 } else {
@@ -362,7 +363,7 @@ struct WatchHubView: View {
                 }
                 ForEach(discoveredSources) { source in
                     Button {
-                        selectedDiscoveredSource = source
+                        activePlaybackSheet = .discovered(source)
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: source.supportsNativePlayback ? "play.fill" : "play.rectangle.fill")
@@ -482,7 +483,7 @@ struct WatchHubView: View {
             if !availableProviders.isEmpty {
                 ForEach(availableProviders) { source in
                     Button {
-                        selectedProvider = source
+                        activePlaybackSheet = .embedded(source)
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "play.rectangle.fill")
@@ -843,7 +844,7 @@ struct WatchHubView: View {
                 torrentPreparationMessage = "This torrent did not contain a playable file supported by CineNex."
                 return
             }
-            selectedDiscoveredSource = source
+            activePlaybackSheet = .discovered(source)
             torrentPreparationMessage = "Torrent source is ready. Opening the native player."
         } catch is CancellationError {
             await provider.stop()
@@ -869,6 +870,20 @@ struct WatchHubView: View {
            !(defaultProviderID == "direct" && item.streamURL != nil),
            !availableProviders.contains(where: { $0.provider.id == defaultProviderID }) {
             defaultProviderID = "smart"
+        }
+    }
+}
+
+private enum WatchPlaybackSheet: Identifiable {
+    case embedded(ResolvedEmbedSource)
+    case discovered(PlaybackSource)
+
+    var id: String {
+        switch self {
+        case .embedded(let source):
+            return "embedded:\(source.id)"
+        case .discovered(let source):
+            return "discovered:\(source.id)"
         }
     }
 }
