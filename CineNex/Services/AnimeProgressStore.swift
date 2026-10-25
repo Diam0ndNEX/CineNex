@@ -31,10 +31,11 @@ final class AnimeProgressStore: ObservableObject {
             watchedEpisodes = [:]
         }
 
+        let resolvedWatchedEpisodes = watchedEpisodes
         if let data = defaults.data(forKey: resolvedTitlesStorageKey),
            let saved = try? JSONDecoder().decode([AnimeTitle].self, from: data) {
             trackedAnime = saved
-                .filter { $0.id > 0 && watchedEpisodes[$0.id, default: 0] > 0 }
+                .filter { $0.id > 0 && resolvedWatchedEpisodes[$0.id, default: 0] > 0 }
                 .reduce(into: [AnimeTitle]()) { result, anime in
                     if !result.contains(where: { $0.id == anime.id }) {
                         result.append(anime)
