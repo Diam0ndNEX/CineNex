@@ -62,6 +62,50 @@ struct AniListCatalogProvider {
         return try Self.mapResponse(data)
     }
 
+    func searchAnime(query: String, page: Int = 1, perPage: Int = 20) async throws -> [AnimeTitle] {
+        let cleanedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanedQuery.isEmpty else {
+            throw AniListCatalogError.emptyQuery
+        }
+        guard page > 0, (1...50).contains(perPage) else {
+            throw AniListCatalogError.invalidPagination
+        }
+
+        var request = URLRequest(url: Self.endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 20
+        request.httpBody = try JSONEncoder().encode(
+            AniListGraphQLRequest(
+                query: Self.searchQuery,
+                variables: AniListVariables(page: page, perPage: perPage, search: cleanedQuery)
+            )
+        )
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw AniListCatalogError.network(error.localizedDescription)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw AniListCatalogError.invalidResponse
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 429 {
+                throw AniListCatalogError.rateLimited
+            }
+            throw AniListCatalogError.server(http.statusCode)
+        }
+
+        return try Self.mapResponse(data)
+    }
+
     static func mapResponse(_ data: Data) throws -> [AnimeTitle] {
         let envelope: AniListEnvelope
         do {
@@ -140,6 +184,31 @@ struct AniListCatalogProvider {
         }
     }
 
+    private static let searchQuery = """
+    query SearchAnime($page: Int!, $perPage: Int!, $search: String!) {
+      Page(page: $page, perPage: $perPage) {
+        media(type: ANIME, search: $search, sort: SEARCH_MATCH, isAdult: false) {
+          id
+          title {
+            romaji
+            english
+            native
+          }
+          description(asHtml: false)
+          episodes
+          seasonYear
+          averageScore
+          coverImage {
+            large
+          }
+          genres
+          format
+          status
+        }
+      }
+    }
+    """
+
     private static let trendingQuery = """
     query TrendingAnime($page: Int!, $perPage: Int!) {
       Page(page: $page, perPage: $perPage) {
@@ -174,6 +243,7 @@ private struct AniListGraphQLRequest: Encodable {
 private struct AniListVariables: Encodable {
     let page: Int
     let perPage: Int
+    let search: String? = nil
 }
 
 private struct AniListEnvelope: Decodable {
@@ -221,6 +291,7 @@ private struct AniListGraphQLError: Decodable {
 }
 
 enum AniListCatalogError: LocalizedError {
+    case emptyQuery
     case invalidPagination
     case invalidResponse
     case invalidData
@@ -231,6 +302,8 @@ enum AniListCatalogError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .emptyQuery:
+            return "Enter an anime title to search AniList."
         case .invalidPagination:
             return "Choose a page above zero and between 1 and 50 anime per page."
         case .invalidResponse:
