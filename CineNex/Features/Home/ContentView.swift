@@ -590,7 +590,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Discover")
                     .font(.largeTitle.bold())
-                TextField("Search movies, series, genres…", text: $searchText)
+                TextField("Search movies and series…", text: $searchText)
                     .textFieldStyle(.plain)
                     .padding(14)
                     .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14))
@@ -603,7 +603,7 @@ struct ContentView: View {
                 } label: {
                     HStack {
                         if remoteSearchLoading { ProgressView().tint(.white) } else { Image(systemName: "globe") }
-                        Text(remoteSearchLoading ? "Searching TMDB…" : "Search TMDB")
+                        Text(remoteSearchLoading ? "Searching titles…" : "Search titles")
                         Spacer()
                         Image(systemName: "arrow.right")
                     }
@@ -944,16 +944,17 @@ struct ContentView: View {
     private func loadCatalog(force: Bool = false) async {
         let token = TMDBTokenStore.load()?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !token.isEmpty else {
-            catalogError = nil
-            return
-        }
         guard force || !catalogLoading else { return }
 
         catalogLoading = true
         defer { catalogLoading = false }
         do {
-            let liveCatalog = try await TMDBCatalogProvider(readAccessToken: token).fetchCatalog()
+            let liveCatalog: [MediaItem]
+            if token.isEmpty {
+                liveCatalog = try await CinemetaCatalogProvider().fetchCatalog()
+            } else {
+                liveCatalog = try await TMDBCatalogProvider(readAccessToken: token).fetchCatalog()
+            }
             guard !Task.isCancelled else { return }
             guard !liveCatalog.isEmpty else {
                 catalogError = "TMDB returned no trending titles. Showing the last saved catalog."
@@ -978,25 +979,32 @@ struct ContentView: View {
         guard !query.isEmpty else { return }
         let token = TMDBTokenStore.load()?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !token.isEmpty else {
-            remoteSearchError = "Connect TMDB in Tracking to search the full catalog."
-            remoteSearchQuery = ""
-            return
-        }
         remoteSearchLoading = true
         remoteSearchError = nil
         defer { remoteSearchLoading = false }
         do {
-            let page = try await TMDBCatalogProvider(readAccessToken: token).searchPage(query: query, page: 1)
+            let results: [MediaItem]
+            let pageNumber: Int
+            let totalPages: Int
+            if token.isEmpty {
+                results = try await CinemetaCatalogProvider().search(query: query)
+                pageNumber = 1
+                totalPages = 1
+            } else {
+                let page = try await TMDBCatalogProvider(readAccessToken: token).searchPage(query: query, page: 1)
+                results = page.items
+                pageNumber = page.page
+                totalPages = page.totalPages
+            }
             guard !Task.isCancelled,
                   searchText.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(query) == .orderedSame else {
                 return
             }
-            remoteSearchResults = page.items
+            remoteSearchResults = results
             remoteSearchQuery = query
-            remoteSearchPage = page.page
-            remoteSearchTotalPages = page.totalPages
-            if page.items.isEmpty { remoteSearchError = "TMDB found no matching movies or series." }
+            remoteSearchPage = pageNumber
+            remoteSearchTotalPages = totalPages
+            if results.isEmpty { remoteSearchError = "No matching movies or series were found." }
         } catch is CancellationError {
             return
         } catch {
