@@ -124,7 +124,7 @@ struct AniListCatalogProvider {
         }
 
         var seenIDs = Set<Int>()
-        return results.compactMap { result in
+        return results.compactMap { result -> AnimeTitle? in
             guard result.id > 0 else {
                 return nil
             }
