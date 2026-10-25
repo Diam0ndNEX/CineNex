@@ -193,17 +193,19 @@ final class StremioAddonPlaybackProviderTests: XCTestCase {
         XCTAssertEqual(discovery.torrentDescriptors.count, 1)
         XCTAssertEqual(discovery.torrentDescriptors.first?.providerName, "Torrentio")
         XCTAssertEqual(discovery.providerStatuses.count, 2)
-        XCTAssertTrue(discovery.providerStatuses.contains {
-            $0.name == "Torrentio" && {
-                if case .found(_, torrentSourceCount: 1) = $0.outcome { return true }
-                return false
-            }()
+        XCTAssertTrue(discovery.providerStatuses.contains { status in
+            guard status.name == "Torrentio" else { return false }
+            if case .found(directSourceCount: _, torrentSourceCount: 1) = status.outcome {
+                return true
+            }
+            return false
         })
-        XCTAssertTrue(discovery.providerStatuses.contains {
-            $0.name == "MediaFusion" && {
-                if case .failed = $0.outcome { return true }
-                return false
-            }()
+        XCTAssertTrue(discovery.providerStatuses.contains { status in
+            guard status.name == "MediaFusion" else { return false }
+            if case .failed = status.outcome {
+                return true
+            }
+            return false
         })
     }
 
