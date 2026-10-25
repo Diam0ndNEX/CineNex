@@ -134,7 +134,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             throw TorrentStreamingError.unsafeFilePath
         }
 
-        handle.setAllFilesPriority(FileEntry.Priority.dontDownload)
+        handle.setAllFilesPriority(FileEntry.Priority.lowPriority)
         handle.setFilePriority(FileEntry.Priority.topPriority, at: Int(selectedFile.index))
         handle.setSequentialDownload(true)
         handle.setFirstLastPriorityDownload(true)
