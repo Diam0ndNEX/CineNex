@@ -24,6 +24,7 @@ struct WatchHubView: View {
     ]
     @State private var activePlaybackSheet: WatchPlaybackSheet?
     @State private var discoveredSources: [PlaybackSource] = []
+    @State private var selectedSourceFilter = "All"
     @State private var discoveredTorrentDescriptors: [StremioTorrentDescriptor] = []
     @State private var preparingTorrentDescriptorID: String?
     @State private var torrentPreparationMessage: String?
@@ -52,6 +53,29 @@ struct WatchHubView: View {
             seasonNumber: item.kind == .series ? seasonNumber : nil,
             episodeNumber: item.kind == .series ? episodeNumber : nil
         )
+    }
+
+    private var visibleDirectSources: [PlaybackSource] {
+        selectedSourceFilter == "All" || selectedSourceFilter == "Direct" ? discoveredSources : []
+    }
+
+    private var visibleTorrentSources: [StremioTorrentDescriptor] {
+        selectedSourceFilter == "All" || selectedSourceFilter == "Torrent" ? discoveredTorrentDescriptors : []
+    }
+
+    private var visibleEmbeddedSources: [ResolvedEmbedSource] {
+        selectedSourceFilter == "All" || selectedSourceFilter == "Web" ? availableProviders : []
+    }
+
+    private var showsDirectPlayback: Bool {
+        selectedSourceFilter == "All" || selectedSourceFilter == "Direct"
+    }
+
+    private var hasVisibleSources: Bool {
+        !visibleDirectSources.isEmpty
+            || !visibleTorrentSources.isEmpty
+            || !visibleEmbeddedSources.isEmpty
+            || (showsDirectPlayback && item.streamURL != nil)
     }
 
     var body: some View {
@@ -299,7 +323,15 @@ struct WatchHubView: View {
                 .disabled(searchingAddonSources || preparingTorrentDescriptorID != nil)
                 .accessibilityHint("Queries configured Stremio-compatible add-ons for this title or episode")
 
-                Text("CineNex searches the built-in sources automatically. You do not need to add a TMDB token or configure a provider to start a search.")
+                Picker("Source type", selection: $selectedSourceFilter) {
+                    ForEach(["All", "Direct", "Torrent", "Web"], id: \.self) { category in
+                        Text(category).tag(category)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityLabel("Filter playback sources by type")
+
+                Text("Tap a source to test it. Direct links, torrent streams, and experimental web players are shown separately.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 DisclosureGroup {
@@ -370,12 +402,12 @@ struct WatchHubView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if !discoveredSources.isEmpty {
+                if !visibleDirectSources.isEmpty {
                     Label("Direct stream links", systemImage: "play.rectangle")
                         .font(.subheadline.weight(.semibold))
                         .padding(.top, 4)
                 }
-                ForEach(discoveredSources) { source in
+                ForEach(visibleDirectSources) { source in
                     Button {
                         activePlaybackSheet = .discovered(source)
                     } label: {
@@ -405,13 +437,13 @@ struct WatchHubView: View {
                     .accessibilityLabel("Play source: \(source.title)")
                 }
                 
-                if !discoveredTorrentDescriptors.isEmpty {
-                    let providerNames = Array(Set(discoveredTorrentDescriptors.map(\.providerName))).sorted()
+                if !visibleTorrentSources.isEmpty {
+                    let providerNames = Array(Set(visibleTorrentSources.map(\.providerName))).sorted()
                     Label("Torrent sources · \(providerNames.joined(separator: " · "))", systemImage: "arrow.down.circle")
                         .font(.subheadline.weight(.semibold))
                         .padding(.top, 4)
                 }
-                ForEach(discoveredTorrentDescriptors) { descriptor in
+                ForEach(visibleTorrentSources) { descriptor in
                     Button {
                         startTorrentPlayback(for: descriptor)
                     } label: {
@@ -456,7 +488,7 @@ struct WatchHubView: View {
 
             }
 
-            if item.streamURL != nil {
+            if showsDirectPlayback && item.streamURL != nil {
                 Button {
                     onPlayDirect(item)
                 } label: {
@@ -487,11 +519,7 @@ struct WatchHubView: View {
                 .accessibilityHint("Plays the supplied media URL in CineNex's native player")
             }
 
-            if availableProviders.isEmpty &&
-                discoveredSources.isEmpty &&
-                discoveredTorrentDescriptors.isEmpty &&
-                !searchingAddonSources &&
-                item.streamURL == nil {
+            if !hasVisibleSources && !searchingAddonSources {
                 ContentUnavailableView(
                     "No compatible sources found",
                     systemImage: "dot.radiowaves.left.and.right",
@@ -502,7 +530,7 @@ struct WatchHubView: View {
                 .padding(.vertical, 8)
             }
 
-            if !availableProviders.isEmpty {
+            if !visibleEmbeddedSources.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Embedded websites", systemImage: "globe")
                         .font(.subheadline.weight(.semibold))
@@ -513,7 +541,7 @@ struct WatchHubView: View {
                 }
                 .padding(.top, 4)
 
-                ForEach(availableProviders) { source in
+                ForEach(visibleEmbeddedSources) { source in
                     Button {
                         activePlaybackSheet = .embedded(source)
                     } label: {
