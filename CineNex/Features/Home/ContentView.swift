@@ -40,7 +40,6 @@ struct ContentView: View {
     @State private var selectedItem: MediaItem?
     @State private var activePlayerItem: MediaItem?
     @State private var watchHubItem: MediaItem?
-    @State private var showingUnavailableSource = false
     @State private var showingAppearanceSettings = false
     @State private var selectedHomeCategory = HomeCategory.forYou
     @AppStorage("cinenex.homeExperience") private var selectedHomeExperience = "moviesAndSeries"
@@ -132,7 +131,7 @@ struct ContentView: View {
             guard let fraction = progress.completionFraction,
                   fraction < 0.98 else { return nil }
             let item = progress.itemSnapshot ?? catalog.first(where: { $0.id == progress.itemID })
-            guard let item, item.id == progress.itemID, item.streamURL != nil else { return nil }
+            guard let item, item.id == progress.itemID else { return nil }
             return item
         }
     }
@@ -242,11 +241,7 @@ struct ContentView: View {
         .sheet(item: $watchHubItem) { item in
             WatchHubView(item: item, onPlayDirect: { play($0) }, onSelectItem: { watchHubItem = $0 })
         }
-        .alert("Playback unavailable", isPresented: $showingUnavailableSource) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("This title has no playable source yet. CineNex only plays media supplied by a compatible, authorized provider.")
-        }
+
     }
 
     private var homeScreen: some View {
@@ -342,7 +337,7 @@ struct ContentView: View {
                 }
             case .movies:
                 if homeCategoryItems.isEmpty {
-                    emptyHomeCategory(title: "No movies yet", message: "Refresh the catalog or connect TMDB in Tracking to discover movies.")
+                    emptyHomeCategory(title: "No movies yet", message: "Refresh the catalog to discover more movies. Connecting TMDB adds expanded metadata but is optional.")
                 } else {
                     mediaSection(title: "Explore movies", subtitle: "Choose your next feature", items: homeCategoryItems)
                 }
@@ -644,7 +639,7 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
 
                 if displayedSearchResults.isEmpty {
-                    ContentUnavailableView(searchText.isEmpty ? "Search CineNex" : "No matching titles", systemImage: "magnifyingglass", description: Text(searchText.isEmpty ? "Search the local catalog or search TMDB for movies and series." : "Try another title or change the media type filter."))
+                    ContentUnavailableView(searchText.isEmpty ? "Search CineNex" : "No matching titles", systemImage: "magnifyingglass", description: Text(searchText.isEmpty ? "Search CineNex's catalog for movies and series." : "Try another title or change the media type filter."))
                         .padding(.top, 40)
                 } else {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
@@ -1079,7 +1074,7 @@ struct ContentView: View {
 
     private func play(_ item: MediaItem) {
         guard item.streamURL != nil else {
-            showingUnavailableSource = true
+            watchHubItem = item
             return
         }
         activePlayerItem = item
@@ -1181,7 +1176,7 @@ private struct FeaturedBanner: View {
                 .offset(x: 185, y: -110)
 
             VStack(alignment: .leading, spacing: 12) {
-                Label(item.metadataProvider == "tmdb" ? "TRENDING PICK" : "FEATURED SAMPLE", systemImage: "sparkles")
+                Label((item.metadataProvider == "tmdb" || item.metadataProvider == "cinemeta") ? "TRENDING PICK" : "FEATURED SAMPLE", systemImage: "sparkles")
                     .font(.caption.weight(.bold))
                     .tracking(1.3)
                     .foregroundStyle(Color.cineNexAccent)
@@ -1270,8 +1265,16 @@ private struct MediaPosterCard: View {
                                 .tracking(0.8)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 5)
-                                .background(.black.opacity(0.35), in: Capsule())
+                                .background(.black.opacity(0.42), in: Capsule())
                             Spacer()
+                            if let rating = item.rating {
+                                Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                                    .font(.system(size: 9, weight: .heavy))
+                                    .foregroundStyle(Color(red: 1.0, green: 0.78, blue: 0.28))
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 5)
+                                    .background(.black.opacity(0.48), in: Capsule())
+                            }
                         }
                         Spacer()
                     }
@@ -1311,39 +1314,89 @@ private struct MediaDetailView: View {
     @State private var detailsLoading = false
     @State private var detailsError: String?
     @State private var selectedSeason: TMDBTitleSeason?
+    @State private var synopsisExpanded = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 24)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.cineNexAccent.opacity(0.5), Color.cineNexSurface],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                ZStack(alignment: .bottomLeading) {
                     CachedPosterImage(
                         url: item.posterURL,
                         fallbackSymbol: item.symbol,
-                        symbolSize: 88
+                        symbolSize: 92
                     )
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 370)
+                    .clipped()
+
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black.opacity(0.05), location: 0),
+                            .init(color: Color.cineNexBackground.opacity(0.28), location: 0.38),
+                            .init(color: Color.cineNexBackground.opacity(0.98), location: 1)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Label("CINENEX", systemImage: "play.rectangle.fill")
+                                .font(.caption.weight(.heavy))
+                                .tracking(1.3)
+                                .foregroundStyle(Color.cineNexAccent)
+                            Spacer()
+                            Text(item.kind.rawValue.uppercased())
+                                .font(.caption2.weight(.heavy))
+                                .tracking(0.8)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(.black.opacity(0.42), in: Capsule())
+                                .overlay(Capsule().strokeBorder(.white.opacity(0.18), lineWidth: 1))
+                        }
+
+                        Spacer(minLength: 72)
+
+                        Text(item.title)
+                            .font(.system(size: 34, weight: .heavy, design: .rounded))
+                            .tracking(-0.8)
+                            .foregroundStyle(.white)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+
+                        HStack(spacing: 8) {
+                            if let year = item.yearLabel {
+                                Text(year)
+                                Text("·")
+                            }
+                            Text(item.genre)
+                            if let rating = item.rating {
+                                Text("·")
+                                Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                                    .foregroundStyle(Color(red: 1.0, green: 0.78, blue: 0.28))
+                            }
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.86))
+                        .lineLimit(2)
+
+                        if !item.runtime.isEmpty {
+                            Label(item.runtime, systemImage: "clock")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.72))
+                        }
+                    }
+                    .padding(22)
                 }
-                .frame(height: 280)
-                .clipShape(RoundedRectangle(cornerRadius: 24))
+                .frame(height: 370)
+                .clipShape(RoundedRectangle(cornerRadius: 26))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 26)
+                        .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+                }
 
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(item.title)
-                        .font(.largeTitle.bold())
-                    Text(([item.yearLabel, item.kind.rawValue, item.genre, item.runtime].compactMap { $0 }).joined(separator: "  •  "))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    if let rating = item.rating {
-                        Label(String(format: "%.1f / 10", rating), systemImage: "star.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color(red: 1.0, green: 0.78, blue: 0.28))
-                    }
                     if let tagline = extendedDetails?.tagline,
                        !tagline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text(tagline)
@@ -1370,10 +1423,30 @@ private struct MediaDetailView: View {
                     }
 
 
-                    Text(item.synopsis)
-                        .font(.body)
-                        .foregroundStyle(.white.opacity(0.84))
-                        .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("ABOUT THIS TITLE")
+                            .font(.caption.weight(.heavy))
+                            .tracking(1.1)
+                            .foregroundStyle(Color.cineNexAccent)
+                        Text(item.synopsis)
+                            .font(.body)
+                            .foregroundStyle(.white.opacity(0.84))
+                            .lineLimit(synopsisExpanded ? nil : 4)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if item.synopsis.count > 180 {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    synopsisExpanded.toggle()
+                                }
+                            } label: {
+                                Label(synopsisExpanded ? "Show less" : "Read full synopsis",
+                                      systemImage: synopsisExpanded ? "chevron.up" : "chevron.down")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Color.cineNexAccent)
+                        }
+                    }
 
                     if item.streamURL == nil {
                         Label("No direct link is attached. Find sources opens automatic provider search and does not require a TMDB token.", systemImage: "dot.radiowaves.left.and.right")

@@ -38,8 +38,22 @@ struct CinemetaCatalogProvider: Sendable {
         guard !cleanedQuery.isEmpty else { return [] }
         async let movieTask = fetchMetadata(type: "movie", query: cleanedQuery)
         async let seriesTask = fetchMetadata(type: "series", query: cleanedQuery)
-        let movies = (try? await movieTask) ?? []
-        let series = (try? await seriesTask) ?? []
+        let movies: [MediaItem]
+        do {
+            movies = try await movieTask
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            movies = []
+        }
+        let series: [MediaItem]
+        do {
+            series = try await seriesTask
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            series = []
+        }
         return Self.uniqueItems(movies + series)
     }
 
