@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var activePlayerItem: MediaItem?
     @State private var watchHubItem: MediaItem?
     @State private var showingUnavailableSource = false
+    @State private var showingAppearanceSettings = false
 
     @State private var catalog = CatalogCacheStore.shared.load()?.items ?? MediaItem.demoCatalog
     @State private var catalogLoading = false
@@ -399,6 +400,20 @@ struct ContentView: View {
                     .background(Color.cineNexSurface, in: Circle())
             }
             .accessibilityLabel("Open search")
+            Button {
+                showingAppearanceSettings = true
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.title3.weight(.semibold))
+                    .frame(width: 42, height: 42)
+                    .background(Color.cineNexSurface, in: Circle())
+            }
+            .accessibilityLabel("Customize appearance")
+            .sheet(isPresented: $showingAppearanceSettings) {
+                AppearanceSettingsView()
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            }
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
@@ -639,7 +654,21 @@ private enum SearchSort: String, CaseIterable, Identifiable {
 extension Color {
     static let cineNexBackground = Color(red: 0.035, green: 0.043, blue: 0.065)
     static let cineNexSurface = Color(red: 0.09, green: 0.105, blue: 0.145)
-    static let cineNexAccent = Color(red: 0.42, green: 0.35, blue: 1.0)
+
+    static var cineNexAccent: Color {
+        switch UserDefaults.standard.string(forKey: "cinenex.accentPreset") ?? "violet" {
+        case "blue":
+            return Color(red: 0.24, green: 0.52, blue: 1.0)
+        case "rose":
+            return Color(red: 0.95, green: 0.32, blue: 0.58)
+        case "teal":
+            return Color(red: 0.12, green: 0.72, blue: 0.68)
+        case "amber":
+            return Color(red: 1.0, green: 0.62, blue: 0.22)
+        default:
+            return Color(red: 0.58, green: 0.36, blue: 0.98)
+        }
+    }
 }
 
 private struct FeaturedBanner: View {
