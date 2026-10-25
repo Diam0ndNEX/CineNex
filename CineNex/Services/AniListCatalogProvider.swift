@@ -139,9 +139,9 @@ struct AniListCatalogProvider {
 
             let rawSynopsis = result.description ?? ""
             let withoutSpoilers = rawSynopsis.replacingOccurrences(
-                of: "~!.*?!~",
+                of: "~![\\s\\S]*?!~",
                 with: "",
-                options: [.regularExpression, .dotMatchesLineSeparators]
+                options: .regularExpression
             )
             let synopsis = withoutSpoilers
                 .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
