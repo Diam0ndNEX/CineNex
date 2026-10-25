@@ -34,6 +34,7 @@ Acceptance: integrations are opt-in, can be disconnected, and report partial fai
 ## Milestone 4 — Catalog integration
 
 - TMDB trending movie/TV metadata provider with user-supplied Read Access Token.
+- Implemented initial separate Anime experience with public AniList trending metadata, anime-specific cards/details, and persistent on-device watched-episode counts; AniList metadata does not imply playable sources.
 - Decode trending metadata, map titles, overviews, release years, genres, ratings, poster paths, and TMDB IDs.
 - Search the TMDB multi-search endpoint and show live poster artwork and ratings in title details.
 - Add refresh, loading feedback, network/API error messages, and local demo fallback.
