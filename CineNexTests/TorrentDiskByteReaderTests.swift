@@ -67,6 +67,30 @@ final class TorrentDiskByteReaderTests: XCTestCase {
         try await reader.close()
     }
 
+    func testReadRetriesShortDiskReadUntilCompletedPieceIsVisibleOnDisk() async throws {
+        let url = try makeTemporaryFile(Data("abc".utf8))
+        defer { try? FileManager.default.removeItem(at: url) }
+        let reader = try TorrentDiskByteReader(
+            fileURL: url,
+            expectedLength: 6,
+            availability: ImmediateAvailability()
+        )
+
+        let writerTask = Task.detached {
+            try await Task.sleep(for: .milliseconds(90))
+            let writer = try FileHandle(forWritingTo: url)
+            try writer.seekToEnd()
+            try writer.write(contentsOf: Data("def".utf8))
+            try writer.close()
+        }
+
+        let data = try await reader.read(offset: 0, length: 6)
+        try await writerTask.value
+
+        XCTAssertEqual(data, Data("abcdef".utf8))
+        try await reader.close()
+    }
+
     func testReadWaitsUntilRequestedRangeIsAvailable() async throws {
         let expected = Data("streamable".utf8)
         let url = try makeTemporaryFile(expected)
@@ -149,7 +173,6 @@ final class TorrentDiskByteReaderTests: XCTestCase {
         try await reader.close()
     }
 
- 
     func testCancellationWhileWaitingForBytesPropagates() async throws {
         let url = try makeTemporaryFile(Data("cancel".utf8))
         defer { try? FileManager.default.removeItem(at: url) }
