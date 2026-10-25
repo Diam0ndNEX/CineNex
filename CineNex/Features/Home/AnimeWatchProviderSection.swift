@@ -80,7 +80,7 @@ struct AnimeWatchProviderSection: View {
                             }
                         }
                         .buttonStyle(.plain)
-                        .accessibilityHint("Opens the anime search on (provider.name)")
+                        .accessibilityHint("Opens the anime search on \\(provider.name)")
                     }
                 }
             }
@@ -102,7 +102,7 @@ struct AnimeWebsitePlaybackSheet: View {
         NavigationStack {
             Group {
                 if let url = provider.searchURL(for: anime) {
-                    EmbedWebView(url: url, cleanerEnabled: true) {
+                    EmbedWebView(url: url, cleanerEnabled: false) {
                         navigationFailed = true
                     }
                     .ignoresSafeArea(edges: .bottom)
