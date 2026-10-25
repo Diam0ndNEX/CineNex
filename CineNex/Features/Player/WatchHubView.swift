@@ -8,7 +8,8 @@ struct WatchHubView: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("cinenex.defaultPlaybackProvider") private var defaultProviderID = "smart"
-    @AppStorage("cinenex.stremioAddonManifestURLs") private var stremioAddonManifestURLs = "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusionfortheweebs.midnightignite.me/manifest.json"
+    @State private var stremioAddonManifestURLs = "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusionfortheweebs.midnightignite.me/manifest.json"
+    @State private var manifestStorageError: String?
 
     private static let legacyDefaultStremioAddonManifestURLText = "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
     private static let defaultStremioAddonManifestURLText = "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusionfortheweebs.midnightignite.me/manifest.json"
@@ -261,15 +262,41 @@ struct WatchHubView: View {
                     .padding(8)
                     .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
                     .accessibilityLabel("Stremio add-on manifest URLs")
+                    .privacySensitive()
                     .onAppear {
-                        let normalizedManifestURLs = stremioAddonManifestURLs
-                            .split(whereSeparator: \.isNewline)
-                            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                            .joined(separator: "\n")
-                        if normalizedManifestURLs.isEmpty || normalizedManifestURLs == Self.legacyDefaultStremioAddonManifestURLText {
-                            stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+                        do {
+                            let storedManifestURLs = try StremioAddonConfigurationStore.load()
+                            let normalizedManifestURLs = storedManifestURLs?
+                                .split(whereSeparator: \.isNewline)
+                                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                                .joined(separator: "\n")
+                            if let normalizedManifestURLs,
+                               !normalizedManifestURLs.isEmpty,
+                               normalizedManifestURLs != Self.legacyDefaultStremioAddonManifestURLText {
+                                stremioAddonManifestURLs = normalizedManifestURLs
+                            } else {
+                                stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+                            }
+                            try StremioAddonConfigurationStore.save(stremioAddonManifestURLs)
+                            manifestStorageError = nil
+                        } catch {
+                            manifestStorageError = "Secure storage is unavailable. Your add-on URLs could not be saved to the iOS Keychain."
                         }
                     }
+                    .onChange(of: stremioAddonManifestURLs) { _, newValue in
+                        do {
+                            try StremioAddonConfigurationStore.save(newValue)
+                            manifestStorageError = nil
+                        } catch {
+                            manifestStorageError = "Secure storage is unavailable. Your add-on URL changes could not be saved to the iOS Keychain."
+                        }
+                    }
+                if let manifestStorageError {
+                    Label(manifestStorageError, systemImage: "lock.shield")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let addonSearchMessage {
                     Text(addonSearchMessage)
                         .font(.caption)
