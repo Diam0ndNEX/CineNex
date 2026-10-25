@@ -186,7 +186,9 @@ struct WatchHubView: View {
     private var quickActions: some View {
         VStack(alignment: .leading, spacing: 10) {
             Button {
-                if (defaultProviderID == "smart" || defaultProviderID == "direct"), item.streamURL != nil {
+                if availableProviders.isEmpty && discoveredSources.isEmpty && discoveredTorrentDescriptors.isEmpty && item.streamURL == nil {
+                    Task { await searchStremioAddonSources() }
+                } else if (defaultProviderID == "smart" || defaultProviderID == "direct"), item.streamURL != nil {
                     onPlayDirect(item)
                 } else if defaultProviderID == "stremio-addons", let source = discoveredSources.first {
                     selectedDiscoveredSource = source
@@ -208,19 +210,22 @@ struct WatchHubView: View {
                     selectedProvider = first
                 } else if item.streamURL != nil {
                     onPlayDirect(item)
+                } else {
+                    Task { await searchStremioAddonSources() }
                 }
             } label: {
+                let hasSource = item.streamURL != nil || !availableProviders.isEmpty || !discoveredSources.isEmpty || !discoveredTorrentDescriptors.isEmpty
                 Label(
-                    searchingAddonSources ? "Finding sources…" : "Quick Play",
-                    systemImage: searchingAddonSources ? "hourglass" : "play.fill"
+                    searchingAddonSources ? "Searching sources…" : (item.streamURL != nil ? "Play now" : (hasSource ? "Quick Play" : "Find sources")),
+                    systemImage: searchingAddonSources ? "hourglass" : (hasSource ? "play.fill" : "dot.radiowaves.left.and.right")
                 )
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(searchingAddonSources || (availableProviders.isEmpty && discoveredSources.isEmpty && discoveredTorrentDescriptors.isEmpty && item.streamURL == nil))
-            .accessibilityHint("Starts the preferred available playback source")
+            .disabled(searchingAddonSources || preparingTorrentDescriptorID != nil)
+            .accessibilityHint("Starts playback when a source is available, or searches the built-in add-ons if none have been found")
 
             Picker("Default source", selection: $defaultProviderID) {
                 Text("Smart Default").tag("smart")
@@ -290,7 +295,7 @@ struct WatchHubView: View {
                 DisclosureGroup {
                     HStack(spacing: 14) {
                         Link("Configure Torrentio", destination: URL(string: "https://torrentio.strem.fun/configure")!)
-                        Link("Configure MediaFusion", destination: URL(string: "https://mediafusionfortheweebs.midnightignite.me/")!)
+                        Link("Configure MediaFusion", destination: URL(string: "https://mediafusion.elfhosted.com/")!)
                         Spacer(minLength: 0)
                         Button("Restore defaults") {
                             stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
@@ -318,7 +323,7 @@ struct WatchHubView: View {
                                     .joined(separator: "\n")
                                 if let normalizedManifestURLs,
                                    !normalizedManifestURLs.isEmpty,
-                                   normalizedManifestURLs != Self.legacyDefaultStremioAddonManifestURLText {
+                                   !Self.legacyDefaultStremioAddonManifestURLTexts.contains(normalizedManifestURLs) {
                                     stremioAddonManifestURLs = normalizedManifestURLs
                                 } else {
                                     stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
