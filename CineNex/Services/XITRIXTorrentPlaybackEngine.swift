@@ -68,6 +68,16 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         guard request.isValid else { throw TorrentStreamingError.invalidRequest }
         if let preparedFile { return [preparedFile] }
 
+        do {
+            return try await prepareFilesInternal(for: request)
+        } catch {
+            await stop()
+            throw error
+        }
+    }
+
+    private func prepareFilesInternal(for request: PlaybackSourceRequest) async throws -> [TorrentPreparedFile] {
+
         guard let cacheDirectory = FileManager.default.urls(
             for: .cachesDirectory,
             in: .userDomainMask
