@@ -278,55 +278,62 @@ struct WatchHubView: View {
                 Text("CineNex searches the built-in sources automatically. You do not need to add a TMDB token or configure a provider to start a search.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                HStack(spacing: 14) {
-                    Link("Configure Torrentio", destination: URL(string: "https://torrentio.strem.fun/configure")!)
-                    Link("Configure MediaFusion", destination: URL(string: "https://mediafusionfortheweebs.midnightignite.me/")!)
-                    Spacer(minLength: 0)
-                    Button("Restore defaults") {
-                        stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+                DisclosureGroup {
+                    HStack(spacing: 14) {
+                        Link("Configure Torrentio", destination: URL(string: "https://torrentio.strem.fun/configure")!)
+                        Link("Configure MediaFusion", destination: URL(string: "https://mediafusionfortheweebs.midnightignite.me/")!)
+                        Spacer(minLength: 0)
+                        Button("Restore defaults") {
+                            stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+                        }
+                        .font(.caption.weight(.medium))
                     }
                     .font(.caption.weight(.medium))
-                }
-                .font(.caption.weight(.medium))
-                Text("Advanced: one HTTPS manifest URL per line. Custom add-on URLs stay in the iOS Keychain on this device.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                TextEditor(text: $stremioAddonManifestURLs)
-                    .font(.caption.monospaced())
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 76, maxHeight: 120)
-                    .padding(8)
-                    .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
-                    .accessibilityLabel("Stremio add-on manifest URLs")
-                    .privacySensitive()
-                    .onAppear {
-                        do {
-                            let storedManifestURLs = try StremioAddonConfigurationStore.load()
-                            let normalizedManifestURLs = storedManifestURLs?
-                                .split(whereSeparator: \.isNewline)
-                                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                                .joined(separator: "\n")
-                            if let normalizedManifestURLs,
-                               !normalizedManifestURLs.isEmpty,
-                               normalizedManifestURLs != Self.legacyDefaultStremioAddonManifestURLText {
-                                stremioAddonManifestURLs = normalizedManifestURLs
-                            } else {
-                                stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+                    Text("Advanced: one HTTPS manifest URL per line. Custom add-on URLs stay in the iOS Keychain on this device.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    TextEditor(text: $stremioAddonManifestURLs)
+                        .font(.caption.monospaced())
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 76, maxHeight: 120)
+                        .padding(8)
+                        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
+                        .accessibilityLabel("Stremio add-on manifest URLs")
+                        .privacySensitive()
+                        .onAppear {
+                            do {
+                                let storedManifestURLs = try StremioAddonConfigurationStore.load()
+                                let normalizedManifestURLs = storedManifestURLs?
+                                    .split(whereSeparator: \.isNewline)
+                                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                                    .joined(separator: "\n")
+                                if let normalizedManifestURLs,
+                                   !normalizedManifestURLs.isEmpty,
+                                   normalizedManifestURLs != Self.legacyDefaultStremioAddonManifestURLText {
+                                    stremioAddonManifestURLs = normalizedManifestURLs
+                                } else {
+                                    stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+                                }
+                                try StremioAddonConfigurationStore.save(stremioAddonManifestURLs)
+                                manifestStorageError = nil
+                            } catch {
+                                manifestStorageError = "Secure storage is unavailable. Your add-on URLs could not be saved to the iOS Keychain."
                             }
-                            try StremioAddonConfigurationStore.save(stremioAddonManifestURLs)
-                            manifestStorageError = nil
-                        } catch {
-                            manifestStorageError = "Secure storage is unavailable. Your add-on URLs could not be saved to the iOS Keychain."
                         }
-                    }
-                    .onChange(of: stremioAddonManifestURLs) { _, newValue in
-                        do {
-                            try StremioAddonConfigurationStore.save(newValue)
-                            manifestStorageError = nil
-                        } catch {
-                            manifestStorageError = "Secure storage is unavailable. Your add-on URL changes could not be saved to the iOS Keychain."
+                        .onChange(of: stremioAddonManifestURLs) { _, newValue in
+                            do {
+                                try StremioAddonConfigurationStore.save(newValue)
+                                manifestStorageError = nil
+                            } catch {
+                                manifestStorageError = "Secure storage is unavailable. Your add-on URL changes could not be saved to the iOS Keychain."
+                            }
                         }
-                    }
+    
+                } label: {
+                    Label("Advanced provider settings", systemImage: "slider.horizontal.3")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .tint(Color.cineNexAccent)
                 if let manifestStorageError {
                     Label(manifestStorageError, systemImage: "lock.shield")
                         .font(.caption)
