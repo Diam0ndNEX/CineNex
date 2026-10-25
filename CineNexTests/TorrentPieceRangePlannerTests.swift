@@ -91,4 +91,33 @@ final class TorrentPieceRangePlannerTests: XCTestCase {
             XCTAssertEqual(error as? TorrentPieceRangePlannerError, .integerOverflow)
         }
     }
+
+    func testInitialPriorityWindowPromotesAllRequestedPieces() {
+        let window = TorrentPiecePriorityWindow(current: [], requested: [4, 5, 6])
+
+        XCTAssertEqual(window.piecesToDemote, [])
+        XCTAssertEqual(window.piecesToPromote, [4, 5, 6])
+    }
+
+    func testMovingPriorityWindowDemotesStalePiecesAndPromotesNewPieces() {
+        let window = TorrentPiecePriorityWindow(current: [4, 5, 6], requested: [6, 7, 8])
+
+        XCTAssertEqual(window.piecesToDemote, [4, 5])
+        XCTAssertEqual(window.piecesToPromote, [7, 8])
+    }
+
+    func testUnchangedPriorityWindowDoesNotRepeatUpdates() {
+        let window = TorrentPiecePriorityWindow(current: [4, 5, 6], requested: [4, 5, 6])
+
+        XCTAssertEqual(window.piecesToDemote, [])
+        XCTAssertEqual(window.piecesToPromote, [])
+    }
+
+    func testOverlappingPriorityWindowOnlyChangesTheDifference() {
+        let window = TorrentPiecePriorityWindow(current: [10, 11, 12, 13], requested: [12, 13, 14, 15])
+
+        XCTAssertEqual(window.piecesToDemote, [10, 11])
+        XCTAssertEqual(window.piecesToPromote, [14, 15])
+    }
+
 }
