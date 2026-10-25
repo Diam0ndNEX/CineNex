@@ -113,7 +113,10 @@ struct TorrentPieceDeadlinePlan: Equatable {
         var deadline = 0
         for piece in requested {
             deadlines[piece] = deadline
-            deadline = min(deadline + stepMilliseconds, maximumMilliseconds)
+            let remainingDelay = maximumMilliseconds - deadline
+            deadline = stepMilliseconds >= remainingDelay
+                ? maximumMilliseconds
+                : deadline + stepMilliseconds
         }
         return TorrentPieceDeadlinePlan(deadlinesMilliseconds: deadlines)
     }
