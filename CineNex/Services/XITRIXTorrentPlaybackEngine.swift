@@ -137,7 +137,6 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         handle.setAllFilesPriority(FileEntry.Priority.lowPriority)
         handle.setFilePriority(FileEntry.Priority.topPriority, at: Int(selectedFile.index))
         handle.setSequentialDownload(true)
-        handle.setFirstLastPriorityDownload(true)
 
         try await waitForFile(at: fileURL, expectedLength: Int64(selectedFile.size))
         guard let verifiedFileURL = XITRIXTorrentFileSupport.safeFileURL(
