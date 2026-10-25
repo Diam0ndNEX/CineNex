@@ -71,6 +71,10 @@ final class AniListCatalogProviderTests: XCTestCase {
                   "title": { "english": "   ", "romaji": " " }
                 },
                 {
+                  "id": 8,
+                  "title": { "english": "Valid Duplicate After Bad Entry" }
+                },
+                {
                   "id": 0,
                   "title": { "english": "Invalid ID" }
                 }
@@ -82,8 +86,9 @@ final class AniListCatalogProviderTests: XCTestCase {
 
         let items = try AniListCatalogProvider.mapResponse(Data(json.utf8))
 
-        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.count, 2)
         XCTAssertEqual(items[0].title, "Fallback Title")
+        XCTAssertEqual(items[1].title, "Valid Duplicate After Bad Entry")
         XCTAssertNil(items[0].coverURL)
         XCTAssertNil(items[0].episodeCount)
         XCTAssertNil(items[0].seasonYear)
