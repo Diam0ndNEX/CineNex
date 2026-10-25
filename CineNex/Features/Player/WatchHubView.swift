@@ -833,6 +833,12 @@ struct WatchHubView: View {
             } else {
                 addonSearchMessage = "No playable sources were returned. CineNex searched by title automatically; try again later because add-ons can be temporarily unavailable or may require their own authentication."
             }
+            let providerSummary = discovery.providerStatuses.map(\.summary).joined(separator: "\n")
+            if !providerSummary.isEmpty {
+                addonSearchMessage = [addonSearchMessage, providerSummary]
+                    .compactMap { $0 }
+                    .joined(separator: "\n")
+            }
         } catch is CancellationError {
             guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
             await TorrentPlaybackSessionRegistry.shared.stopAll()
