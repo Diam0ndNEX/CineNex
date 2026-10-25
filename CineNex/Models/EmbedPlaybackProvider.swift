@@ -9,6 +9,7 @@ struct EmbedPlaybackProvider: Identifiable, Equatable, Sendable {
     let moviePath: String
     let seriesPath: String
     let requiresTMDBID: Bool
+    let requiresExternalID: Bool
 
     init(
         id: String,
@@ -18,7 +19,8 @@ struct EmbedPlaybackProvider: Identifiable, Equatable, Sendable {
         supportedMediaKinds: Set<PlaybackMediaKind> = [.movie, .series],
         moviePath: String = "movie/{id}",
         seriesPath: String = "tv/{id}/{season}/{episode}",
-        requiresTMDBID: Bool = true
+        requiresTMDBID: Bool = true,
+        requiresExternalID: Bool = false
     ) {
         self.id = id
         self.displayName = displayName
@@ -28,6 +30,7 @@ struct EmbedPlaybackProvider: Identifiable, Equatable, Sendable {
         self.moviePath = moviePath
         self.seriesPath = seriesPath
         self.requiresTMDBID = requiresTMDBID
+        self.requiresExternalID = requiresExternalID
     }
 
     func embedURL(for request: PlaybackSourceRequest) -> URL? {
@@ -43,8 +46,11 @@ struct EmbedPlaybackProvider: Identifiable, Equatable, Sendable {
                 return nil
             }
         }
+        if requiresExternalID, request.tmdbID == nil, request.imdbID == nil {
+            return nil
+        }
 
-        let identifier = request.tmdbID.map(String.init) ?? request.title
+        let identifier = request.tmdbID.map(String.init) ?? request.imdbID ?? request.title
         let pathTemplate: String
         switch request.mediaKind {
         case .movie:
@@ -106,24 +112,49 @@ struct EmbedPlaybackProvider: Identifiable, Equatable, Sendable {
 enum EmbedPlaybackProviderCatalog {
     static let candidates: [EmbedPlaybackProvider] = [
         EmbedPlaybackProvider(
-            id: "vidsrc-to",
+            id: "vidsrc",
             displayName: "VidSrc",
-            baseURL: URL(string: "https://vidsrc.to/embed/")!,
-            priority: 100
+            baseURL: URL(string: "https://vidsrc.sh/embed/")!,
+            priority: 110,
+            requiresTMDBID: false,
+            requiresExternalID: true
         ),
         EmbedPlaybackProvider(
             id: "vidsrc-cc",
-            displayName: "VidSrc (alternate)",
+            displayName: "VidSrc CC",
             baseURL: URL(string: "https://vidsrc.cc/v2/embed/")!,
-            priority: 90
+            priority: 95,
+            requiresTMDBID: false,
+            requiresExternalID: true
         ),
         EmbedPlaybackProvider(
-            id: "two-embed",
-            displayName: "2Embed",
-            baseURL: URL(string: "https://www.2embed.cc/embed/")!,
+            id: "vidspark",
+            displayName: "VidSpark",
+            baseURL: URL(string: "https://vidspark.to/")!,
+            priority: 90,
+            moviePath: "movie/{id}",
+            seriesPath: "tv/{id}/{season}/{episode}",
+            requiresTMDBID: false,
+            requiresExternalID: true
+        ),
+        EmbedPlaybackProvider(
+            id: "moviesapi",
+            displayName: "MoviesAPI",
+            baseURL: URL(string: "https://moviesapi.to/")!,
             priority: 80,
-            moviePath: "{id}",
-            seriesPath: "{id}/{season}/{episode}"
+            moviePath: "movie/{id}",
+            seriesPath: "tv/{id}/{season}/{episode}",
+            requiresTMDBID: false,
+            requiresExternalID: true
+        ),
+        EmbedPlaybackProvider(
+            id: "embedwave",
+            displayName: "EmbedWave",
+            baseURL: URL(string: "https://embedwave.cc/")!,
+            priority: 70,
+            moviePath: "embed/movie/{id}",
+            seriesPath: "embed/tv/{id}/{season}/{episode}",
+            requiresExternalID: true
         )
     ]
 }

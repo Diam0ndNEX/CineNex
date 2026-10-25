@@ -20,6 +20,7 @@ struct MediaItem: Codable, Identifiable, Hashable {
     var posterURL: URL? = nil
     var rating: Double? = nil
     var externalID: Int? = nil
+    var externalIMDbID: String? = nil
     var metadataProvider: String = "demo"
 
     var accessibilitySummary: String {

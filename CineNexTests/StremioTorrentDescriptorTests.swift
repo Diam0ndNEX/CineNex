@@ -12,7 +12,20 @@ final class StremioTorrentDescriptorTests: XCTestCase {
 
         XCTAssertEqual(descriptor.infoHash, validHash)
         XCTAssertEqual(descriptor.fileIndex, 2)
-        XCTAssertEqual(descriptor.id, "\(validHash):2")
+        XCTAssertEqual(descriptor.id, "stremio-add-on:\(validHash):2")
+    }
+
+    func testSameTorrentFromDifferentProvidersHasDifferentIdentity() throws {
+        let torrentio = try XCTUnwrap(
+            StremioTorrentDescriptor(infoHash: validHash, fileIndex: 0, providerName: "Torrentio")
+        )
+        let mediaFusion = try XCTUnwrap(
+            StremioTorrentDescriptor(infoHash: validHash, fileIndex: 0, providerName: "MediaFusion")
+        )
+
+        XCTAssertEqual(torrentio.infoHash, mediaFusion.infoHash)
+        XCTAssertEqual(torrentio.fileIndex, mediaFusion.fileIndex)
+        XCTAssertNotEqual(torrentio.id, mediaFusion.id)
     }
 
     func testBuildsValidMagnetURLWithoutEmbeddingFileSelection() throws {
@@ -28,7 +41,7 @@ final class StremioTorrentDescriptorTests: XCTestCase {
         let descriptor = try XCTUnwrap(StremioTorrentDescriptor(infoHash: validHash, fileIndex: nil))
 
         XCTAssertNil(descriptor.fileIndex)
-        XCTAssertEqual(descriptor.id, "\(validHash):all")
+        XCTAssertEqual(descriptor.id, "stremio-add-on:\(validHash):all")
     }
 
     func testRejectsMissingMalformedAndWrongLengthHashes() {
@@ -47,9 +60,8 @@ final class StremioTorrentDescriptorTests: XCTestCase {
     func testCreatesDescriptorDirectlyFromStremioStreamEntry() throws {
         let stream = try JSONDecoder().decode(
             StremioStreamEntry.self,
-            from: Data(#"{"name":"Torrent","infoHash":"0123456789ABCDEF0123456789ABCDEF01234567","fileIdx":3,"sources":["tracker:udp://tracker.example.test:80/announce","tracker:javascript:alert(1)","dht://ignored"]}"#.utf8)
+            from: Data(#"{"name":"Ghost Torrents · 1080p","infoHash":"0123456789abcdef0123456789abcdef01234567","fileIdx":3,"sources":["tracker:udp://tracker.example.test:80/announce"],"behaviorHints":{"filename":"0123456789abcdef0123456789abcdef01234567.mp4"}}"#.utf8)
         )
-
         let descriptor = try XCTUnwrap(StremioTorrentDescriptor(stream: stream))
         XCTAssertEqual(descriptor.infoHash, validHash)
         XCTAssertEqual(descriptor.fileIndex, 3)
@@ -67,6 +79,27 @@ final class StremioTorrentDescriptorTests: XCTestCase {
         XCTAssertEqual(descriptor.trackers, [safe])
         let components = try XCTUnwrap(URLComponents(url: descriptor.magnetURL, resolvingAgainstBaseURL: false))
         XCTAssertEqual(components.queryItems?.filter { $0.name == "tr" }.count, 1)
+    }
+
+    func testPrefersReleaseTitleOverAddonNameAndOpaqueFilename() throws {
+        let stream = try JSONDecoder().decode(
+            StremioStreamEntry.self,
+            from: Data(#"{"name":"Torrentio · 1080p · 1234567890abcdef1234567890abcdef12345678","title":"Ghost Torrents S01E02 1080p","infoHash":"0123456789abcdef0123456789abcdef01234567","behaviorHints":{"filename":"0123456789abcdef0123456789abcdef01234567.mp4"}}"#.utf8)
+        )
+        let descriptor = try XCTUnwrap(StremioTorrentDescriptor(stream: stream, providerName: "Torrentio"))
+        XCTAssertEqual(descriptor.title, "Ghost Torrents S01E02 1080p")
+        XCTAssertEqual(descriptor.providerName, "Torrentio")
+    }
+
+    func testPreservesReadableTorrentTitleAndProviderName() throws {
+        let stream = try JSONDecoder().decode(
+            StremioStreamEntry.self,
+            from: Data(#"{"name":"Ghost Torrents · 1080p","infoHash":"0123456789abcdef0123456789abcdef01234567","fileIdx":3}"#.utf8)
+        )
+        let descriptor = try XCTUnwrap(StremioTorrentDescriptor(stream: stream, providerName: "Torrentio"))
+        XCTAssertEqual(descriptor.title, "Ghost Torrents · 1080p")
+        XCTAssertEqual(descriptor.providerName, "Torrentio")
+        XCTAssertFalse(descriptor.title.contains(descriptor.infoHash))
     }
 
     func testRejectsDirectStreamWithoutTorrentHash() throws {
