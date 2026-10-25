@@ -35,6 +35,19 @@ final class AnimeProgressStoreTests: XCTestCase {
         XCTAssertTrue(store.trackedAnime.isEmpty)
     }
 
+    func testNegativeEpisodeCountNeverProducesNegativeProgress() {
+        let suiteName = "AnimeProgressStoreTests.\\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let anime = makeAnime(id: 404, episodeCount: -3)
+        let store = AnimeProgressStore(defaults: defaults, storageKey: "progress")
+
+        store.setWatchedEpisodeCount(5, for: anime)
+
+        XCTAssertEqual(store.watchedEpisodeCount(for: anime), 0)
+        XCTAssertTrue(store.trackedAnime.isEmpty)
+    }
+
     func testResetProgressIsIdempotent() {
         let suiteName = "AnimeProgressStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
