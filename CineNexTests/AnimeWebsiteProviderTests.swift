@@ -2,7 +2,7 @@ import XCTest
 @testable import CineNex
 
 final class AnimeWebsiteProviderTests: XCTestCase {
-    func testEveryBundledProviderBuildsSecureSearchURL() {
+    func testEveryBundledProviderBuildsSecureSearchURL() throws {
         let anime = AnimeTitle(
             id: 21,
             title: "Your Name & Weathering with You",
