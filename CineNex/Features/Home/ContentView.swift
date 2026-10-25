@@ -43,6 +43,12 @@ struct ContentView: View {
     @State private var showingUnavailableSource = false
     @State private var showingAppearanceSettings = false
     @State private var selectedHomeCategory = HomeCategory.forYou
+    @AppStorage("cinenex.homeExperience") private var selectedHomeExperience = "moviesAndSeries"
+    @State private var selectedAnime: AnimeTitle?
+    @State private var animeCatalog: [AnimeTitle] = []
+    @State private var animeLoading = false
+    @State private var animeError: String?
+    @StateObject private var animeProgressStore = AnimeProgressStore.shared
 
     @State private var catalog = CatalogCacheStore.shared.load()?.items ?? MediaItem.demoCatalog
     @State private var catalogLoading = false
@@ -240,91 +246,200 @@ struct ContentView: View {
 
     private var homeScreen: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 22) {
                 header
+                experiencePicker
 
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Find your next obsession")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .tracking(-0.7)
-                    Text("A world of stories, picked for your mood.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 20)
-                .accessibilityElement(children: .combine)
-
-                homeCategoryPicker
-
-                if let catalogError {
-                    Label(catalogError, systemImage: "exclamationmark.triangle")
-                        .font(.footnote)
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 20)
-                }
-
-                if let featured = featuredHomeItem {
-                    FeaturedBanner(item: featured) {
-                        selectedItem = featured
-                    } onPlay: {
-                        watchHubItem = featured
-                    }
-                }
-
-                switch selectedHomeCategory {
-                case .forYou:
-                    if !continueWatchingItems.isEmpty {
-                        mediaSection(title: "Continue Watching", subtitle: "Pick up right where you left off", items: continueWatchingItems, showProgress: true)
-                    }
-                    mediaSection(title: "Popular right now", subtitle: "Discover something worth watching", items: catalog)
-                    let movies = catalog.filter { $0.kind == .movie }
-                    if !movies.isEmpty {
-                        mediaSection(title: "Movies for every mood", subtitle: "Big stories, one great night", items: movies)
-                    }
-                    let series = catalog.filter { $0.kind == .series }
-                    if !series.isEmpty {
-                        mediaSection(title: "Series to get into", subtitle: "Your next episode starts here", items: series)
-                    }
-                case .movies:
-                    if homeCategoryItems.isEmpty {
-                        emptyHomeCategory(title: "No movies yet", message: "Refresh the catalog or connect TMDB in Tracking to discover movies.")
-                    } else {
-                        mediaSection(title: "Explore movies", subtitle: "Choose your next feature", items: homeCategoryItems)
-                    }
-                case .series:
-                    if homeCategoryItems.isEmpty {
-                        emptyHomeCategory(title: "No series yet", message: "Refresh the catalog or connect TMDB in Tracking to discover series.")
-                    } else {
-                        mediaSection(title: "Explore series", subtitle: "Find a story to stay with", items: homeCategoryItems)
-                    }
-                case .myList:
-                    if homeCategoryItems.isEmpty {
-                        ContentUnavailableView(
-                            "Your list is empty",
-                            systemImage: "bookmark",
-                            description: Text("Save a title from its details to keep it close at hand.")
-                        )
-                        .padding(.horizontal, 20)
-                        .padding(.top, 18)
-                    } else {
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
-                            ForEach(homeCategoryItems) { item in
-                                MediaPosterCard(item: item) {
-                                    selectedItem = item
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                    }
+                if selectedHomeExperience == "anime" {
+                    animeHomeContent
+                } else {
+                    moviesAndSeriesHomeContent
                 }
             }
             .padding(.top, 4)
             .padding(.bottom, 30)
         }
         .background(Color.cineNexBackground.ignoresSafeArea())
-        .refreshable { await loadCatalog(force: true) }
+        .refreshable {
+            if selectedHomeExperience == "anime" {
+                await loadAnimeCatalog(force: true)
+            } else {
+                await loadCatalog(force: true)
+            }
+        }
+        .task(id: selectedHomeExperience) {
+            if selectedHomeExperience == "anime" {
+                await loadAnimeCatalog()
+            }
+        }
+        .sheet(item: $selectedAnime) { anime in
+            AnimeDetailView(anime: anime, progressStore: animeProgressStore)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private var experiencePicker: some View {
+        Picker("Content experience", selection: $selectedHomeExperience) {
+            Text("Movies & Series").tag("moviesAndSeries")
+            Text("Anime").tag("anime")
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 20)
+        .accessibilityLabel("Choose Movies and Series or Anime")
+    }
+
+    private var moviesAndSeriesHomeContent: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Find your next obsession")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .tracking(-0.7)
+                Text("A world of stories, picked for your mood.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 20)
+            .accessibilityElement(children: .combine)
+
+            homeCategoryPicker
+
+            if let catalogError {
+                Label(catalogError, systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 20)
+            }
+
+            if let featured = featuredHomeItem {
+                FeaturedBanner(item: featured) {
+                    selectedItem = featured
+                } onPlay: {
+                    watchHubItem = featured
+                }
+            }
+
+            switch selectedHomeCategory {
+            case .forYou:
+                if !continueWatchingItems.isEmpty {
+                    mediaSection(title: "Continue Watching", subtitle: "Pick up right where you left off", items: continueWatchingItems, showProgress: true)
+                }
+                mediaSection(title: "Popular right now", subtitle: "Discover something worth watching", items: catalog)
+                let movies = catalog.filter { $0.kind == .movie }
+                if !movies.isEmpty {
+                    mediaSection(title: "Movies for every mood", subtitle: "Big stories, one great night", items: movies)
+                }
+                let series = catalog.filter { $0.kind == .series }
+                if !series.isEmpty {
+                    mediaSection(title: "Series to get into", subtitle: "Your next episode starts here", items: series)
+                }
+            case .movies:
+                if homeCategoryItems.isEmpty {
+                    emptyHomeCategory(title: "No movies yet", message: "Refresh the catalog or connect TMDB in Tracking to discover movies.")
+                } else {
+                    mediaSection(title: "Explore movies", subtitle: "Choose your next feature", items: homeCategoryItems)
+                }
+            case .series:
+                if homeCategoryItems.isEmpty {
+                    emptyHomeCategory(title: "No series yet", message: "Refresh the catalog or connect TMDB in Tracking to discover series.")
+                } else {
+                    mediaSection(title: "Explore series", subtitle: "Find a story to stay with", items: homeCategoryItems)
+                }
+            case .myList:
+                if homeCategoryItems.isEmpty {
+                    ContentUnavailableView(
+                        "Your list is empty",
+                        systemImage: "bookmark",
+                        description: Text("Save a title from its details to keep it close at hand.")
+                    )
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+                } else {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
+                        ForEach(homeCategoryItems) { item in
+                            MediaPosterCard(item: item) {
+                                selectedItem = item
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+            }
+        }
+    }
+
+    private var animeHomeContent: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Your anime universe")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .tracking(-0.7)
+                Text("Trending series, films, and your episode progress.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 20)
+            .accessibilityElement(children: .combine)
+
+            if let animeError {
+                Label(animeError, systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 20)
+            }
+
+            if let featured = animeCatalog.first {
+                AnimeFeaturedBanner(anime: featured) {
+                    selectedAnime = featured
+                }
+            }
+
+            if animeLoading && animeCatalog.isEmpty {
+                HStack(spacing: 12) {
+                    ProgressView()
+                        .tint(Color.cineNexAccent)
+                    Text("Loading trending anime…")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 44)
+            } else if animeCatalog.isEmpty {
+                ContentUnavailableView(
+                    "Anime is temporarily unavailable",
+                    systemImage: "sparkles.tv",
+                    description: Text("Check your connection and pull down to retry loading the public AniList catalog.")
+                )
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+            } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Trending anime")
+                            .font(.title2.bold())
+                        Text("Live metadata from AniList")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 20)
+
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
+                        ForEach(animeCatalog) { anime in
+                            AnimePosterCard(
+                                anime: anime,
+                                watchedEpisodes: animeProgressStore.watchedEpisodeCount(for: anime)
+                            ) {
+                                selectedAnime = anime
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+            }
+        }
     }
 
     private var homeCategoryPicker: some View {
@@ -610,6 +725,30 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 20)
             }
+        }
+    }
+
+    @MainActor
+    private func loadAnimeCatalog(force: Bool = false) async {
+        guard !animeLoading else { return }
+        guard force || animeCatalog.isEmpty else { return }
+
+        animeLoading = true
+        animeError = nil
+        defer { animeLoading = false }
+
+        do {
+            let results = try await AniListCatalogProvider().fetchTrending()
+            guard !Task.isCancelled else { return }
+            animeCatalog = results
+            if results.isEmpty {
+                animeError = "AniList did not return trending anime. Pull down to try again."
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled else { return }
+            animeError = error.localizedDescription
         }
     }
 
