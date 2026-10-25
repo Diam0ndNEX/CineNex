@@ -42,7 +42,9 @@ final class TorrentStartupPiecePriorityPlanTests: XCTestCase {
             tailBytes: 2
         ))
 
-        XCTAssertEqual(plan.priorities, [1: 7])
+        XCTAssertEqual(plan.priorities.count, 1)
+        XCTAssertEqual(plan.priorities[1], 7)
+        XCTAssertNil(plan.priorities[2])
     }
 
     func testEmptyFileProducesNoStartupPriorities() throws {
