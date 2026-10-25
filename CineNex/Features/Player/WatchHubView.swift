@@ -242,7 +242,7 @@ struct WatchHubView: View {
                     .foregroundStyle(.secondary)
                 HStack(spacing: 14) {
                     Link("Configure Torrentio", destination: URL(string: "https://torrentio.strem.fun/configure")!)
-                    Link("MediaFusion", destination: URL(string: "https://mediafusion.elfhosted.com")!)
+                    Link("Configure MediaFusion", destination: URL(string: "https://mhdzumair.github.io/MediaFusion/docs/getting-started/quick-start/")!)
                     Spacer(minLength: 0)
                     Button("Restore defaults") {
                         stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
