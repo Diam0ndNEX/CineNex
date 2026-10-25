@@ -87,8 +87,11 @@ struct WatchHubView: View {
             .task(id: item.id) {
                 resolveSources()
                 async let archiveSearch: Void = loadInternetArchiveSources()
-                await loadCatalogDetails()
+                async let addonSearch: Void = searchStremioAddonSources()
+                async let catalogDetails: Void = loadCatalogDetails()
                 await archiveSearch
+                await addonSearch
+                await catalogDetails
             }
             .onDisappear {
                 torrentPreparationTask?.cancel()
@@ -363,6 +366,7 @@ struct WatchHubView: View {
             if availableProviders.isEmpty &&
                 internetArchiveSources.isEmpty &&
                 !internetArchiveSourcesLoading &&
+                !searchingAddonSources &&
                 item.streamURL == nil {
                 ContentUnavailableView(
                     "No compatible sources found",
