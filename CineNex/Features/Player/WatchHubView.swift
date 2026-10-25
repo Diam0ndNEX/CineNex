@@ -25,9 +25,6 @@ struct WatchHubView: View {
     @State private var searchingAddonSources = false
     @State private var addonSearchMessage: String?
     @State private var availableProviders: [ResolvedEmbedSource] = []
-    @State private var internetArchiveSources: [PlaybackSource] = []
-    @State private var internetArchiveSourcesLoading = false
-    @State private var internetArchiveSourceErrorMessage: String?
     @State private var seasonNumber = 1
     @State private var episodeNumber = 1
     @State private var seasons: [TMDBTitleSeason] = []
@@ -57,7 +54,6 @@ struct WatchHubView: View {
                     quickActions
                     episodeSelection
                     providerSection
-                    internetArchiveSection
                     recommendationsSection
                 }
                 .padding(20)
@@ -86,10 +82,8 @@ struct WatchHubView: View {
             }
             .task(id: item.id) {
                 resolveSources()
-                async let archiveSearch: Void = loadInternetArchiveSources()
                 async let addonSearch: Void = searchStremioAddonSources()
                 async let catalogDetails: Void = loadCatalogDetails()
-                await archiveSearch
                 await addonSearch
                 await catalogDetails
             }
@@ -160,13 +154,8 @@ struct WatchHubView: View {
                 } else if (defaultProviderID == "smart" || defaultProviderID == "libtorrent"),
                           let descriptor = discoveredTorrentDescriptors.first {
                     startTorrentPlayback(for: descriptor)
-                } else if (defaultProviderID == "smart" || defaultProviderID == "internet-archive"),
-                          let source = internetArchiveSources.first {
-                    playInternetArchiveSource(source)
                 } else if let preferred = availableProviders.first(where: { $0.provider.id == defaultProviderID }) {
                     selectedProvider = preferred
-                } else if let firstArchiveSource = internetArchiveSources.first {
-                    playInternetArchiveSource(firstArchiveSource)
                 } else if let first = discoveredSources.first {
                     selectedDiscoveredSource = first
                 } else if let descriptor = discoveredTorrentDescriptors.first {
@@ -183,7 +172,7 @@ struct WatchHubView: View {
                     .padding(.vertical, 15)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(availableProviders.isEmpty && internetArchiveSources.isEmpty && discoveredSources.isEmpty && discoveredTorrentDescriptors.isEmpty && item.streamURL == nil)
+            .disabled(availableProviders.isEmpty && discoveredSources.isEmpty && discoveredTorrentDescriptors.isEmpty && item.streamURL == nil)
             .accessibilityHint("Starts the preferred available playback source")
 
             Picker("Default source", selection: $defaultProviderID) {
@@ -200,9 +189,6 @@ struct WatchHubView: View {
                 if !discoveredTorrentDescriptors.isEmpty {
                     Text("Torrent streaming").tag("libtorrent")
                 }
-                if item.kind == .movie {
-                    Text("Internet Archive · open-license metadata").tag("internet-archive")
-                }
             }
             .pickerStyle(.menu)
             .accessibilityLabel("Default playback source")
@@ -215,12 +201,12 @@ struct WatchHubView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Source options")
                         .font(.title3.bold())
-                    Text("Embed candidates are experimental; Internet Archive results are checked against listed license metadata.")
+                    Text("Embed candidates are experimental. Stremio add-ons are queried for direct streams and torrent options.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("\(availableProviders.count + internetArchiveSources.count + discoveredSources.count + discoveredTorrentDescriptors.count + (item.streamURL == nil ? 0 : 1)) sources")
+                Text("\(availableProviders.count + discoveredSources.count + discoveredTorrentDescriptors.count + (item.streamURL == nil ? 0 : 1)) sources")
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -384,18 +370,16 @@ struct WatchHubView: View {
             }
 
             if availableProviders.isEmpty &&
-                internetArchiveSources.isEmpty &&
                 discoveredSources.isEmpty &&
                 discoveredTorrentDescriptors.isEmpty &&
-                !internetArchiveSourcesLoading &&
                 !searchingAddonSources &&
                 item.streamURL == nil {
                 ContentUnavailableView(
                     "No compatible sources found",
                     systemImage: "dot.radiowaves.left.and.right",
                     description: Text(request.tmdbID == nil
-                        ? "No verified direct source is attached. Internet Archive searches public-domain and CC0 films automatically."
-                        : "No direct source was found. Internet Archive searches public-domain and CC0 films automatically.")
+                        ? "No verified direct source is attached. Configure a compatible Stremio add-on or provide a direct media URL."
+                        : "No direct source was found. Check your Stremio add-ons or try another provider.")
                 )
                 .padding(.vertical, 8)
             }
@@ -441,76 +425,6 @@ struct WatchHubView: View {
                 }
             }
         }
-    }
-
-    private var internetArchiveSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Open-license films")
-                        .font(.title3.bold())
-                    Text("Automatically searched through Internet Archive. Only exact-title MP4 results with an accepted public-domain or CC0 license label are shown.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if internetArchiveSourcesLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-            }
-
-            if let internetArchiveSourceErrorMessage {
-                Text(internetArchiveSourceErrorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            ForEach(internetArchiveSources) { source in
-                Button {
-                    playInternetArchiveSource(source)
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.title2)
-                            .foregroundStyle(Color.cineNexAccent)
-                            .frame(width: 44, height: 44)
-                            .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(source.title)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                            Text(source.qualityLabel ?? "Internet Archive MP4")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text("Open-license label detected · native playback")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "play.fill")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(Color.cineNexAccent)
-                    }
-                    .padding(12)
-                    .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Play \(source.title) from Internet Archive")
-                .accessibilityHint("Opens the direct MP4 source in CineNex's native player")
-            }
-
-            if internetArchiveSources.isEmpty && !internetArchiveSourcesLoading && internetArchiveSourceErrorMessage == nil {
-                Text(item.kind == .series
-                    ? "This integration currently supports films, not episodic series."
-                    : "No exact-title public-domain or CC0 MP4 was found.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
     }
 
     private var recommendationsSection: some View {
@@ -708,46 +622,6 @@ struct WatchHubView: View {
             episodeErrorMessage = error.localizedDescription
             episodes = []
         }
-    }
-
-    @MainActor
-    private func loadInternetArchiveSources() async {
-        internetArchiveSources = []
-        internetArchiveSourceErrorMessage = nil
-        guard item.kind == .movie else { return }
-
-        internetArchiveSourcesLoading = true
-        defer { internetArchiveSourcesLoading = false }
-
-        do {
-            let result = try await PlaybackSourceCoordinator(
-                providers: [InternetArchivePlaybackProvider()]
-            ).search(for: request)
-            internetArchiveSources = result.sources
-        } catch is CancellationError {
-            return
-        } catch {
-            internetArchiveSourceErrorMessage = "Internet Archive source discovery failed: \(error.localizedDescription)"
-        }
-    }
-
-    private func playInternetArchiveSource(_ source: PlaybackSource) {
-        let playableItem = MediaItem(
-            id: "\(item.id)-internet-archive",
-            title: item.title,
-            kind: item.kind,
-            year: item.year,
-            genre: item.genre,
-            synopsis: item.synopsis,
-            symbol: item.symbol,
-            runtime: item.runtime,
-            streamURL: source.url,
-            posterURL: item.posterURL,
-            rating: item.rating,
-            externalID: item.externalID,
-            metadataProvider: item.metadataProvider
-        )
-        onPlayDirect(playableItem)
     }
 
     @MainActor
