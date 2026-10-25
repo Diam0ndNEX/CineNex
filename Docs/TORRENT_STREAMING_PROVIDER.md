@@ -15,6 +15,8 @@ The HTTP server supports GET, HEAD, and single byte ranges, limits each read to 
 
 ## XITRIX engine behavior
 
+Before the first playback range is requested, the engine assigns a high priority to the selected file's first 2 MiB and a lower background priority to its last 16 MiB. This carries over the useful startup/tail priming strategy from the SceneBox architecture without coupling CineNex to SceneBox types. The moving playback window can temporarily promote any piece to the highest priority; when that window moves away, pinned head/tail pieces return to their startup priority instead of being accidentally demoted to the lowest background level. The pure `TorrentStartupPiecePriorityPlan` planner validates torrent-global offsets and piece bounds and is covered by unit tests.
+
 The current engine adapter:
 
 1. Creates a per-info-hash cache location and starts a libtorrent session from the selected magnet URI.
