@@ -426,17 +426,12 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 20)
 
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
-                        ForEach(animeCatalog) { anime in
-                            AnimePosterCard(
-                                anime: anime,
-                                watchedEpisodes: animeProgressStore.watchedEpisodeCount(for: anime)
-                            ) {
-                                selectedAnime = anime
-                            }
-                        }
+                    AnimePosterShelf(
+                        items: animeCatalog,
+                        progressStore: animeProgressStore
+                    ) { anime in
+                        selectedAnime = anime
                     }
-                    .padding(.horizontal, 20)
                 }
             }
         }
