@@ -11,7 +11,11 @@ struct CinemetaCatalogProvider: Sendable {
         let requests: [(type: String, genre: String?)] = [
             ("movie", nil), ("series", nil),
             ("movie", "Action"), ("movie", "Comedy"), ("movie", "Science Fiction"),
-            ("series", "Drama"), ("series", "Comedy"), ("series", "Crime")
+            ("movie", "Thriller"), ("movie", "Horror"), ("movie", "Animation"),
+            ("movie", "Adventure"), ("movie", "Drama"),
+            ("series", "Drama"), ("series", "Comedy"), ("series", "Crime"),
+            ("series", "Action"), ("series", "Science Fiction"), ("series", "Animation"),
+            ("series", "Mystery")
         ]
         return try await withThrowingTaskGroup(of: [MediaItem].self) { group in
             for catalogRequest in requests {

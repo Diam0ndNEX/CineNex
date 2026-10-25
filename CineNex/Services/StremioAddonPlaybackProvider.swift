@@ -337,7 +337,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
     ) -> [PlaybackSource] {
         entries.compactMap { entry -> PlaybackSource? in
             guard let url = entry.validatedPlaybackURL else { return nil }
-            let title = [entry.name, entry.title]
+            let title = [entry.title, entry.name]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .first(where: { !$0.isEmpty }) ?? "Stream from add-on \(index + 1)"
             let quality = Self.qualityLabel(from: [entry.name, entry.title, entry.description].compactMap { $0 }.joined(separator: " "))

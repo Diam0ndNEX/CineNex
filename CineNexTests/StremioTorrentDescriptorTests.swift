@@ -68,6 +68,16 @@ final class StremioTorrentDescriptorTests: XCTestCase {
         XCTAssertEqual(components.queryItems?.filter { $0.name == "tr" }.count, 1)
     }
 
+    func testPrefersReleaseTitleOverAddonNameAndOpaqueFilename() throws {
+        let stream = try JSONDecoder().decode(
+            StremioStreamEntry.self,
+            from: Data(#"{"name":"Torrentio · 1080p · 1234567890abcdef1234567890abcdef12345678","title":"Ghost Torrents S01E02 1080p","infoHash":"0123456789abcdef0123456789abcdef01234567","behaviorHints":{"filename":"0123456789abcdef0123456789abcdef01234567.mp4"}}"#.utf8)
+        )
+        let descriptor = try XCTUnwrap(StremioTorrentDescriptor(stream: stream, providerName: "Torrentio"))
+        XCTAssertEqual(descriptor.title, "Ghost Torrents S01E02 1080p")
+        XCTAssertEqual(descriptor.providerName, "Torrentio")
+    }
+
     func testPreservesReadableTorrentTitleAndProviderName() throws {
         let stream = try JSONDecoder().decode(
             StremioStreamEntry.self,

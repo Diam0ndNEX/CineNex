@@ -43,6 +43,8 @@ final class CinemetaCatalogProviderTests: XCTestCase {
         XCTAssertTrue(requestedPaths.values.contains("/catalog/movie/top.json"))
         XCTAssertTrue(requestedPaths.values.contains("/catalog/movie/top/genre=Action.json"))
         XCTAssertTrue(requestedPaths.values.contains("/catalog/series/top/genre=Drama.json"))
+        XCTAssertTrue(requestedPaths.values.contains("/catalog/movie/top/genre=Horror.json"))
+        XCTAssertTrue(requestedPaths.values.contains("/catalog/series/top/genre=Animation.json"))
     }
 
     func testSearchEncodesQueryAndRejectsInvalidImageURLs() async throws {
