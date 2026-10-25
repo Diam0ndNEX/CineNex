@@ -1,10 +1,14 @@
 # Tracking Integrations
 
-## Internet Archive playback
+## Stremio-compatible playback add-ons
 
-CineNex automatically searches Internet Archive for films matching the selected movie title. It makes direct API requests from the app; no personal server, API token, or add-on URL is required. The initial integration only offers direct MP4 files when the record title matches, the file is not marked private, the reported format is supported, and the record's `licenseurl` matches a conservative allowlist of public-domain mark or Creative Commons Zero license paths. Series episodes are not supported by this provider.
+CineNex queries configured Stremio-compatible add-on manifest URLs for direct media streams and torrent descriptors. The Watch Hub defaults to Torrentio with the configured `qualityfilter=unknown,other,cam,scr` exclusions and the MediaFusion Midnight instance. Add-on URLs are stored in the iOS Keychain with device-only accessibility and can be edited in the Watch Hub; enter one HTTPS manifest URL per line. Existing URLs stored in UserDefaults are migrated to the Keychain when possible. To use a personalized MediaFusion configuration, paste its generated manifest URL into the Watch Hub on your device; CineNex does not ship that unique URL in the public repository. The URL editor is marked privacy-sensitive to reduce exposure in system snapshots.
 
-The license label is metadata supplied by the archive record and is not independent proof of rights. CineNex does not bypass authentication, DRM, or access controls. Results can be empty if an exact-title match or eligible file is unavailable; the existing playback choices remain available. Direct sources are handed to AVPlayer and may still fail if the server response or encoding is incompatible.
+For custom Torrentio filters or debrid settings, open [Torrentio Configure](https://torrentio.strem.fun/configure), configure the options you want, and use the configured add-on's manifest URL in CineNex instead of the default manifest. For MediaFusion Direct P2P or other personalized settings, use the configured manifest URL provided by the instance you trust and save it locally in CineNex. The bundled Midnight URL is the generic instance manifest; users can replace it with their configured URL. Personalized configuration URLs remain in local app preferences and should not be committed to the public repository. Never paste credentials into a URL unless you understand that the full URL may contain private configuration.
+
+CineNex resolves TMDB catalog entries to IMDb identifiers before querying add-ons that use IMDb IDs. A manifest must advertise support for the requested movie or series stream resource. Returned direct URLs are candidates, not guarantees: providers may be offline, require authentication, return unsupported formats, or reject playback in iOS. Torrent descriptors are distinct from direct URLs and require the native torrent engine to prepare the selected media file.
+
+Only configure add-ons you trust. Add-ons receive the media identifier for the title or episode being searched, and their operator may observe requests. CineNex does not bypass DRM, authentication, or provider access controls.
 
 ## Trakt
 

@@ -290,6 +290,16 @@ struct ContentView: View {
                             MediaPosterCard(item: item) {
                                 selectedItem = item
                             }
+                            .onAppear {
+                                let isRemoteSearch = !remoteSearchQuery.isEmpty &&
+                                    remoteSearchQuery.caseInsensitiveCompare(searchText.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+                                let nearEndIDs = Set(displayedSearchResults.suffix(4).map(\.id))
+                                if isRemoteSearch &&
+                                    nearEndIDs.contains(item.id) &&
+                                    remoteSearchPage < remoteSearchTotalPages {
+                                    Task { await loadMoreTMDBSearchResults() }
+                                }
+                            }
                         }
                     }
 

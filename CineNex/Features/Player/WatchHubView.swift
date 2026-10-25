@@ -8,12 +8,14 @@ struct WatchHubView: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("cinenex.defaultPlaybackProvider") private var defaultProviderID = "smart"
-    @AppStorage("cinenex.stremioAddonManifestURLs") private var stremioAddonManifestURLs = "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
+    @State private var stremioAddonManifestURLs = "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusionfortheweebs.midnightignite.me/manifest.json"
+    @State private var manifestStorageError: String?
 
-    private static let defaultStremioAddonManifestURLText = "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
+    private static let legacyDefaultStremioAddonManifestURLText = "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
+    private static let defaultStremioAddonManifestURLText = "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusionfortheweebs.midnightignite.me/manifest.json"
     private static let defaultStremioAddonManifestURLs: [URL] = [
-        URL(string: "https://torrentio.strem.fun/manifest.json")!,
-        URL(string: "https://mediafusion.elfhosted.com/manifest.json")!
+        URL(string: "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json")!,
+        URL(string: "https://mediafusionfortheweebs.midnightignite.me/manifest.json")!
     ]
     @State private var selectedProvider: ResolvedEmbedSource?
     @State private var selectedDiscoveredSource: PlaybackSource?
@@ -25,9 +27,6 @@ struct WatchHubView: View {
     @State private var searchingAddonSources = false
     @State private var addonSearchMessage: String?
     @State private var availableProviders: [ResolvedEmbedSource] = []
-    @State private var internetArchiveSources: [PlaybackSource] = []
-    @State private var internetArchiveSourcesLoading = false
-    @State private var internetArchiveSourceErrorMessage: String?
     @State private var seasonNumber = 1
     @State private var episodeNumber = 1
     @State private var seasons: [TMDBTitleSeason] = []
@@ -57,7 +56,6 @@ struct WatchHubView: View {
                     quickActions
                     episodeSelection
                     providerSection
-                    internetArchiveSection
                     recommendationsSection
                 }
                 .padding(20)
@@ -86,9 +84,10 @@ struct WatchHubView: View {
             }
             .task(id: item.id) {
                 resolveSources()
-                async let archiveSearch: Void = loadInternetArchiveSources()
-                await loadCatalogDetails()
-                await archiveSearch
+                async let addonSearch: Void = searchStremioAddonSources()
+                async let catalogDetails: Void = loadCatalogDetails()
+                await addonSearch
+                await catalogDetails
             }
             .onDisappear {
                 torrentPreparationTask?.cancel()
@@ -147,13 +146,22 @@ struct WatchHubView: View {
             Button {
                 if (defaultProviderID == "smart" || defaultProviderID == "direct"), item.streamURL != nil {
                     onPlayDirect(item)
-                } else if (defaultProviderID == "smart" || defaultProviderID == "internet-archive"),
-                          let source = internetArchiveSources.first {
-                    playInternetArchiveSource(source)
+                } else if defaultProviderID == "stremio-addons", let source = discoveredSources.first {
+                    selectedDiscoveredSource = source
+                } else if defaultProviderID == "libtorrent", let descriptor = discoveredTorrentDescriptors.first {
+                    startTorrentPlayback(for: descriptor)
+                } else if (defaultProviderID == "smart" || defaultProviderID == "direct"),
+                          let source = discoveredSources.first {
+                    selectedDiscoveredSource = source
+                } else if (defaultProviderID == "smart" || defaultProviderID == "libtorrent"),
+                          let descriptor = discoveredTorrentDescriptors.first {
+                    startTorrentPlayback(for: descriptor)
                 } else if let preferred = availableProviders.first(where: { $0.provider.id == defaultProviderID }) {
                     selectedProvider = preferred
-                } else if let firstArchiveSource = internetArchiveSources.first {
-                    playInternetArchiveSource(firstArchiveSource)
+                } else if let first = discoveredSources.first {
+                    selectedDiscoveredSource = first
+                } else if let descriptor = discoveredTorrentDescriptors.first {
+                    startTorrentPlayback(for: descriptor)
                 } else if let first = availableProviders.first {
                     selectedProvider = first
                 } else if item.streamURL != nil {
@@ -166,7 +174,7 @@ struct WatchHubView: View {
                     .padding(.vertical, 15)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(availableProviders.isEmpty && internetArchiveSources.isEmpty && item.streamURL == nil)
+            .disabled(availableProviders.isEmpty && discoveredSources.isEmpty && discoveredTorrentDescriptors.isEmpty && item.streamURL == nil)
             .accessibilityHint("Starts the preferred available playback source")
 
             Picker("Default source", selection: $defaultProviderID) {
@@ -177,8 +185,11 @@ struct WatchHubView: View {
                 ForEach(availableProviders) { source in
                     Text(source.provider.displayName).tag(source.provider.id)
                 }
-                if item.kind == .movie {
-                    Text("Internet Archive · open-license metadata").tag("internet-archive")
+                if !discoveredSources.isEmpty {
+                    Text("Stremio add-ons").tag("stremio-addons")
+                }
+                if !discoveredTorrentDescriptors.isEmpty {
+                    Text("Torrent streaming").tag("libtorrent")
                 }
             }
             .pickerStyle(.menu)
@@ -192,12 +203,12 @@ struct WatchHubView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Source options")
                         .font(.title3.bold())
-                    Text("Embed candidates are experimental; Internet Archive results are checked against listed license metadata.")
+                    Text("Embed candidates are experimental. Stremio add-ons are queried for direct streams and torrent options.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("\(availableProviders.count + internetArchiveSources.count + (item.streamURL == nil ? 0 : 1)) sources")
+                Text("\(availableProviders.count + discoveredSources.count + discoveredTorrentDescriptors.count + (item.streamURL == nil ? 0 : 1)) sources")
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -233,9 +244,17 @@ struct WatchHubView: View {
                     .foregroundStyle(.secondary)
                 HStack(spacing: 14) {
                     Link("Configure Torrentio", destination: URL(string: "https://torrentio.strem.fun/configure")!)
-                    Link("Configure MediaFusion", destination: URL(string: "https://mediafusion.elfhosted.com")!)
+                    Link("Configure MediaFusion", destination: URL(string: "https://mediafusionfortheweebs.midnightignite.me/")!)
+                    Spacer(minLength: 0)
+                    Button("Restore defaults") {
+                        stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+                    }
+                    .font(.caption.weight(.medium))
                 }
                 .font(.caption.weight(.medium))
+                Text("One HTTPS manifest URL per line. Configured add-on URLs may include a custom path; keep private configuration URLs on your device.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 TextEditor(text: $stremioAddonManifestURLs)
                     .font(.caption.monospaced())
                     .scrollContentBackground(.hidden)
@@ -243,13 +262,41 @@ struct WatchHubView: View {
                     .padding(8)
                     .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
                     .accessibilityLabel("Stremio add-on manifest URLs")
+                    .privacySensitive()
                     .onAppear {
-                        if stremioAddonManifestURLs
-                            .split(whereSeparator: \.isNewline)
-                            .allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
-                            stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+                        do {
+                            let storedManifestURLs = try StremioAddonConfigurationStore.load()
+                            let normalizedManifestURLs = storedManifestURLs?
+                                .split(whereSeparator: \.isNewline)
+                                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                                .joined(separator: "\n")
+                            if let normalizedManifestURLs,
+                               !normalizedManifestURLs.isEmpty,
+                               normalizedManifestURLs != Self.legacyDefaultStremioAddonManifestURLText {
+                                stremioAddonManifestURLs = normalizedManifestURLs
+                            } else {
+                                stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+                            }
+                            try StremioAddonConfigurationStore.save(stremioAddonManifestURLs)
+                            manifestStorageError = nil
+                        } catch {
+                            manifestStorageError = "Secure storage is unavailable. Your add-on URLs could not be saved to the iOS Keychain."
                         }
                     }
+                    .onChange(of: stremioAddonManifestURLs) { _, newValue in
+                        do {
+                            try StremioAddonConfigurationStore.save(newValue)
+                            manifestStorageError = nil
+                        } catch {
+                            manifestStorageError = "Secure storage is unavailable. Your add-on URL changes could not be saved to the iOS Keychain."
+                        }
+                    }
+                if let manifestStorageError {
+                    Label(manifestStorageError, systemImage: "lock.shield")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let addonSearchMessage {
                     Text(addonSearchMessage)
                         .font(.caption)
@@ -361,15 +408,16 @@ struct WatchHubView: View {
             }
 
             if availableProviders.isEmpty &&
-                internetArchiveSources.isEmpty &&
-                !internetArchiveSourcesLoading &&
+                discoveredSources.isEmpty &&
+                discoveredTorrentDescriptors.isEmpty &&
+                !searchingAddonSources &&
                 item.streamURL == nil {
                 ContentUnavailableView(
                     "No compatible sources found",
                     systemImage: "dot.radiowaves.left.and.right",
                     description: Text(request.tmdbID == nil
-                        ? "No verified direct source is attached. Internet Archive searches public-domain and CC0 films automatically."
-                        : "No direct source was found. Internet Archive searches public-domain and CC0 films automatically.")
+                        ? "No verified direct source is attached. Configure a compatible Stremio add-on or provide a direct media URL."
+                        : "No direct source was found. Check your Stremio add-ons or try another provider.")
                 )
                 .padding(.vertical, 8)
             }
@@ -415,76 +463,6 @@ struct WatchHubView: View {
                 }
             }
         }
-    }
-
-    private var internetArchiveSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Open-license films")
-                        .font(.title3.bold())
-                    Text("Automatically searched through Internet Archive. Only exact-title MP4 results with an accepted public-domain or CC0 license label are shown.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if internetArchiveSourcesLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-            }
-
-            if let internetArchiveSourceErrorMessage {
-                Text(internetArchiveSourceErrorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            ForEach(internetArchiveSources) { source in
-                Button {
-                    playInternetArchiveSource(source)
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.title2)
-                            .foregroundStyle(Color.cineNexAccent)
-                            .frame(width: 44, height: 44)
-                            .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(source.title)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                            Text(source.qualityLabel ?? "Internet Archive MP4")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text("Open-license label detected · native playback")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "play.fill")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(Color.cineNexAccent)
-                    }
-                    .padding(12)
-                    .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Play \(source.title) from Internet Archive")
-                .accessibilityHint("Opens the direct MP4 source in CineNex's native player")
-            }
-
-            if internetArchiveSources.isEmpty && !internetArchiveSourcesLoading && internetArchiveSourceErrorMessage == nil {
-                Text(item.kind == .series
-                    ? "This integration currently supports films, not episodic series."
-                    : "No exact-title public-domain or CC0 MP4 was found.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
     }
 
     private var recommendationsSection: some View {
@@ -685,46 +663,6 @@ struct WatchHubView: View {
     }
 
     @MainActor
-    private func loadInternetArchiveSources() async {
-        internetArchiveSources = []
-        internetArchiveSourceErrorMessage = nil
-        guard item.kind == .movie else { return }
-
-        internetArchiveSourcesLoading = true
-        defer { internetArchiveSourcesLoading = false }
-
-        do {
-            let result = try await PlaybackSourceCoordinator(
-                providers: [InternetArchivePlaybackProvider()]
-            ).search(for: request)
-            internetArchiveSources = result.sources
-        } catch is CancellationError {
-            return
-        } catch {
-            internetArchiveSourceErrorMessage = "Internet Archive source discovery failed: \(error.localizedDescription)"
-        }
-    }
-
-    private func playInternetArchiveSource(_ source: PlaybackSource) {
-        let playableItem = MediaItem(
-            id: "\(item.id)-internet-archive",
-            title: item.title,
-            kind: item.kind,
-            year: item.year,
-            genre: item.genre,
-            synopsis: item.synopsis,
-            symbol: item.symbol,
-            runtime: item.runtime,
-            streamURL: source.url,
-            posterURL: item.posterURL,
-            rating: item.rating,
-            externalID: item.externalID,
-            metadataProvider: item.metadataProvider
-        )
-        onPlayDirect(playableItem)
-    }
-
-    @MainActor
     private func searchStremioAddonSources() async {
         let configuredManifestURLs = stremioAddonManifestURLs
             .split(whereSeparator: \.isNewline)
@@ -854,7 +792,6 @@ struct WatchHubView: View {
             return $0.provider.displayName.localizedStandardCompare($1.provider.displayName) == .orderedAscending
         }
         if defaultProviderID != "smart",
-           defaultProviderID != "internet-archive",
            !(defaultProviderID == "direct" && item.streamURL != nil),
            !availableProviders.contains(where: { $0.provider.id == defaultProviderID }) {
             defaultProviderID = "smart"
