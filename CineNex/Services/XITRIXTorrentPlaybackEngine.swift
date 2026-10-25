@@ -41,6 +41,87 @@ enum XITRIXTorrentFileSupport {
 }
 
 
+struct TorrentStartupPiecePriorityPlan: Equatable {
+    let priorities: [Int64: Int]
+
+    static func make(
+        fileStartOffset: Int64,
+        fileLength: Int64,
+        pieceLength: Int64,
+        pieceCount: Int64,
+        headBytes: Int64 = 2 * 1_024 * 1_024,
+        tailBytes: Int64 = 16 * 1_024 * 1_024,
+        headPriority: Int = 7,
+        tailPriority: Int = 5
+    ) -> TorrentStartupPiecePriorityPlan? {
+        guard fileStartOffset >= 0,
+              fileLength >= 0,
+              pieceLength > 0,
+              pieceCount >= 0,
+              headBytes >= 0,
+              tailBytes >= 0,
+              (0...7).contains(headPriority),
+              (0...7).contains(tailPriority) else {
+            return nil
+        }
+
+        let (fileEnd, overflow) = fileStartOffset.addingReportingOverflow(fileLength)
+        guard !overflow else { return nil }
+        guard fileLength == 0 else {
+            let lastPiece = (fileEnd - 1) / pieceLength
+            guard lastPiece < pieceCount else { return nil }
+            var priorities: [Int64: Int] = [:]
+
+            func addRange(start: Int64, end: Int64, priority: Int) {
+                guard end > start else { return }
+                let firstPiece = start / pieceLength
+                let lastPiece = (end - 1) / pieceLength
+                for piece in firstPiece...lastPiece {
+                    priorities[piece] = max(priorities[piece] ?? 0, priority)
+                }
+            }
+
+            let headEnd = min(fileEnd, fileStartOffset + min(headBytes, fileLength))
+            addRange(start: fileStartOffset, end: headEnd, priority: headPriority)
+            let tailStart = max(fileStartOffset, fileEnd - min(tailBytes, fileLength))
+            addRange(start: tailStart, end: fileEnd, priority: tailPriority)
+            return TorrentStartupPiecePriorityPlan(priorities: priorities)
+        }
+        return TorrentStartupPiecePriorityPlan(priorities: [:])
+    }
+}
+
+struct TorrentPieceDeadlinePlan: Equatable {
+    let deadlinesMilliseconds: [Int64: Int]
+
+    static func make(
+        for requested: Range<Int64>,
+        pieceCount: Int64,
+        stepMilliseconds: Int = 80,
+        maximumMilliseconds: Int = 60_000
+    ) -> TorrentPieceDeadlinePlan? {
+        guard pieceCount >= 0,
+              requested.lowerBound >= 0,
+              requested.upperBound >= requested.lowerBound,
+              requested.upperBound <= pieceCount,
+              stepMilliseconds >= 0,
+              maximumMilliseconds >= 0 else {
+            return nil
+        }
+
+        var deadlines: [Int64: Int] = [:]
+        var deadline = 0
+        for piece in requested {
+            deadlines[piece] = deadline
+            let remainingDelay = maximumMilliseconds - deadline
+            deadline = stepMilliseconds >= remainingDelay
+                ? maximumMilliseconds
+                : deadline + stepMilliseconds
+        }
+        return TorrentPieceDeadlinePlan(deadlinesMilliseconds: deadlines)
+    }
+}
+
 struct TorrentPiecePriorityWindow: Equatable {
     let piecesToDemote: [Int64]
     let piecesToPromote: [Int64]
@@ -83,6 +164,8 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
     private var reader: TorrentDiskByteReader?
     private var preparedFile: TorrentPreparedFile?
     private var prioritizedPieces = Set<Int64>()
+    private var startupPiecePriorities: [Int64: Int] = [:]
+    private var deadlinePieces = Set<Int64>()
 
     init(descriptor: StremioTorrentDescriptor) {
         self.descriptor = descriptor
@@ -192,6 +275,24 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         }
         handle.setFilePriority(FileEntry.Priority.lowPriority, at: selectedFileIndex)
 
+        handle.updateSnapshot()
+        guard let pieceStates = handle.snapshot.pieces,
+              let startupPlan = TorrentStartupPiecePriorityPlan.make(
+                fileStartOffset: Int64(selectedFile.fileOffset),
+                fileLength: Int64(selectedFile.size),
+                pieceLength: Int64(snapshot.pieceLength),
+                pieceCount: Int64(pieceStates.count)
+              ) else {
+            throw TorrentStreamingError.invalidTorrentLayout
+        }
+        for (piece, priority) in startupPlan.priorities.sorted(by: { $0.key < $1.key }) {
+            try Task.checkCancellation()
+            guard handle.setPiecePriority(priority, at: Int(piece)) else {
+                throw TorrentStreamingError.invalidTorrentLayout
+            }
+        }
+        startupPiecePriorities = startupPlan.priorities
+
         try await waitForFile(at: fileURL, expectedLength: Int64(selectedFile.size))
         guard let verifiedFileURL = XITRIXTorrentFileSupport.safeFileURL(
             root: root,
@@ -244,11 +345,32 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             throw TorrentStreamingError.invalidTorrentLayout
         }
         let requestedPieces = Set(expandedRange)
+        guard let deadlinePlan = TorrentPieceDeadlinePlan.make(
+            for: pieces,
+            pieceCount: pieceCount
+        ) else {
+            throw TorrentStreamingError.invalidTorrentLayout
+        }
+        let requestedDeadlinePieces = Set(deadlinePlan.deadlinesMilliseconds.keys)
+
+        for piece in deadlinePieces.subtracting(requestedDeadlinePieces).sorted() {
+            try Task.checkCancellation()
+            guard handle.clearPieceDeadline(at: Int(piece)) else {
+                throw TorrentStreamingError.invalidTorrentLayout
+            }
+        }
+        for (piece, milliseconds) in deadlinePlan.deadlinesMilliseconds.sorted(by: { $0.key < $1.key }) {
+            try Task.checkCancellation()
+            guard handle.setPieceDeadline(milliseconds, at: Int(piece)) else {
+                throw TorrentStreamingError.invalidTorrentLayout
+            }
+        }
 
         let priorityWindow = TorrentPiecePriorityWindow(current: prioritizedPieces, requested: requestedPieces)
         for piece in priorityWindow.piecesToDemote {
             try Task.checkCancellation()
-            guard handle.setPiecePriority(1, at: Int(piece)) else {
+            let fallbackPriority = startupPiecePriorities[piece] ?? 1
+            guard handle.setPiecePriority(fallbackPriority, at: Int(piece)) else {
                 throw TorrentStreamingError.invalidTorrentLayout
             }
         }
@@ -259,6 +381,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             }
         }
         prioritizedPieces = requestedPieces
+        deadlinePieces = requestedDeadlinePieces
     }
 
     func waitUntilAvailable(pieces: Range<Int64>) async throws {
@@ -300,6 +423,8 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         self.reader = nil
         self.preparedFile = nil
         self.prioritizedPieces.removeAll()
+        self.startupPiecePriorities.removeAll()
+        self.deadlinePieces.removeAll()
         self.handle = nil
         self.session = nil
         self.downloadRoot = nil

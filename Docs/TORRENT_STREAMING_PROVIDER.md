@@ -15,6 +15,8 @@ The HTTP server supports GET, HEAD, and single byte ranges, limits each read to 
 
 ## XITRIX engine behavior
 
+Before the first playback range is requested, the engine assigns a high priority to the selected file's first 2 MiB and a lower background priority to its last 16 MiB. This carries over the useful startup/tail priming strategy from the SceneBox architecture without coupling CineNex to SceneBox types. The moving playback window can temporarily promote any piece to the highest priority; when that window moves away, pinned head/tail pieces return to their startup priority instead of being accidentally demoted to the lowest background level. The pure `TorrentStartupPiecePriorityPlan` planner validates torrent-global offsets and piece bounds and is covered by unit tests.
+
 The current engine adapter:
 
 1. Creates a per-info-hash cache location and starts a libtorrent session from the selected magnet URI.
@@ -37,3 +39,7 @@ A green simulator workflow does not prove real-world torrent playback on a physi
 ## Stream diagnostics
 
 The loopback server maintains a thread-safe per-server telemetry snapshot for accepted requests, byte-range requests, bytes successfully written to the client, failed requests, active connections, total time spent waiting for requested torrent bytes, and the slowest individual read. The snapshot is available through `diagnosticsSnapshot()`; on teardown, the server emits a compact summary through the unified logging system. Metrics intentionally omit stream tokens, URLs, titles, and file paths. The counters are covered by concurrent-update unit tests.
+
+## SceneBox-inspired playback deadlines
+
+CineNex assigns libtorrent deadlines to the exact piece range required by each byte-range read. Pieces are scheduled in ascending playback order at 80 ms intervals, capped at 60 seconds for unusually large ranges. When a later read moves the playback window, deadlines for pieces no longer in the requested range are cleared. This supplements piece priorities: priorities guide general selection, while deadlines make the currently requested bytes urgent. Deadlines are relative to the moment they are scheduled and are best-effort targets; a slow or unavailable swarm can still miss them. The pure `TorrentPieceDeadlinePlan` validates ranges and delay bounds and is covered by unit tests. The native bridge is applied by the CI patcher and is built for both device and simulator targets before app tests run.
