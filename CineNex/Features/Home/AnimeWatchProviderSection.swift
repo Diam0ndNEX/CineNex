@@ -31,10 +31,16 @@ struct AnimeWebsiteProvider: Identifiable, Hashable {
             queryParameter: "query"
         ),
         AnimeWebsiteProvider(
-            id: "animekai",
-            name: "AnimeKai",
-            searchBaseURL: URL(string: "https://animekai.be/search")!,
+            id: "anikoto",
+            name: "Anikoto",
+            searchBaseURL: URL(string: "https://anikototv.to/search")!,
             queryParameter: "keyword"
+        ),
+        AnimeWebsiteProvider(
+            id: "crunchyroll",
+            name: "Crunchyroll",
+            searchBaseURL: URL(string: "https://www.crunchyroll.com/search")!,
+            queryParameter: "q"
         )
     ]
 }
