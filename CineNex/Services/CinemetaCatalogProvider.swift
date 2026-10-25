@@ -33,18 +33,20 @@ struct CinemetaCatalogProvider: Sendable {
         guard type == "movie" || type == "series" else {
             throw CinemetaCatalogError.invalidRequest
         }
-        var components = URLComponents(string: "https://v3-cinemeta.strem.io/catalog/\(type)/top")
+        let searchPath: String
         if let query {
             let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
             guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: allowed) else {
                 throw CinemetaCatalogError.invalidRequest
             }
-            components?.path += "/search=\(encodedQuery)"
+            searchPath = "/search=\(encodedQuery)"
+        } else {
+            searchPath = ""
         }
-        components?.path += ".json"
-        guard let url = components?.url,
-              url.scheme == "https",
-              url.host == "v3-cinemeta.strem.io" else {
+        guard let url = URL(string: "https://v3-cinemeta.strem.io/catalog/\(type)/top\(searchPath).json"),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.scheme == "https",
+              components.host == "v3-cinemeta.strem.io" else {
             throw CinemetaCatalogError.invalidRequest
         }
 
