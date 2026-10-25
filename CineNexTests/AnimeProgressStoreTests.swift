@@ -36,7 +36,7 @@ final class AnimeProgressStoreTests: XCTestCase {
     }
 
     func testNegativeEpisodeCountNeverProducesNegativeProgress() {
-        let suiteName = "AnimeProgressStoreTests.\\(UUID().uuidString)"
+        let suiteName = UUID().uuidString
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let anime = makeAnime(id: 404, episodeCount: -3)
