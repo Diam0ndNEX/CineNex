@@ -130,7 +130,17 @@ struct EmbedWebView: UIViewRepresentable {
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-            nil
+            guard navigationAction.targetFrame == nil,
+                  let targetURL = navigationAction.request.url,
+                  PlaybackCleanerPolicy.shouldAllowNavigation(
+                    to: targetURL,
+                    cleanerEnabled: cleanerEnabledForCurrentPage
+                  ) else {
+                return nil
+            }
+
+            webView.load(navigationAction.request)
+            return nil
         }
     }
 }
