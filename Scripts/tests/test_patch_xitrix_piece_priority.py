@@ -6,6 +6,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from patch_xitrix_piece_priority import (
+    CLEAR_DEADLINE_IMPLEMENTATION_METHOD,
+    CLEAR_DEADLINE_METHOD,
+    DEADLINE_IMPLEMENTATION_METHOD,
+    DEADLINE_METHOD,
     FILE_ENTRY_INTERNAL_METHOD,
     FILE_ENTRY_METHOD,
     FILE_OFFSET_ASSIGNMENT,
@@ -90,6 +94,12 @@ class PatchXitrixPiecePriorityTests(unittest.TestCase):
             self.assertIn("priority > 7", implementation_text)
             self.assertIn("pieceIndex >= torrentInfo->num_pieces()", implementation_text)
             self.assertIn("handle.piece_priority(", implementation_text)
+            self.assertIn(DEADLINE_METHOD, header_text)
+            self.assertIn(DEADLINE_IMPLEMENTATION_METHOD, implementation_text)
+            self.assertIn(CLEAR_DEADLINE_METHOD, header_text)
+            self.assertIn(CLEAR_DEADLINE_IMPLEMENTATION_METHOD, implementation_text)
+            self.assertIn("handle.set_piece_deadline(", implementation_text)
+            self.assertIn("handle.reset_piece_deadline(", implementation_text)
             self.assertIn(FILE_ENTRY_METHOD, file_entry.read_text(encoding="utf-8"))
             self.assertIn(FILE_ENTRY_INTERNAL_METHOD, file_entry_internal.read_text(encoding="utf-8"))
             self.assertIn(FILE_OFFSET_ASSIGNMENT, snapshot.read_text(encoding="utf-8"))
