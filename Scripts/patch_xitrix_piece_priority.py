@@ -10,6 +10,7 @@ DEADLINE_METHOD = "- (BOOL)setPieceDeadline:(NSInteger)milliseconds at:(NSIntege
 DEADLINE_IMPLEMENTATION_METHOD = "- (BOOL)setPieceDeadline:(NSInteger)milliseconds at:(NSInteger)pieceIndex {"
 CLEAR_DEADLINE_METHOD = "- (BOOL)clearPieceDeadlineAt:(NSInteger)pieceIndex;"
 CLEAR_DEADLINE_IMPLEMENTATION_METHOD = "- (BOOL)clearPieceDeadlineAt:(NSInteger)pieceIndex {"
+CLEAR_DEADLINE_IMPLEMENTATION = """- (BOOL)clearPieceDeadlineAt:(NSInteger)pieceIndex {\n    if (pieceIndex < 0) {\n        return NO;\n    }\n\n    __block BOOL didClearDeadline = NO;\n    [self performOperation:@\"clearPieceDeadline\" action:^(lt::torrent_handle const &handle) {\n        auto torrentInfo = handle.torrent_file();\n        if (torrentInfo == nullptr || pieceIndex >= torrentInfo->num_pieces()) {\n            return;\n        }\n\n        handle.reset_piece_deadline(lt::piece_index_t(static_cast<int>(pieceIndex)));\n        didClearDeadline = YES;\n    }];\n    return didClearDeadline;\n}\n\n"""
 FILE_ENTRY_METHOD = "@property (readonly, nonatomic) uint64_t fileOffset;"
 FILE_ENTRY_INTERNAL_METHOD = "@property (readwrite, nonatomic) uint64_t fileOffset;"
 FILE_OFFSET_ASSIGNMENT = "fileEntry.fileOffset = static_cast<uint64_t>(layout.file_offset(fileIndex));"
@@ -155,7 +156,7 @@ def patch_wrapper(wrapper_root: Path) -> bool:
     )
     updated_implementation = updated_implementation.replace(
         implementation_anchor,
-        CLEAR_DEADLINE_IMPLEMENTATION_METHOD + implementation_anchor,
+        CLEAR_DEADLINE_IMPLEMENTATION + implementation_anchor,
         1,
     )
     updated_file_entry = file_entry.replace(file_entry_anchor, FILE_ENTRY_METHOD + "\n" + file_entry_anchor, 1)
