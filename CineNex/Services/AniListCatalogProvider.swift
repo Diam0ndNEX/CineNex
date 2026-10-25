@@ -75,20 +75,21 @@ struct AniListCatalogProvider {
             throw AniListCatalogError.api(firstError)
         }
 
-        guard let results = envelope.data?.page.media else {
+        guard let results = envelope.data?.page?.media else {
             throw AniListCatalogError.invalidData
         }
 
         var seenIDs = Set<Int>()
         return results.compactMap { result in
-            guard result.id > 0, seenIDs.insert(result.id).inserted else {
+            guard result.id > 0 else {
                 return nil
             }
 
             let candidates = [result.title?.english, result.title?.romaji, result.title?.native]
             guard let title = candidates
                 .compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) })
-                .first(where: { !$0.isEmpty }) else {
+                .first(where: { !$0.isEmpty }),
+                  seenIDs.insert(result.id).inserted else {
                 return nil
             }
 
