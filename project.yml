@@ -24,6 +24,8 @@ targets:
     dependencies:
       - framework: Thirdparty/LibTorrent-Swift/Build/LibTorrent.xcframework
         embed: true
+      - framework: Thirdparty/LibTorrent-Swift/Build/OpenSSL.xcframework
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.diam0ndnex.cinenex
