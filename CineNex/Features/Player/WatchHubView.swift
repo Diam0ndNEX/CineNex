@@ -762,7 +762,6 @@ struct WatchHubView: View {
             return $0.provider.displayName.localizedStandardCompare($1.provider.displayName) == .orderedAscending
         }
         if defaultProviderID != "smart",
-           defaultProviderID != "internet-archive",
            !(defaultProviderID == "direct" && item.streamURL != nil),
            !availableProviders.contains(where: { $0.provider.id == defaultProviderID }) {
             defaultProviderID = "smart"
