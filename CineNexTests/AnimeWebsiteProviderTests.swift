@@ -18,6 +18,11 @@ final class AnimeWebsiteProviderTests: XCTestCase {
         )
 
         XCTAssertFalse(AnimeWebsiteProvider.supported.isEmpty)
+        let providerIDs = Set(AnimeWebsiteProvider.supported.map(\\.id))
+        XCTAssertTrue(providerIDs.contains("miruro"))
+        XCTAssertTrue(providerIDs.contains("anikoto"))
+        XCTAssertTrue(providerIDs.contains("crunchyroll"))
+        XCTAssertFalse(providerIDs.contains("animekai"))
         for provider in AnimeWebsiteProvider.supported {
             let url = provider.searchURL(for: anime)
             XCTAssertEqual(url?.scheme, "https")
