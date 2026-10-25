@@ -10,6 +10,11 @@ DEADLINE_METHOD = "- (BOOL)setPieceDeadline:(NSInteger)milliseconds at:(NSIntege
 DEADLINE_IMPLEMENTATION_METHOD = "- (BOOL)setPieceDeadline:(NSInteger)milliseconds at:(NSInteger)pieceIndex {"
 CLEAR_DEADLINE_METHOD = "- (BOOL)clearPieceDeadlineAt:(NSInteger)pieceIndex;"
 CLEAR_DEADLINE_IMPLEMENTATION_METHOD = "- (BOOL)clearPieceDeadlineAt:(NSInteger)pieceIndex {"
+FILE_ENTRY_METHOD = "@property (readonly, nonatomic) uint64_t fileOffset;"
+FILE_ENTRY_INTERNAL_METHOD = "@property (readwrite, nonatomic) uint64_t fileOffset;"
+FILE_OFFSET_ASSIGNMENT = "fileEntry.fileOffset = static_cast<uint64_t>(layout.file_offset(fileIndex));"
+PIECE_LENGTH_METHOD = "@property (readonly) uint32_t pieceLength;"
+PIECE_LENGTH_GETTER = "- (uint32_t)pieceLength {"
 DEADLINE_IMPLEMENTATION = """- (BOOL)setPieceDeadline:(NSInteger)milliseconds at:(NSInteger)pieceIndex {
     if (pieceIndex < 0 || milliseconds < 0 || milliseconds > 60000) {
         return NO;
