@@ -255,13 +255,15 @@ struct WatchHubView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Available sources")
                         .font(.title3.bold())
-                    Text("Choose a direct stream or prepare a torrent. Sources are checked when you start playback.")
+                    Text("Direct streams and torrents come from add-ons. Embedded websites open third-party players and may fail for individual titles.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("\(availableProviders.count + discoveredSources.count + discoveredTorrentDescriptors.count + (item.streamURL == nil ? 0 : 1)) sources")
-                    .font(.caption.weight(.semibold))
+                Text("\(discoveredSources.count + (item.streamURL == nil ? 0 : 1)) direct · \(discoveredTorrentDescriptors.count) torrent · \(availableProviders.count) embedded")
+                    .font(.caption2.weight(.semibold))
+                    .multilineTextAlignment(.trailing)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(Color.cineNexSurface, in: Capsule())
@@ -482,6 +484,16 @@ struct WatchHubView: View {
             }
 
             if !availableProviders.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Embedded websites", systemImage: "globe")
+                        .font(.subheadline.weight(.semibold))
+                    Text("These are fallback web players, not verified direct streams. If one fails, return here and try another.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 4)
+
                 ForEach(availableProviders) { source in
                     Button {
                         activePlaybackSheet = .embedded(source)
