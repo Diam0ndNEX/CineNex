@@ -534,17 +534,20 @@ struct TorrentPlaybackProvider: PlaybackSourceProvider, Sendable {
 
     func findSources(for request: PlaybackSourceRequest) async throws -> [PlaybackSource] {
         guard request.isValid else { throw PlaybackSourceSearchError.invalidRequest }
-        let preparedFiles = try await engine.prepareFiles(for: request)
-            .filter(\.isValid)
-            .sorted { lhs, rhs in
-                if lhs.length != rhs.length { return lhs.length > rhs.length }
-                return lhs.fileName.localizedStandardCompare(rhs.fileName) == .orderedAscending
-            }
-        guard !preparedFiles.isEmpty else { return [] }
-        _ = try await server.start()
-        var sources: [PlaybackSource] = []
         var registeredURLs: [URL] = []
         do {
+            let preparedFiles = try await engine.prepareFiles(for: request)
+                .filter(\.isValid)
+                .sorted { lhs, rhs in
+                    if lhs.length != rhs.length { return lhs.length > rhs.length }
+                    return lhs.fileName.localizedStandardCompare(rhs.fileName) == .orderedAscending
+                }
+            guard !preparedFiles.isEmpty else {
+                await engine.stop()
+                return []
+            }
+            _ = try await server.start()
+            var sources: [PlaybackSource] = []
             for file in preparedFiles {
                 let url = try server.register(file)
                 registeredURLs.append(url)
@@ -565,6 +568,8 @@ struct TorrentPlaybackProvider: PlaybackSourceProvider, Sendable {
             return sources
         } catch {
             registeredURLs.forEach { _ = server.unregister($0) }
+            server.stop()
+            await engine.stop()
             throw error
         }
     }
