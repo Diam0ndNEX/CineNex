@@ -10,8 +10,22 @@ struct CinemetaCatalogProvider: Sendable {
     func fetchCatalog() async throws -> [MediaItem] {
         async let movieTask = fetchMetadata(type: "movie", query: nil)
         async let seriesTask = fetchMetadata(type: "series", query: nil)
-        let movies = (try? await movieTask) ?? []
-        let series = (try? await seriesTask) ?? []
+        let movies: [MediaItem]
+        do {
+            movies = try await movieTask
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            movies = []
+        }
+        let series: [MediaItem]
+        do {
+            series = try await seriesTask
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            series = []
+        }
         let combined = Self.uniqueItems(movies + series)
         guard !combined.isEmpty else {
             throw CinemetaCatalogError.noResults

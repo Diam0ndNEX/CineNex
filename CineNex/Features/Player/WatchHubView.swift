@@ -83,6 +83,7 @@ struct WatchHubView: View {
                 }
             }
             .task(id: item.id) {
+                loadStoredManifestConfiguration()
                 resolveSources()
                 async let addonSearch: Void = searchStremioAddonSources()
                 async let catalogDetails: Void = loadCatalogDetails()
@@ -702,6 +703,28 @@ struct WatchHubView: View {
         } catch {
             episodeErrorMessage = error.localizedDescription
             episodes = []
+        }
+    }
+
+    @MainActor
+    private func loadStoredManifestConfiguration() {
+        do {
+            let storedManifestURLs = try StremioAddonConfigurationStore.load()
+            let normalizedManifestURLs = storedManifestURLs?
+                .split(whereSeparator: \.isNewline)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .joined(separator: "\n")
+            if let normalizedManifestURLs,
+               !normalizedManifestURLs.isEmpty,
+               normalizedManifestURLs != Self.legacyDefaultStremioAddonManifestURLText {
+                stremioAddonManifestURLs = normalizedManifestURLs
+            } else {
+                stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+            }
+            try StremioAddonConfigurationStore.save(stremioAddonManifestURLs)
+            manifestStorageError = nil
+        } catch {
+            manifestStorageError = "Secure storage is unavailable. Your add-on URLs could not be saved to the iOS Keychain."
         }
     }
 
