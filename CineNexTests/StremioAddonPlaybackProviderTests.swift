@@ -61,6 +61,30 @@ final class StremioAddonPlaybackProviderTests: XCTestCase {
         XCTAssertEqual(sources.first?.url.absoluteString, "https://media.example.test/movie.mp4")
     }
 
+    func testDiscoverReturnsDirectSourcesAndValidatedTorrentDescriptorsSeparately() async throws {
+        ProviderStubURLProtocol.handler = { request in
+            if request.url?.path == "/manifest.json" {
+                return (self.response(request, 200), Data(#"{"id":"discovery.addon","version":"1","name":"Discovery","resources":["stream"],"types":["movie"],"idPrefixes":["tt"]}"#.utf8))
+            }
+            return (self.response(request, 200), Data(#"{"streams":[{"name":"Direct","url":"https://media.example.test/movie.mp4"},{"name":"Torrent","infoHash":"0123456789abcdef0123456789abcdef01234567","fileIdx":2},{"name":"Invalid torrent","infoHash":"not-a-hash","fileIdx":0}]}"#.utf8))
+        }
+        let provider = try StremioAddonPlaybackProvider(
+            manifestURLs: [URL(string: "https://addons.example.test/manifest.json")!],
+            externalIDResolver: StubExternalIDResolver(value: "tt1234567"),
+            session: makeSession()
+        )
+
+        let discovery = try await provider.discover(
+            for: PlaybackSourceRequest(title: "Example", mediaKind: .movie, tmdbID: 42)
+        )
+
+        XCTAssertEqual(discovery.sources.count, 1)
+        XCTAssertEqual(discovery.sources.first?.url.absoluteString, "https://media.example.test/movie.mp4")
+        XCTAssertEqual(discovery.torrentDescriptors.count, 1)
+        XCTAssertEqual(discovery.torrentDescriptors.first?.infoHash, "0123456789abcdef0123456789abcdef01234567")
+        XCTAssertEqual(discovery.torrentDescriptors.first?.fileIndex, 2)
+    }
+
     func testProviderUsesExactSeriesEpisodeCoordinates() async throws {
         ProviderStubURLProtocol.handler = { request in
             if request.url?.path == "/manifest.json" {

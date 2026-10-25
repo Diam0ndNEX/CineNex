@@ -1,9 +1,6 @@
 name: iOS Build
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
@@ -19,13 +16,59 @@ permissions:
 jobs:
   build-and-test:
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Test native wrapper patcher
+        run: python3 -m unittest discover -s Scripts/tests -v
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Apply native wrapper bridge
+        run: python3 Scripts/patch_xitrix_piece_priority.py Thirdparty/LibTorrent-Swift
+
+      - name: Install native build tools
+        run: brew install cmake boost
+
+      - name: Build patched XITRIX wrapper for iOS and simulator
+        run: |
+          export BOOST_ROOT="$(brew --prefix boost)"
+          export BOOST_INCLUDEDIR="$BOOST_ROOT/include"
+          test -f "$BOOST_INCLUDEDIR/boost/version.hpp"
+          bash Thirdparty/LibTorrent-Swift/make.sh
+          xcodebuild \
+            -project Thirdparty/LibTorrent-Swift/LibTorrent.xcodeproj \
+            -scheme LibTorrent \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath Thirdparty/LibTorrent-Swift/DerivedData \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          xcodebuild \
+            -project Thirdparty/LibTorrent-Swift/LibTorrent.xcodeproj \
+            -scheme LibTorrent \
+            -configuration Release \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath Thirdparty/LibTorrent-Swift/DerivedData \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES EXCLUDED_ARCHS=x86_64 \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          mkdir -p Thirdparty/LibTorrent-Swift/Build
+          xcodebuild -create-xcframework \
+            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphoneos/LibTorrent.framework \
+            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphonesimulator/LibTorrent.framework \
+            -output Thirdparty/LibTorrent-Swift/Build/LibTorrent.xcframework
+          xcodebuild -create-xcframework \
+            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphoneos/OpenSSL.framework \
+            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphonesimulator/OpenSSL.framework \
+            -output Thirdparty/LibTorrent-Swift/Build/OpenSSL.xcframework
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -40,6 +83,7 @@ jobs:
             -scheme CineNex \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath DerivedData \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES EXCLUDED_ARCHS=x86_64 \
             CODE_SIGNING_ALLOWED=NO \
             build
 
@@ -94,9 +138,36 @@ jobs:
             -scheme CineNex \
             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.device_id }}" \
             -derivedDataPath DerivedData \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES EXCLUDED_ARCHS=x86_64 \
             CODE_SIGNING_ALLOWED=NO \
             -parallel-testing-enabled NO \
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 60 \
             -maximum-test-execution-time-allowance 120 \
             test
+
+      - name: Build unsigned iOS app
+        run: |
+          xcodebuild \
+            -project CineNex.xcodeproj \
+            -scheme CineNex \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath DerivedDataDevice \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          rm -rf Payload CineNex-unsigned.ipa
+          mkdir -p Payload
+          cp -R DerivedDataDevice/Build/Products/Debug-iphoneos/CineNex.app Payload/CineNex.app
+          ditto -c -k --sequesterRsrc --keepParent Payload CineNex-unsigned.ipa
+          rm -rf Payload
+
+      - name: Upload unsigned IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CineNex-unsigned-ipa
+          path: CineNex-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7

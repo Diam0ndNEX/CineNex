@@ -8,10 +8,20 @@ struct WatchHubView: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("cinenex.defaultPlaybackProvider") private var defaultProviderID = "smart"
-    @AppStorage("cinenex.stremioAddonManifestURLs") private var stremioAddonManifestURLs = ""
+    @AppStorage("cinenex.stremioAddonManifestURLs") private var stremioAddonManifestURLs = "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
+
+    private static let defaultStremioAddonManifestURLText = "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
+    private static let defaultStremioAddonManifestURLs: [URL] = [
+        URL(string: "https://torrentio.strem.fun/manifest.json")!,
+        URL(string: "https://mediafusion.elfhosted.com/manifest.json")!
+    ]
     @State private var selectedProvider: ResolvedEmbedSource?
     @State private var selectedDiscoveredSource: PlaybackSource?
     @State private var discoveredSources: [PlaybackSource] = []
+    @State private var discoveredTorrentDescriptors: [StremioTorrentDescriptor] = []
+    @State private var preparingTorrentDescriptorID: String?
+    @State private var torrentPreparationMessage: String?
+    @State private var torrentPreparationTask: Task<Void, Never>?
     @State private var searchingAddonSources = false
     @State private var addonSearchMessage: String?
     @State private var availableProviders: [ResolvedEmbedSource] = []
@@ -70,13 +80,19 @@ struct WatchHubView: View {
                 )
             }
             .sheet(item: $selectedDiscoveredSource) { source in
-                DiscoveredSourcePlaybackView(source: source)
+                DiscoveredSourcePlaybackView(source: source) {
+                    discoveredSources.removeAll { $0.id == source.id }
+                }
             }
             .task(id: item.id) {
                 resolveSources()
                 async let archiveSearch: Void = loadInternetArchiveSources()
                 await loadCatalogDetails()
                 await archiveSearch
+            }
+            .onDisappear {
+                torrentPreparationTask?.cancel()
+                torrentPreparationTask = nil
             }
         }
         .tint(Color.cineNexAccent)
@@ -209,12 +225,17 @@ struct WatchHubView: View {
                     .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
                 }
                 .buttonStyle(.plain)
-                .disabled(searchingAddonSources)
+                .disabled(searchingAddonSources || preparingTorrentDescriptorID != nil)
                 .accessibilityHint("Queries configured Stremio-compatible add-ons for this title or episode")
 
-                Text("Optional advanced setup: paste one HTTPS add-on manifest URL per line. No add-ons are preconfigured until a maintained, vetted default list is available.")
+                Text("Torrentio and MediaFusion are preconfigured. Edit the manifest URLs to use your own instance or a configured add-on URL with custom filters or debrid settings.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                HStack(spacing: 14) {
+                    Link("Configure Torrentio", destination: URL(string: "https://torrentio.strem.fun/configure")!)
+                    Link("Configure MediaFusion", destination: URL(string: "https://mediafusion.elfhosted.com")!)
+                }
+                .font(.caption.weight(.medium))
                 TextEditor(text: $stremioAddonManifestURLs)
                     .font(.caption.monospaced())
                     .scrollContentBackground(.hidden)
@@ -222,6 +243,13 @@ struct WatchHubView: View {
                     .padding(8)
                     .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
                     .accessibilityLabel("Stremio add-on manifest URLs")
+                    .onAppear {
+                        if stremioAddonManifestURLs
+                            .split(whereSeparator: \.isNewline)
+                            .allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                            stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+                        }
+                    }
                 if let addonSearchMessage {
                     Text(addonSearchMessage)
                         .font(.caption)
@@ -257,6 +285,48 @@ struct WatchHubView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Play source: \(source.title)")
                 }
+                
+                ForEach(discoveredTorrentDescriptors) { descriptor in
+                    Button {
+                        startTorrentPlayback(for: descriptor)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "arrow.down.to.line.compact")
+                                .font(.title2)
+                                .foregroundStyle(Color.cineNexAccent)
+                                .frame(width: 44, height: 44)
+                                .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Torrent · \(String(descriptor.infoHash.prefix(12)))")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                Text(descriptor.fileIndex.map { "Torrent file index \($0)" } ?? "Auto-select a playable video file")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if preparingTorrentDescriptorID == descriptor.id {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "play.fill")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(Color.cineNexAccent)
+                            }
+                        }
+                        .padding(12)
+                        .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(preparingTorrentDescriptorID != nil)
+                    .accessibilityLabel("Prepare torrent playback for \(descriptor.infoHash.prefix(12))")
+                }
+                if let torrentPreparationMessage {
+                    Text(torrentPreparationMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
             }
 
             if item.streamURL != nil {
@@ -656,32 +726,44 @@ struct WatchHubView: View {
 
     @MainActor
     private func searchStremioAddonSources() async {
-        let manifestURLs = stremioAddonManifestURLs
+        let configuredManifestURLs = stremioAddonManifestURLs
             .split(whereSeparator: \.isNewline)
             .compactMap { line -> URL? in
                 let value = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !value.isEmpty else { return nil }
-                return URL(string: value)
+                guard !value.isEmpty,
+                      let url = URL(string: value),
+                      url.scheme?.lowercased() == "https",
+                      url.host != nil,
+                      url.user == nil,
+                      url.password == nil else { return nil }
+                return url
             }
-        guard !manifestURLs.isEmpty else {
-            addonSearchMessage = "Add at least one HTTPS add-on manifest URL above. CineNex does not silently install unverified third-party providers."
-            discoveredSources = []
-            return
+        let manifestURLs = configuredManifestURLs.isEmpty
+            ? Self.defaultStremioAddonManifestURLs
+            : configuredManifestURLs
+        if configuredManifestURLs.isEmpty {
+            stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
         }
         guard request.tmdbID != nil else {
             addonSearchMessage = "This catalog item has no TMDB identifier, so CineNex cannot resolve its IMDb ID for add-on lookup."
             discoveredSources = []
+            discoveredTorrentDescriptors = []
             return
         }
         guard let token = TMDBTokenStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines),
               !token.isEmpty else {
             addonSearchMessage = "A TMDB Read Access Token is needed to resolve this title to the IMDb ID used by many add-ons."
             discoveredSources = []
+            discoveredTorrentDescriptors = []
             return
         }
 
+        await TorrentPlaybackSessionRegistry.shared.stopAll()
         searchingAddonSources = true
         addonSearchMessage = nil
+        torrentPreparationMessage = nil
+        discoveredSources = []
+        discoveredTorrentDescriptors = []
         defer { searchingAddonSources = false }
 
         do {
@@ -689,16 +771,74 @@ struct WatchHubView: View {
                 manifestURLs: manifestURLs,
                 externalIDResolver: TMDBExternalIDResolver(readAccessToken: token)
             )
-            let result = try await PlaybackSourceCoordinator(providers: [provider]).search(for: request)
-            discoveredSources = result.sources
-            addonSearchMessage = result.sources.isEmpty
-                ? "No direct playable URLs were returned. Add-ons may be unavailable, may require authentication, or may return torrent descriptors that need a separate torrent engine."
-                : "Found \(result.sources.count) direct source(s). Availability and playback compatibility are not guaranteed until playback starts."
+            let discovery = try await provider.discover(for: request)
+            let torrentDescriptors = Array(
+                discovery.torrentDescriptors.reduce(into: [StremioTorrentDescriptor]()) { result, descriptor in
+                    if !result.contains(where: { $0.id == descriptor.id }) {
+                        result.append(descriptor)
+                    }
+                }.prefix(12)
+            )
+            discoveredSources = discovery.sources
+            discoveredTorrentDescriptors = torrentDescriptors
+            if !discovery.sources.isEmpty, !torrentDescriptors.isEmpty {
+                addonSearchMessage = "Found \(discovery.sources.count) direct source(s) and \(torrentDescriptors.count) torrent option(s). Torrent transfers start only when you select one."
+            } else if !discovery.sources.isEmpty {
+                addonSearchMessage = "Found \(discovery.sources.count) direct source(s). Availability and playback compatibility are not guaranteed until playback starts."
+            } else if !torrentDescriptors.isEmpty {
+                addonSearchMessage = "Found \(torrentDescriptors.count) torrent option(s). Select one to prepare native playback."
+            } else {
+                addonSearchMessage = "No playable direct URLs or valid torrent descriptors were returned. Add-ons may be unavailable or may require authentication."
+            }
         } catch is CancellationError {
+            await TorrentPlaybackSessionRegistry.shared.stopAll()
             addonSearchMessage = "Source search was cancelled."
+            discoveredSources = []
+            discoveredTorrentDescriptors = []
         } catch {
             addonSearchMessage = error.localizedDescription
             discoveredSources = []
+            discoveredTorrentDescriptors = []
+        }
+    }
+
+    @MainActor
+    private func startTorrentPlayback(for descriptor: StremioTorrentDescriptor) {
+        guard torrentPreparationTask == nil else { return }
+        preparingTorrentDescriptorID = descriptor.id
+        torrentPreparationMessage = "Preparing native playback. Torrent metadata may take a moment to load."
+        torrentPreparationTask = Task {
+            await prepareTorrentPlayback(for: descriptor)
+        }
+    }
+
+    @MainActor
+    private func prepareTorrentPlayback(for descriptor: StremioTorrentDescriptor) async {
+        let engine = XITRIXTorrentPlaybackEngine(descriptor: descriptor)
+        let provider = TorrentPlaybackProvider(engine: engine)
+        defer {
+            if preparingTorrentDescriptorID == descriptor.id {
+                preparingTorrentDescriptorID = nil
+            }
+            torrentPreparationTask = nil
+        }
+
+        do {
+            let sources = try await provider.findSources(for: request)
+            try Task.checkCancellation()
+            guard let source = sources.first else {
+                await provider.stop()
+                torrentPreparationMessage = "This torrent did not contain a playable file supported by CineNex."
+                return
+            }
+            selectedDiscoveredSource = source
+            torrentPreparationMessage = "Torrent source is ready. Opening the native player."
+        } catch is CancellationError {
+            await provider.stop()
+            torrentPreparationMessage = "Torrent preparation was cancelled."
+        } catch {
+            await provider.stop()
+            torrentPreparationMessage = error.localizedDescription
         }
     }
 
@@ -831,6 +971,7 @@ private struct EmbedWebPlaybackView: View {
 
 private struct DiscoveredSourcePlaybackView: View {
     let source: PlaybackSource
+    let onTorrentSessionStopped: () -> Void
     @Environment(\.dismiss) private var dismiss
     @AppStorage(PlaybackCleanerPolicy.enabledStorageKey) private var cleanerGloballyEnabled = true
     @AppStorage(PlaybackCleanerPolicy.disabledProvidersStorageKey) private var disabledProviderStorage = ""
@@ -844,8 +985,9 @@ private struct DiscoveredSourcePlaybackView: View {
         )
     }
 
-    init(source: PlaybackSource) {
+    init(source: PlaybackSource, onTorrentSessionStopped: @escaping () -> Void = {}) {
         self.source = source
+        self.onTorrentSessionStopped = onTorrentSessionStopped
         _player = State(initialValue: AVPlayer(url: source.url))
     }
 
@@ -855,7 +997,14 @@ private struct DiscoveredSourcePlaybackView: View {
                 if source.supportsNativePlayback {
                     NativePlaybackView(player: player)
                         .onAppear { player.play() }
-                        .onDisappear { player.pause() }
+                        .onDisappear {
+                            player.pause()
+                            Task { @MainActor in
+                                if await TorrentPlaybackSessionRegistry.shared.stop(for: source.url) {
+                                    onTorrentSessionStopped()
+                                }
+                            }
+                        }
                         .background(.black)
                         .ignoresSafeArea(edges: .bottom)
                 } else {
