@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import OSLog
 import Security
 
 protocol TorrentByteReader: Sendable {
@@ -146,6 +147,8 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
 
     private let lock = NSLock()
     private let queue = DispatchQueue(label: "com.diam0ndnex.cinenex.torrent-http", qos: .userInitiated)
+    private let telemetry = TorrentStreamTelemetry()
+    private let logger = Logger(subsystem: "com.diam0ndnex.cinenex", category: "TorrentStreaming")
     private var listener: NWListener?
     private var resources: [String: Resource] = [:]
     private var bearerToken = ""
@@ -327,17 +330,26 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
         activeConnections.removeAll()
         activeTasks.removeAll()
         lock.unlock()
+        telemetry.setActiveConnectionCount(0)
+        let snapshot = telemetry.snapshot()
+        logger.info("stream summary: requests=\(snapshot.requestCount, privacy: .public) ranges=\(snapshot.rangeRequestCount, privacy: .public) bytes=\(snapshot.bytesServed, privacy: .public) failures=\(snapshot.failedRequestCount, privacy: .public) readMs=\(snapshot.totalReadMilliseconds, privacy: .public) maxReadMs=\(snapshot.maximumReadMilliseconds, privacy: .public)")
         tasksToCancel.forEach { $0.cancel() }
         connectionsToCancel.forEach { $0.cancel() }
         currentListener?.cancel()
     }
 
+    func diagnosticsSnapshot() -> TorrentStreamTelemetrySnapshot {
+        telemetry.snapshot()
+    }
+
     private func registerConnection(_ connection: NWConnection, id: UUID) -> Bool {
-        lock.withLock {
-            guard !stopped else { return false }
+        let result = lock.withLock {
+            guard !stopped else { return (accepted: false, count: activeConnections.count) }
             activeConnections[id] = connection
-            return true
+            return (accepted: true, count: activeConnections.count)
         }
+        telemetry.setActiveConnectionCount(result.count)
+        return result.accepted
     }
 
     private func registerTask(_ task: Task<Void, Never>, id: UUID) {
@@ -350,11 +362,13 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
     }
 
     private func finishConnection(id: UUID) {
-        let connection = lock.withLock {
+        let result = lock.withLock {
             activeTasks.removeValue(forKey: id)
-            return activeConnections.removeValue(forKey: id)
+            let connection = activeConnections.removeValue(forKey: id)
+            return (connection: connection, count: activeConnections.count)
         }
-        connection?.cancel()
+        telemetry.setActiveConnectionCount(result.count)
+        result.connection?.cancel()
     }
 
     private func handle(_ connection: NWConnection) async {
@@ -364,7 +378,9 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
         do {
             request = try TorrentHTTPRequest.parse(await receiveHeader(from: connection))
             file = try resolve(request.target)
+            telemetry.recordRequest(isRange: request.headers["range"] != nil)
         } catch {
+            telemetry.recordFailure()
             let status = (error as? TorrentStreamingError) == .unauthorized ? 404 : 400
             try? await send(Self.errorResponse(status: status), connection: connection)
             return
@@ -377,6 +393,9 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
                 totalLength: file.length,
                 contentType: file.contentType
             )
+            if plan.statusCode >= 400 {
+                telemetry.recordFailure()
+            }
             try? await send(Self.serialize(status: plan.statusCode, headers: plan.headers), connection: connection)
             return
         }
@@ -390,6 +409,7 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
         do {
             try await send(plan: plan, connection: connection, file: file)
         } catch {
+            telemetry.recordFailure()
             connection.cancel()
         }
     }
@@ -449,9 +469,20 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
         while offset <= range.upperBound {
             try Task.checkCancellation()
             let length = Int(min(Int64(chunkLimit), range.upperBound - offset + 1))
-            let data = try await file.reader.read(offset: offset, length: length)
+            let readStartedAt = ProcessInfo.processInfo.systemUptime
+            let data: Data
+            do {
+                data = try await file.reader.read(offset: offset, length: length)
+            } catch {
+                let elapsed = max(0, ProcessInfo.processInfo.systemUptime - readStartedAt)
+                telemetry.recordReadDuration(milliseconds: Int64(min(elapsed * 1_000, Double(Int64.max))))
+                throw error
+            }
+            let elapsed = max(0, ProcessInfo.processInfo.systemUptime - readStartedAt)
+            telemetry.recordReadDuration(milliseconds: Int64(min(elapsed * 1_000, Double(Int64.max))))
             guard data.count == length else { throw TorrentStreamingError.invalidRead }
             try await send(data, connection: connection)
+            telemetry.recordBytesServed(data.count)
             offset += Int64(data.count)
         }
     }
