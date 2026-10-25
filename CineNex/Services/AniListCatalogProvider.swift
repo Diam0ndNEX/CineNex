@@ -182,6 +182,10 @@ private struct AniListEnvelope: Decodable {
 
 private struct AniListData: Decodable {
     let page: AniListPage?
+
+    enum CodingKeys: String, CodingKey {
+        case page = "Page"
+    }
 }
 
 private struct AniListPage: Decodable {
