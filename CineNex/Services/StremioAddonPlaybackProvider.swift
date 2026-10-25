@@ -217,9 +217,38 @@ struct AutomaticExternalIDResolver: PlaybackExternalIDResolving, Sendable {
     }
 }
 
+enum StremioAddonProviderOutcome: Equatable, Sendable {
+    case found(directSourceCount: Int, torrentSourceCount: Int)
+    case noSources
+    case failed(String)
+    case identifierUnavailable
+
+    var summary: String {
+        switch self {
+        case let .found(directSourceCount, torrentSourceCount):
+            return "found \(directSourceCount) direct / \(torrentSourceCount) torrent"
+        case .noSources:
+            return "no sources"
+        case let .failed(message):
+            return "failed: \(message)"
+        case .identifierUnavailable:
+            return "not queried: no matching IMDb ID"
+        }
+    }
+}
+
+struct StremioAddonProviderStatus: Equatable, Sendable, Identifiable {
+    let id: String
+    let name: String
+    let outcome: StremioAddonProviderOutcome
+
+    var summary: String { "\(name): \(outcome.summary)" }
+}
+
 struct StremioAddonDiscovery: Equatable, Sendable {
     let sources: [PlaybackSource]
     let torrentDescriptors: [StremioTorrentDescriptor]
+    let providerStatuses: [StremioAddonProviderStatus]
 }
 
 struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
@@ -250,14 +279,32 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
     }
 
     func findSources(for request: PlaybackSourceRequest) async throws -> [PlaybackSource] {
-        try await discover(for: request).sources
+        let discovery = try await discover(for: request)
+        if discovery.sources.isEmpty,
+           discovery.torrentDescriptors.isEmpty {
+            let failures = discovery.providerStatuses.compactMap { status -> String? in
+                if case .failed(let message) = status.outcome { return message }
+                return nil
+            }
+            if !failures.isEmpty {
+                throw StremioAddonClientError.transport(failures.joined(separator: " "))
+            }
+        }
+        return discovery.sources
     }
 
     func discover(for request: PlaybackSourceRequest) async throws -> StremioAddonDiscovery {
         guard request.isValid else { throw StremioAddonClientError.invalidRequest }
         guard !clients.isEmpty else { return StremioAddonDiscovery(sources: [], torrentDescriptors: []) }
         guard let imdbID = try await externalIDResolver.imdbID(for: request) else {
-            return StremioAddonDiscovery(sources: [], torrentDescriptors: [])
+            let statuses = clientDisplayNames.enumerated().map { index, name in
+                StremioAddonProviderStatus(
+                    id: "(index)-(name.lowercased())",
+                    name: name,
+                    outcome: .identifierUnavailable
+                )
+            }
+            return StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: statuses)
         }
 
         let streamRequest = StremioStreamRequest(
@@ -268,6 +315,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
         )
         var batches: [(index: Int, entries: [StremioStreamEntry])] = []
         var failures: [String] = []
+        var failuresByIndex: [Int: String] = [:]
 
         if clients.count == 1 {
             do {
@@ -297,6 +345,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                 for await result in group {
                     if let failure = result.failure {
                         errors.append(failure)
+                        failuresByIndex[result.index] = failure
                     } else {
                         fetched.append((result.index, result.entries))
                     }
@@ -330,10 +379,27 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
             return seenDescriptors.insert("\(providerKey):\(descriptor.id)").inserted
         }
 
-        if sources.isEmpty, descriptors.isEmpty, !failures.isEmpty {
-            throw StremioAddonClientError.transport(failures.joined(separator: " "))
+        let providerStatuses = clientDisplayNames.enumerated().map { index, name in
+            let statusID = "(index)-(name.lowercased())"
+            if let failure = failuresByIndex[index] {
+                return StremioAddonProviderStatus(id: statusID, name: name, outcome: .failed(failure))
+            }
+            let directCount = sources.filter { $0.providerName == name }.count
+            let torrentCount = descriptors.filter { $0.providerName == name }.count
+            if directCount + torrentCount > 0 {
+                return StremioAddonProviderStatus(
+                    id: statusID,
+                    name: name,
+                    outcome: .found(directSourceCount: directCount, torrentSourceCount: torrentCount)
+                )
+            }
+            return StremioAddonProviderStatus(id: statusID, name: name, outcome: .noSources)
         }
-        return StremioAddonDiscovery(sources: sources, torrentDescriptors: descriptors)
+        return StremioAddonDiscovery(
+            sources: sources,
+            torrentDescriptors: descriptors,
+            providerStatuses: providerStatuses
+        )
     }
 
     private static func mapSources(
