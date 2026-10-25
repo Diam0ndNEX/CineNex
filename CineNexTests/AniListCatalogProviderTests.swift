@@ -105,6 +105,18 @@ final class AniListCatalogProviderTests: XCTestCase {
     }
 
 
+    func testSearchAnimeRejectsBlankQueryBeforeNetworking() async {
+        do {
+            _ = try await AniListCatalogProvider().searchAnime(query: "   ")
+            XCTFail("Expected emptyQuery for a blank search")
+        } catch {
+            guard case AniListCatalogError.emptyQuery = error else {
+                XCTFail("Expected emptyQuery, got \\(error)")
+                return
+            }
+        }
+    }
+
     func testFetchTrendingRejectsInvalidPageBeforeNetworking() async {
         do {
             _ = try await AniListCatalogProvider().fetchTrending(page: 0)
