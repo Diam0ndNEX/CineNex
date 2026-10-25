@@ -31,6 +31,13 @@ actor TorrentDiskByteReader: TorrentByteReader {
     private let fileHandle: FileHandle
     private let availability: any TorrentRangeAvailability
     private var isClosed = false
+    private let readRetryDelays: [Duration] = [
+        .milliseconds(40),
+        .milliseconds(80),
+        .milliseconds(120),
+        .milliseconds(160),
+        .milliseconds(200)
+    ]
 
     init(
         fileURL: URL,
@@ -68,25 +75,38 @@ actor TorrentDiskByteReader: TorrentByteReader {
         try Task.checkCancellation()
         guard !isClosed else { throw TorrentDiskByteReaderError.closed }
 
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-              let number = attributes[.size] as? NSNumber,
-              number.int64Value <= length else {
-            throw TorrentDiskByteReaderError.unavailableFile
-        }
-        let availableLength = max(0, number.int64Value - offset)
-        guard availableLength >= Int64(requestedLength) else {
-            throw TorrentDiskByteReaderError.shortRead(
-                expected: requestedLength,
-                actual: Int(min(Int64(requestedLength), availableLength))
-            )
+        var lastShortRead: TorrentDiskByteReaderError?
+        for attempt in 0...readRetryDelays.count {
+            try Task.checkCancellation()
+            guard !isClosed else { throw TorrentDiskByteReaderError.closed }
+
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+                  let number = attributes[.size] as? NSNumber,
+                  number.int64Value <= length else {
+                throw TorrentDiskByteReaderError.unavailableFile
+            }
+
+            let fileSize = number.int64Value
+            let availableLength = max(0, fileSize - offset)
+            if availableLength < Int64(requestedLength) {
+                lastShortRead = .shortRead(
+                    expected: requestedLength,
+                    actual: Int(min(Int64(requestedLength), availableLength))
+                )
+            } else {
+                try fileHandle.seek(toOffset: UInt64(offset))
+                let data = try fileHandle.read(upToCount: requestedLength) ?? Data()
+                if data.count == requestedLength {
+                    return data
+                }
+                lastShortRead = .shortRead(expected: requestedLength, actual: data.count)
+            }
+
+            guard attempt < readRetryDelays.count else { break }
+            try await Task.sleep(for: readRetryDelays[attempt])
         }
 
-        try fileHandle.seek(toOffset: UInt64(offset))
-        let data = try fileHandle.read(upToCount: requestedLength) ?? Data()
-        guard data.count == requestedLength else {
-            throw TorrentDiskByteReaderError.shortRead(expected: requestedLength, actual: data.count)
-        }
-        return data
+        throw lastShortRead ?? TorrentDiskByteReaderError.shortRead(expected: requestedLength, actual: 0)
     }
 
     func close() throws {
