@@ -79,6 +79,7 @@ jobs:
             -scheme CineNex \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath DerivedData \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES EXCLUDED_ARCHS=x86_64 \
             CODE_SIGNING_ALLOWED=NO \
             build
 
@@ -133,6 +134,7 @@ jobs:
             -scheme CineNex \
             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.device_id }}" \
             -derivedDataPath DerivedData \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES EXCLUDED_ARCHS=x86_64 \
             CODE_SIGNING_ALLOWED=NO \
             -parallel-testing-enabled NO \
             -test-timeouts-enabled YES \
