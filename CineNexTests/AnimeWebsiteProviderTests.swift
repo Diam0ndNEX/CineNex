@@ -18,7 +18,7 @@ final class AnimeWebsiteProviderTests: XCTestCase {
         )
 
         XCTAssertFalse(AnimeWebsiteProvider.supported.isEmpty)
-        let providerIDs = Set(AnimeWebsiteProvider.supported.map(\\.id))
+        let providerIDs = Set(AnimeWebsiteProvider.supported.map(\.id))
         XCTAssertTrue(providerIDs.contains("miruro"))
         XCTAssertTrue(providerIDs.contains("anikoto"))
         XCTAssertTrue(providerIDs.contains("crunchyroll"))
