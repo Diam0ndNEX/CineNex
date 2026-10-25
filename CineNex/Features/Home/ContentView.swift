@@ -1346,6 +1346,32 @@ private struct MediaDetailView: View {
                         .font(.body)
                         .foregroundStyle(.white.opacity(0.84))
                         .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 10) {
+                        Button(action: onPlay) {
+                            Label(item.streamURL == nil ? "Find sources" : "Play now", systemImage: item.streamURL == nil ? "dot.radiowaves.left.and.right" : "play.fill")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 15)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityHint(item.streamURL == nil ? "Search built-in playback providers for this movie or series" : "Start playback")
+
+                        Button(action: onFavoriteToggle) {
+                            Image(systemName: isFavorite ? "bookmark.fill" : "bookmark")
+                                .font(.headline)
+                                .frame(width: 54, height: 52)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel(isFavorite ? "Remove from My List" : "Save to My List")
+                    }
+
+                    if item.streamURL == nil {
+                        Label("No direct link is attached. Find sources opens automatic provider search and does not require a TMDB token.", systemImage: "dot.radiowaves.left.and.right")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
 
                 if detailsLoading {
@@ -1524,32 +1550,7 @@ private struct MediaDetailView: View {
                     }
                 }
 
-                HStack(spacing: 12) {
-                    Button(action: onPlay) {
-                        Label(item.streamURL == nil ? "Find sources" : "Play now", systemImage: item.streamURL == nil ? "dot.radiowaves.left.and.right" : "play.fill")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 15)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityHint(item.streamURL == nil ? "Search built-in playback providers for this movie or series" : "Start playback")
-
-                    Button(action: onFavoriteToggle) {
-                        Label(isFavorite ? "Saved" : "Save", systemImage: isFavorite ? "bookmark.fill" : "bookmark")
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 15)
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .padding(14)
-                .background(Color.cineNexSurface.opacity(0.82), in: RoundedRectangle(cornerRadius: 18))
-
-                if item.streamURL == nil {
-                    Label("No direct link is attached to this title. Find sources opens CineNex's automatic provider search; it does not require a manual TMDB token.", systemImage: "dot.radiowaves.left.and.right")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else if let sourceURL = item.streamURL {
+                if let sourceURL = item.streamURL {
                     let eligible = OfflineDownloadStore.supportsOfflineDownload(from: sourceURL)
                     Button {
                         do {

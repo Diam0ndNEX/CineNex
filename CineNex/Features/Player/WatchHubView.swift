@@ -98,46 +98,79 @@ struct WatchHubView: View {
     }
 
     private var hero: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            ZStack(alignment: .bottomLeading) {
-                RoundedRectangle(cornerRadius: 22)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.cineNexAccent.opacity(0.65), Color.cineNexSurface, .black],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                HStack(alignment: .bottom, spacing: 16) {
-                    CachedPosterImage(url: item.posterURL, fallbackSymbol: item.symbol, symbolSize: 42)
-                        .frame(width: 112, height: 164)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(item.title)
-                            .accessibilityAddTraits(.isHeader)
-                            .font(.title2.bold())
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(([item.yearLabel, item.kind.rawValue, item.genre].compactMap { $0 }).joined(separator: " · "))
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.72))
-                        if let rating = item.rating {
-                            Label(String(format: "%.1f / 10", rating), systemImage: "star.fill")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(Color(red: 1, green: 0.78, blue: 0.28))
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 6)
-                }
-                .padding(16)
-            }
-            .frame(height: 218)
-            .clipShape(RoundedRectangle(cornerRadius: 22))
+        ZStack(alignment: .bottomLeading) {
+            CachedPosterImage(
+                url: item.posterURL,
+                fallbackSymbol: item.symbol,
+                symbolSize: 94
+            )
+            .frame(maxWidth: .infinity)
+            .frame(height: 360)
+            .clipped()
 
-            Text(item.synopsis)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            LinearGradient(
+                stops: [
+                    .init(color: .black.opacity(0.08), location: 0),
+                    .init(color: Color.cineNexBackground.opacity(0.35), location: 0.42),
+                    .init(color: Color.cineNexBackground.opacity(0.98), location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            VStack(alignment: .leading, spacing: 13) {
+                HStack {
+                    Label("CINENEX WATCH", systemImage: "play.rectangle.fill")
+                        .font(.caption.weight(.heavy))
+                        .tracking(1.2)
+                        .foregroundStyle(Color.cineNexAccent)
+                    Spacer()
+                    Text(item.kind == .movie ? "MOVIE" : "SERIES")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.8)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.black.opacity(0.42), in: Capsule())
+                        .overlay(Capsule().strokeBorder(.white.opacity(0.18), lineWidth: 1))
+                }
+
+                Spacer(minLength: 80)
+
+                Text(item.title)
+                    .font(.system(size: 32, weight: .heavy, design: .rounded))
+                    .tracking(-0.7)
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+
+                HStack(spacing: 8) {
+                    if let year = item.yearLabel {
+                        Text(year)
+                        Text("·")
+                    }
+                    Text(item.genre)
+                    if let rating = item.rating {
+                        Text("·")
+                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                            .foregroundStyle(Color(red: 1, green: 0.78, blue: 0.28))
+                    }
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.82))
+
+                Text(item.synopsis)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.82))
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(20)
+        }
+        .frame(height: 360)
+        .clipShape(RoundedRectangle(cornerRadius: 26))
+        .overlay {
+            RoundedRectangle(cornerRadius: 26)
+                .strokeBorder(.white.opacity(0.08), lineWidth: 1)
         }
     }
 
@@ -168,13 +201,16 @@ struct WatchHubView: View {
                     onPlayDirect(item)
                 }
             } label: {
-                Label("Quick Play", systemImage: "play.fill")
+                Label(
+                    searchingAddonSources ? "Finding sources…" : "Quick Play",
+                    systemImage: searchingAddonSources ? "hourglass" : "play.fill"
+                )
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(availableProviders.isEmpty && discoveredSources.isEmpty && discoveredTorrentDescriptors.isEmpty && item.streamURL == nil)
+            .disabled(searchingAddonSources || (availableProviders.isEmpty && discoveredSources.isEmpty && discoveredTorrentDescriptors.isEmpty && item.streamURL == nil))
             .accessibilityHint("Starts the preferred available playback source")
 
             Picker("Default source", selection: $defaultProviderID) {
@@ -201,9 +237,9 @@ struct WatchHubView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Source options")
+                    Text("Available sources")
                         .font(.title3.bold())
-                    Text("Embed candidates are experimental. Stremio add-ons are queried for direct streams and torrent options.")
+                    Text("Choose a direct stream or prepare a torrent. Sources are checked when you start playback.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -225,7 +261,7 @@ struct WatchHubView: View {
                         } else {
                             Image(systemName: "dot.radiowaves.left.and.right")
                         }
-                        Text(searchingAddonSources ? "Searching add-ons…" : "Search add-on sources")
+                        Text(searchingAddonSources ? "Searching all sources…" : "Find more sources")
                             .font(.subheadline.weight(.semibold))
                         Spacer()
                         Image(systemName: "arrow.clockwise")
