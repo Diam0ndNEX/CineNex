@@ -8,7 +8,7 @@ struct AnimeFeaturedBanner: View {
         ZStack(alignment: .bottomLeading) {
             CachedPosterImage(
                 url: anime.coverURL,
-                fallbackSymbol: "sparkles.tv",
+                fallbackSymbol: "sparkles",
                 symbolSize: 94
             )
             LinearGradient(
@@ -94,7 +94,7 @@ struct AnimePosterCard: View {
                         )
                     CachedPosterImage(
                         url: anime.coverURL,
-                        fallbackSymbol: "sparkles.tv",
+                        fallbackSymbol: "sparkles",
                         symbolSize: 38
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 15))
@@ -172,7 +172,7 @@ struct AnimeDetailView: View {
                     HStack(alignment: .top, spacing: 16) {
                         CachedPosterImage(
                             url: anime.coverURL,
-                            fallbackSymbol: "sparkles.tv",
+                            fallbackSymbol: "sparkles",
                             symbolSize: 44
                         )
                         .frame(width: 126, height: 178)
@@ -260,7 +260,7 @@ struct AnimeDetailView: View {
 
     private var metadataLine: String {
         [
-            anime.seasonYear.map(String.init),
+            anime.seasonYear.map { String($0) },
             anime.format?.replacingOccurrences(of: "_", with: " "),
             anime.status?.replacingOccurrences(of: "_", with: " "),
             anime.episodeCount.map { "\($0) episodes" }
