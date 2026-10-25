@@ -111,7 +111,7 @@ final class AniListCatalogProviderTests: XCTestCase {
             XCTFail("Expected emptyQuery for a blank search")
         } catch {
             guard case AniListCatalogError.emptyQuery = error else {
-                XCTFail("Expected emptyQuery, got \\(error)")
+                XCTFail("Expected emptyQuery, got \(error)")
                 return
             }
         }
