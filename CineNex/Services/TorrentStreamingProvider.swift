@@ -347,13 +347,15 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
     }
 
     private func registerConnection(_ connection: NWConnection, id: UUID) -> Bool {
-        let result = lock.withLock {
-            guard !stopped else { return (accepted: false, count: activeConnections.count) }
+        lock.withLock {
+            guard !stopped else {
+                telemetry.setActiveConnectionCount(activeConnections.count)
+                return false
+            }
             activeConnections[id] = connection
-            return (accepted: true, count: activeConnections.count)
+            telemetry.setActiveConnectionCount(activeConnections.count)
+            return true
         }
-        telemetry.setActiveConnectionCount(result.count)
-        return result.accepted
     }
 
     private func registerTask(_ task: Task<Void, Never>, id: UUID) {
@@ -366,13 +368,13 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
     }
 
     private func finishConnection(id: UUID) {
-        let result = lock.withLock {
+        let connection = lock.withLock {
             activeTasks.removeValue(forKey: id)
             let connection = activeConnections.removeValue(forKey: id)
-            return (connection: connection, count: activeConnections.count)
+            telemetry.setActiveConnectionCount(activeConnections.count)
+            return connection
         }
-        telemetry.setActiveConnectionCount(result.count)
-        result.connection?.cancel()
+        connection?.cancel()
     }
 
     private func handle(_ connection: NWConnection) async {
