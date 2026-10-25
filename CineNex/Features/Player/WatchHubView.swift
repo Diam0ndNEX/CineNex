@@ -8,12 +8,13 @@ struct WatchHubView: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("cinenex.defaultPlaybackProvider") private var defaultProviderID = "smart"
-    @AppStorage("cinenex.stremioAddonManifestURLs") private var stremioAddonManifestURLs = "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
+    @AppStorage("cinenex.stremioAddonManifestURLs") private var stremioAddonManifestURLs = "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusionfortheweebs.midnightignite.me/manifest.json"
 
-    private static let defaultStremioAddonManifestURLText = "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
+    private static let legacyDefaultStremioAddonManifestURLText = "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
+    private static let defaultStremioAddonManifestURLText = "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusionfortheweebs.midnightignite.me/manifest.json"
     private static let defaultStremioAddonManifestURLs: [URL] = [
-        URL(string: "https://torrentio.strem.fun/manifest.json")!,
-        URL(string: "https://mediafusion.elfhosted.com/manifest.json")!
+        URL(string: "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json")!,
+        URL(string: "https://mediafusionfortheweebs.midnightignite.me/manifest.json")!
     ]
     @State private var selectedProvider: ResolvedEmbedSource?
     @State private var selectedDiscoveredSource: PlaybackSource?
@@ -242,7 +243,7 @@ struct WatchHubView: View {
                     .foregroundStyle(.secondary)
                 HStack(spacing: 14) {
                     Link("Configure Torrentio", destination: URL(string: "https://torrentio.strem.fun/configure")!)
-                    Link("Configure MediaFusion", destination: URL(string: "https://mhdzumair.github.io/MediaFusion/docs/getting-started/quick-start/")!)
+                    Link("Configure MediaFusion", destination: URL(string: "https://mediafusionfortheweebs.midnightignite.me/")!)
                     Spacer(minLength: 0)
                     Button("Restore defaults") {
                         stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
@@ -261,9 +262,11 @@ struct WatchHubView: View {
                     .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
                     .accessibilityLabel("Stremio add-on manifest URLs")
                     .onAppear {
-                        if stremioAddonManifestURLs
+                        let normalizedManifestURLs = stremioAddonManifestURLs
                             .split(whereSeparator: \.isNewline)
-                            .allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                            .joined(separator: "\n")
+                        if normalizedManifestURLs.isEmpty || normalizedManifestURLs == Self.legacyDefaultStremioAddonManifestURLText {
                             stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
                         }
                     }
