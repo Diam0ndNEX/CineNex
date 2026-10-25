@@ -172,6 +172,12 @@ final class StremioAddonPlaybackProviderTests: XCTestCase {
             if request.url?.host == "mediafusion.elfhosted.com" {
                 throw URLError(.timedOut)
             }
+            if request.url?.path == "/manifest.json" {
+                return (
+                    self.response(request, 200),
+                    Data(#"{"id":"torrentio","version":"1","name":"Torrentio","resources":["stream"],"types":["movie"],"idPrefixes":["tt"]}"#.utf8)
+                )
+            }
             return (
                 self.response(request, 200),
                 Data(#"{"streams":[{"name":"1080p Torrent","infoHash":"0123456789abcdef0123456789abcdef01234567","fileIdx":0}]}"#.utf8)
