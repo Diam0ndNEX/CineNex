@@ -286,15 +286,17 @@ struct ContentView: View {
                         .padding(.top, 40)
                 } else {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
-                        ForEach(Array(displayedSearchResults.enumerated()), id: \.element.id) { index, item in
+                        ForEach(displayedSearchResults) { item in
                             MediaPosterCard(item: item) {
                                 selectedItem = item
                             }
                             .onAppear {
                                 let isRemoteSearch = !remoteSearchQuery.isEmpty &&
                                     remoteSearchQuery.caseInsensitiveCompare(searchText.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
-                                let isNearEnd = index >= max(0, displayedSearchResults.count - 4)
-                                if isRemoteSearch && isNearEnd && remoteSearchPage < remoteSearchTotalPages {
+                                let nearEndIDs = Set(displayedSearchResults.suffix(4).map(\.id))
+                                if isRemoteSearch &&
+                                    nearEndIDs.contains(item.id) &&
+                                    remoteSearchPage < remoteSearchTotalPages {
                                     Task { await loadMoreTMDBSearchResults() }
                                 }
                             }
