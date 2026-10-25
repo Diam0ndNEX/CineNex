@@ -355,7 +355,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
 
         for piece in deadlinePieces.subtracting(requestedDeadlinePieces).sorted() {
             try Task.checkCancellation()
-            guard handle.clearPieceDeadlineAt(Int(piece)) else {
+            guard handle.clearPieceDeadline(at: Int(piece)) else {
                 throw TorrentStreamingError.invalidTorrentLayout
             }
         }
