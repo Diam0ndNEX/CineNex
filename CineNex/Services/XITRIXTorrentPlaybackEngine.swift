@@ -45,6 +45,30 @@ struct TorrentPiecePriorityWindow: Equatable {
     let piecesToDemote: [Int64]
     let piecesToPromote: [Int64]
 
+    static func expandedRange(
+        for requested: Range<Int64>,
+        pieceCount: Int64,
+        lookBehind: Int64 = 2,
+        lookAhead: Int64 = 24
+    ) -> Range<Int64>? {
+        guard pieceCount >= 0,
+              lookBehind >= 0,
+              lookAhead >= 0,
+              requested.lowerBound >= 0,
+              requested.upperBound >= requested.lowerBound,
+              requested.upperBound <= pieceCount else {
+            return nil
+        }
+        guard !requested.isEmpty else { return requested }
+
+        let lowerBound = requested.lowerBound > lookBehind
+            ? requested.lowerBound - lookBehind
+            : 0
+        let remainingPieces = pieceCount - requested.upperBound
+        let upperBound = requested.upperBound + min(lookAhead, remainingPieces)
+        return lowerBound..<upperBound
+    }
+
     init(current: Set<Int64>, requested: Set<Int64>) {
         piecesToDemote = current.subtracting(requested).sorted()
         piecesToPromote = requested.subtracting(current).sorted()
@@ -202,17 +226,24 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
     func prioritize(pieces: Range<Int64>) async throws {
         try Task.checkCancellation()
         guard let handle else { throw TorrentStreamingError.engineUnavailable }
-        let requestedPieces = Set(pieces)
-        guard !requestedPieces.isEmpty else { return }
+        guard !pieces.isEmpty else { return }
 
         handle.updateSnapshot()
         guard let pieceStates = handle.snapshot.pieces else {
             throw TorrentStreamingError.invalidTorrentLayout
         }
         let pieceCount = Int64(pieceStates.count)
-        guard requestedPieces.allSatisfy({ $0 >= 0 && $0 < pieceCount && $0 <= Int64(Int.max) }) else {
+        guard pieceCount <= Int64(Int.max),
+              pieces.lowerBound >= 0,
+              pieces.upperBound >= pieces.lowerBound,
+              pieces.upperBound <= pieceCount,
+              let expandedRange = TorrentPiecePriorityWindow.expandedRange(
+                for: pieces,
+                pieceCount: pieceCount
+              ) else {
             throw TorrentStreamingError.invalidTorrentLayout
         }
+        let requestedPieces = Set(expandedRange)
 
         let priorityWindow = TorrentPiecePriorityWindow(current: prioritizedPieces, requested: requestedPieces)
         for piece in priorityWindow.piecesToDemote {
