@@ -99,6 +99,33 @@ final class AniListCatalogProviderTests: XCTestCase {
         }
     }
 
+
+    func testFetchTrendingRejectsInvalidPageBeforeNetworking() async {
+        do {
+            _ = try await AniListCatalogProvider().fetchTrending(page: 0)
+            XCTFail("Expected invalidPagination for page zero")
+        } catch {
+            guard case AniListCatalogError.invalidPagination = error else {
+                XCTFail("Expected invalidPagination, got \\(error)")
+                return
+            }
+        }
+    }
+
+    func testFetchTrendingRejectsPageSizesOutsideSupportedRange() async {
+        for pageSize in [0, 51] {
+            do {
+                _ = try await AniListCatalogProvider().fetchTrending(perPage: pageSize)
+                XCTFail("Expected invalidPagination for page size \\(pageSize)")
+            } catch {
+                guard case AniListCatalogError.invalidPagination = error else {
+                    XCTFail("Expected invalidPagination, got \\(error)")
+                    return
+                }
+            }
+        }
+    }
+
     func testMapResponseReportsGraphQLFailureWithoutData() {
         let json = """
         {
