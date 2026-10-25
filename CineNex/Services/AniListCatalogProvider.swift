@@ -243,7 +243,13 @@ private struct AniListGraphQLRequest: Encodable {
 private struct AniListVariables: Encodable {
     let page: Int
     let perPage: Int
-    let search: String? = nil
+    let search: String?
+
+    init(page: Int, perPage: Int, search: String? = nil) {
+        self.page = page
+        self.perPage = perPage
+        self.search = search
+    }
 }
 
 private struct AniListEnvelope: Decodable {
