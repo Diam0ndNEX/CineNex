@@ -9,7 +9,11 @@ struct StremioTorrentDescriptor: Equatable, Sendable, Identifiable {
     let providerName: String
 
     var id: String {
-        "\(infoHash):\(fileIndex.map(String.init) ?? "all")"
+        let providerKey = providerName
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: "-")
+        return "\(providerKey):\(infoHash):\(fileIndex.map(String.init) ?? "all")"
     }
 
     init?(
