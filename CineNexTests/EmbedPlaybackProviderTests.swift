@@ -39,6 +39,53 @@ final class EmbedPlaybackProviderTests: XCTestCase {
         )
     }
 
+    func testIMDbOnlyCatalogTitleProducesValidIMDbEmbedURLs() throws {
+        let provider = EmbedPlaybackProvider(
+            id: "vidsrc",
+            displayName: "VidSrc",
+            baseURL: URL(string: "https://vidsrc.sh/embed/")!,
+            priority: 1,
+            requiresTMDBID: false,
+            requiresExternalID: true
+        )
+        let movieURL = try XCTUnwrap(provider.embedURL(
+            for: PlaybackSourceRequest(
+                title: "Example Movie",
+                mediaKind: .movie,
+                imdbID: "tt1234567"
+            )
+        ))
+        XCTAssertEqual(movieURL.absoluteString, "https://vidsrc.sh/embed/movie/tt1234567")
+
+        let episodeURL = try XCTUnwrap(provider.embedURL(
+            for: PlaybackSourceRequest(
+                title: "Example Series",
+                mediaKind: .series,
+                imdbID: "tt1234567",
+                seasonNumber: 2,
+                episodeNumber: 4
+            )
+        ))
+        XCTAssertEqual(episodeURL.absoluteString, "https://vidsrc.sh/embed/tv/tt1234567/2/4")
+    }
+
+    func testExternalIDProviderDoesNotGenerateTitleBasedBrokenURL() {
+        let provider = EmbedPlaybackProvider(
+            id: "vidsrc",
+            displayName: "VidSrc",
+            baseURL: URL(string: "https://vidsrc.sh/embed/")!,
+            priority: 1,
+            requiresTMDBID: false,
+            requiresExternalID: true
+        )
+        XCTAssertNil(provider.embedURL(
+            for: PlaybackSourceRequest(title: "Example Movie", mediaKind: .movie)
+        ))
+        XCTAssertNil(provider.embedURL(
+            for: PlaybackSourceRequest(title: "Example Movie", mediaKind: .movie, imdbID: "not-an-imdb-id")
+        ))
+    }
+
     func testProviderRejectsMissingIdentifierAndNonHTTPSBaseURL() {
         let provider = EmbedPlaybackProvider(
             id: "test",

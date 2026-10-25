@@ -64,9 +64,191 @@ private struct TMDBExternalIDsResponse: Decodable {
     }
 }
 
+struct CinemetaExternalIDResolver: PlaybackExternalIDResolving, Sendable {
+    private let session: URLSession
+
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
+
+    func imdbID(for request: PlaybackSourceRequest) async throws -> String? {
+        if let existingID = request.imdbID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           existingID.range(of: "^tt[0-9]{5,12}$", options: .regularExpression) != nil {
+            return existingID
+        }
+        let title = request.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+
+        let catalogType = request.mediaKind == .movie ? "movie" : "series"
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+        guard let encodedTitle = title.addingPercentEncoding(withAllowedCharacters: allowed) else {
+            throw StremioAddonClientError.invalidRequest
+        }
+        let components = URLComponents(string: "https://v3-cinemeta.strem.io/catalog/\(catalogType)/top/search=\(encodedTitle).json")
+        guard let url = components?.url,
+              url.scheme == "https",
+              url.host == "v3-cinemeta.strem.io" else {
+            throw StremioAddonClientError.invalidRequest
+        }
+
+        var networkRequest = URLRequest(url: url)
+        networkRequest.timeoutInterval = 10
+        networkRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: networkRequest)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            if Task.isCancelled { throw CancellationError() }
+            throw StremioAddonClientError.transport("Cinemeta title lookup failed: \(error.localizedDescription)")
+        }
+
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode),
+              http.url?.scheme == "https",
+              let finalHost = http.url?.host?.lowercased(),
+              ["v3-cinemeta.strem.io", "cinemeta-catalogs.strem.io"].contains(finalHost),
+              data.count <= 1_000_000 else {
+            throw StremioAddonClientError.invalidResponse
+        }
+
+        let catalog: CinemetaCatalogResponse
+        do {
+            catalog = try JSONDecoder().decode(CinemetaCatalogResponse.self, from: data)
+        } catch {
+            throw StremioAddonClientError.invalidResponse
+        }
+
+        let normalizedTitle = Self.normalized(title)
+        let expectedType = request.mediaKind == .movie ? "movie" : "series"
+        let exactMatches = catalog.metas.filter { meta in
+            meta.type == expectedType
+                && Self.normalized(meta.name) == normalizedTitle
+                && meta.id.range(of: "^tt[0-9]{5,12}$", options: .regularExpression) != nil
+        }
+        guard !exactMatches.isEmpty else { return nil }
+
+        if let releaseYear = request.releaseYear, releaseYear > 0 {
+            let yearMatches = exactMatches.filter { meta in
+                guard let releaseInfo = meta.releaseInfo,
+                      let year = Int(releaseInfo.prefix(4)) else { return false }
+                return year == releaseYear
+            }
+            if let match = yearMatches.first { return match.id }
+            let yearUnknown = exactMatches.filter { meta in
+                guard let releaseInfo = meta.releaseInfo else { return true }
+                return Int(releaseInfo.prefix(4)) == nil
+            }
+            return yearUnknown.count == 1 ? yearUnknown.first?.id : nil
+        }
+
+        let uniqueIDs = Array(Set(exactMatches.map(\.id)))
+        return uniqueIDs.count == 1 ? uniqueIDs.first : nil
+    }
+
+    private static func normalized(_ value: String) -> String {
+        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct CinemetaCatalogResponse: Decodable {
+    let metas: [CinemetaCatalogEntry]
+}
+
+private struct CinemetaCatalogEntry: Decodable {
+    let id: String
+    let type: String
+    let name: String
+    let releaseInfo: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case imdbID = "imdb_id"
+        case type
+        case name
+        case releaseInfo
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard let identifier = try container.decodeIfPresent(String.self, forKey: .id)
+                ?? container.decodeIfPresent(String.self, forKey: .imdbID) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.id,
+                DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Cinemeta entry has no IMDb identifier.")
+            )
+        }
+        id = identifier
+        type = try container.decode(String.self, forKey: .type)
+        name = try container.decode(String.self, forKey: .name)
+        releaseInfo = try container.decodeIfPresent(String.self, forKey: .releaseInfo)
+    }
+}
+
+struct AutomaticExternalIDResolver: PlaybackExternalIDResolving, Sendable {
+    private let tmdbReadAccessToken: String?
+    private let session: URLSession
+
+    init(tmdbReadAccessToken: String?, session: URLSession = .shared) {
+        let token = tmdbReadAccessToken?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.tmdbReadAccessToken = token.flatMap { $0.isEmpty ? nil : $0 }
+        self.session = session
+    }
+
+    func imdbID(for request: PlaybackSourceRequest) async throws -> String? {
+        if let token = tmdbReadAccessToken {
+            do {
+                if let imdbID = try await TMDBExternalIDResolver(readAccessToken: token, session: session).imdbID(for: request) {
+                    return imdbID
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                guard !Task.isCancelled else { throw CancellationError() }
+            }
+        }
+        return try await CinemetaExternalIDResolver(session: session).imdbID(for: request)
+    }
+}
+
+enum StremioAddonProviderOutcome: Equatable, Sendable {
+    case found(directSourceCount: Int, torrentSourceCount: Int)
+    case noSources
+    case failed(String)
+    case identifierUnavailable
+
+    var summary: String {
+        switch self {
+        case let .found(directSourceCount, torrentSourceCount):
+            return "found \(directSourceCount) direct / \(torrentSourceCount) torrent"
+        case .noSources:
+            return "no sources"
+        case let .failed(message):
+            return "failed: \(message)"
+        case .identifierUnavailable:
+            return "not queried: no matching IMDb ID"
+        }
+    }
+}
+
+struct StremioAddonProviderStatus: Equatable, Sendable, Identifiable {
+    let id: String
+    let name: String
+    let outcome: StremioAddonProviderOutcome
+
+    var summary: String { "\(name): \(outcome.summary)" }
+}
+
 struct StremioAddonDiscovery: Equatable, Sendable {
     let sources: [PlaybackSource]
     let torrentDescriptors: [StremioTorrentDescriptor]
+    let providerStatuses: [StremioAddonProviderStatus]
 }
 
 struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
@@ -74,6 +256,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
     let displayName: String
     let priority: Int
     private let clients: [StremioAddonClient]
+    private let clientDisplayNames: [String]
     private let externalIDResolver: any PlaybackExternalIDResolving
     init(
         id: String = "stremio-addons",
@@ -91,18 +274,38 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
         self.displayName = displayName
         self.priority = priority
         self.clients = try manifestURLs.map { try StremioAddonClient(manifestURL: $0, session: session) }
+        self.clientDisplayNames = manifestURLs.map(Self.displayName(for:))
         self.externalIDResolver = externalIDResolver
     }
 
     func findSources(for request: PlaybackSourceRequest) async throws -> [PlaybackSource] {
-        try await discover(for: request).sources
+        let discovery = try await discover(for: request)
+        if discovery.sources.isEmpty {
+            let failures = discovery.providerStatuses.compactMap { status -> String? in
+                if case .failed(let message) = status.outcome { return message }
+                return nil
+            }
+            if !failures.isEmpty {
+                throw StremioAddonClientError.transport(failures.joined(separator: " "))
+            }
+        }
+        return discovery.sources
     }
 
     func discover(for request: PlaybackSourceRequest) async throws -> StremioAddonDiscovery {
         guard request.isValid else { throw StremioAddonClientError.invalidRequest }
-        guard !clients.isEmpty else { return StremioAddonDiscovery(sources: [], torrentDescriptors: []) }
+        guard !clients.isEmpty else {
+            return StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: [])
+        }
         guard let imdbID = try await externalIDResolver.imdbID(for: request) else {
-            return StremioAddonDiscovery(sources: [], torrentDescriptors: [])
+            let statuses = clientDisplayNames.enumerated().map { index, name in
+                StremioAddonProviderStatus(
+                    id: "\(index)-\(name.lowercased())",
+                    name: name,
+                    outcome: .identifierUnavailable
+                )
+            }
+            return StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: statuses)
         }
 
         let streamRequest = StremioStreamRequest(
@@ -112,37 +315,45 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
             episodeNumber: request.episodeNumber
         )
         var batches: [(index: Int, entries: [StremioStreamEntry])] = []
-        var failures: [String] = []
+        var failuresByIndex: [Int: String] = [:]
 
         if clients.count == 1 {
-            batches = [(0, try await clients[0].fetchStreams(for: streamRequest))]
+            do {
+                batches = [(0, try await clients[0].fetchStreams(for: streamRequest))]
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                failuresByIndex[0] = error.localizedDescription
+            }
         } else {
             let aggregated = await withTaskGroup(
                 of: (index: Int, entries: [StremioStreamEntry], failure: String?).self,
-                returning: (batches: [(index: Int, entries: [StremioStreamEntry])], failures: [String]).self
+                returning: (batches: [(index: Int, entries: [StremioStreamEntry])], failuresByIndex: [Int: String]).self
             ) { group in
                 for (index, client) in clients.enumerated() {
                     group.addTask {
                         do {
                             return (index, try await client.fetchStreams(for: streamRequest), nil)
+                        } catch is CancellationError {
+                            return (index, [], "Request cancelled.")
                         } catch {
                             return (index, [], error.localizedDescription)
                         }
                     }
                 }
                 var fetched: [(index: Int, entries: [StremioStreamEntry])] = []
-                var errors: [String] = []
+                var errorsByIndex: [Int: String] = [:]
                 for await result in group {
                     if let failure = result.failure {
-                        errors.append(failure)
+                        errorsByIndex[result.index] = failure
                     } else {
                         fetched.append((result.index, result.entries))
                     }
                 }
-                return (fetched, errors)
+                return (fetched, errorsByIndex)
             }
             batches = aggregated.batches
-            failures = aggregated.failures
+            failuresByIndex = aggregated.failuresByIndex
         }
 
         try Task.checkCancellation()
@@ -153,19 +364,41 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                 batch.entries,
                 index: batch.index,
                 providerID: id,
-                displayName: displayName,
+                displayName: clientDisplayNames.indices.contains(batch.index) ? clientDisplayNames[batch.index] : displayName,
                 priority: priority
             )
         }
         var seenDescriptors = Set<String>()
         let descriptors = batches.flatMap { batch in
-            batch.entries.compactMap { StremioTorrentDescriptor(stream: $0) }
-        }.filter { seenDescriptors.insert($0.id).inserted }
-
-        if sources.isEmpty, descriptors.isEmpty, !failures.isEmpty {
-            throw StremioAddonClientError.transport(failures.joined(separator: " "))
+            let providerName = clientDisplayNames.indices.contains(batch.index) ? clientDisplayNames[batch.index] : displayName
+            return batch.entries.compactMap {
+                StremioTorrentDescriptor(stream: $0, providerName: providerName)
+            }
+        }.filter { descriptor in
+            seenDescriptors.insert(descriptor.id).inserted
         }
-        return StremioAddonDiscovery(sources: sources, torrentDescriptors: descriptors)
+
+        let providerStatuses = clientDisplayNames.enumerated().map { index, name in
+            let statusID = "\(index)-\(name.lowercased())"
+            if let failure = failuresByIndex[index] {
+                return StremioAddonProviderStatus(id: statusID, name: name, outcome: .failed(failure))
+            }
+            let directCount = sources.filter { $0.providerName == name }.count
+            let torrentCount = descriptors.filter { $0.providerName == name }.count
+            if directCount + torrentCount > 0 {
+                return StremioAddonProviderStatus(
+                    id: statusID,
+                    name: name,
+                    outcome: .found(directSourceCount: directCount, torrentSourceCount: torrentCount)
+                )
+            }
+            return StremioAddonProviderStatus(id: statusID, name: name, outcome: .noSources)
+        }
+        return StremioAddonDiscovery(
+            sources: sources,
+            torrentDescriptors: descriptors,
+            providerStatuses: providerStatuses
+        )
     }
 
     private static func mapSources(
@@ -177,7 +410,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
     ) -> [PlaybackSource] {
         entries.compactMap { entry -> PlaybackSource? in
             guard let url = entry.validatedPlaybackURL else { return nil }
-            let title = [entry.name, entry.title]
+            let title = [entry.title, entry.name]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .first(where: { !$0.isEmpty }) ?? "Stream from add-on \(index + 1)"
             let quality = Self.qualityLabel(from: [entry.name, entry.title, entry.description].compactMap { $0 }.joined(separator: " "))
@@ -194,6 +427,17 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                 providerPriority: priority
             )
         }
+    }
+
+    private static func displayName(for manifestURL: URL) -> String {
+        let host = (manifestURL.host ?? "").lowercased()
+        if host.contains("torrentio") { return "Torrentio" }
+        if host.contains("mediafusion") { return "MediaFusion" }
+        let label = host.split(separator: ".").first.map(String.init) ?? "External add-on"
+        return label.replacingOccurrences(of: "-", with: " ")
+            .split(whereSeparator: \.isWhitespace)
+            .map { $0.capitalized }
+            .joined(separator: " ")
     }
 
     private static func supportsNativePlayback(_ url: URL) -> Bool {

@@ -91,4 +91,64 @@ final class TorrentPieceRangePlannerTests: XCTestCase {
             XCTAssertEqual(error as? TorrentPieceRangePlannerError, .integerOverflow)
         }
     }
+
+    func testPriorityRangeAddsBoundedLookBehindAndLookAhead() {
+        XCTAssertEqual(
+            TorrentPiecePriorityWindow.expandedRange(for: 40..<44, pieceCount: 100),
+            38..<68
+        )
+    }
+
+    func testPriorityRangeClampsToTorrentBoundaries() {
+        XCTAssertEqual(
+            TorrentPiecePriorityWindow.expandedRange(for: 1..<3, pieceCount: 5),
+            0..<5
+        )
+        XCTAssertEqual(
+            TorrentPiecePriorityWindow.expandedRange(for: 96..<100, pieceCount: 100),
+            94..<100
+        )
+    }
+
+    func testPriorityRangeRejectsInvalidPieceCoordinates() {
+        XCTAssertNil(TorrentPiecePriorityWindow.expandedRange(for: -1..<2, pieceCount: 10))
+        XCTAssertNil(TorrentPiecePriorityWindow.expandedRange(for: 4..<11, pieceCount: 10))
+        XCTAssertNil(TorrentPiecePriorityWindow.expandedRange(for: 0..<1, pieceCount: -1))
+    }
+
+    func testEmptyPriorityRangeStaysEmpty() {
+        XCTAssertEqual(
+            TorrentPiecePriorityWindow.expandedRange(for: 5..<5, pieceCount: 10),
+            5..<5
+        )
+    }
+
+    func testInitialPriorityWindowPromotesAllRequestedPieces() {
+        let window = TorrentPiecePriorityWindow(current: [], requested: [4, 5, 6])
+
+        XCTAssertEqual(window.piecesToDemote, [])
+        XCTAssertEqual(window.piecesToPromote, [4, 5, 6])
+    }
+
+    func testMovingPriorityWindowDemotesStalePiecesAndPromotesNewPieces() {
+        let window = TorrentPiecePriorityWindow(current: [4, 5, 6], requested: [6, 7, 8])
+
+        XCTAssertEqual(window.piecesToDemote, [4, 5])
+        XCTAssertEqual(window.piecesToPromote, [7, 8])
+    }
+
+    func testUnchangedPriorityWindowDoesNotRepeatUpdates() {
+        let window = TorrentPiecePriorityWindow(current: [4, 5, 6], requested: [4, 5, 6])
+
+        XCTAssertEqual(window.piecesToDemote, [])
+        XCTAssertEqual(window.piecesToPromote, [])
+    }
+
+    func testOverlappingPriorityWindowOnlyChangesTheDifference() {
+        let window = TorrentPiecePriorityWindow(current: [10, 11, 12, 13], requested: [12, 13, 14, 15])
+
+        XCTAssertEqual(window.piecesToDemote, [10, 11])
+        XCTAssertEqual(window.piecesToPromote, [14, 15])
+    }
+
 }

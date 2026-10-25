@@ -5,12 +5,24 @@ struct StremioTorrentDescriptor: Equatable, Sendable, Identifiable {
     let fileIndex: Int?
     let trackers: [URL]
     let magnetURL: URL
+    let title: String
+    let providerName: String
 
     var id: String {
-        "\(infoHash):\(fileIndex.map(String.init) ?? "all")"
+        let providerKey = providerName
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: "-")
+        return "\(providerKey):\(infoHash):\(fileIndex.map(String.init) ?? "all")"
     }
 
-    init?(infoHash: String?, fileIndex: Int?, trackers: [URL] = []) {
+    init?(
+        infoHash: String?,
+        fileIndex: Int?,
+        trackers: [URL] = [],
+        title: String = "Torrent source",
+        providerName: String = "Stremio add-on"
+    ) {
         guard let infoHash else { return nil }
         let normalizedHash = infoHash.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard normalizedHash.range(of: "^[0-9a-f]{40}$", options: .regularExpression) != nil else {
@@ -45,9 +57,13 @@ struct StremioTorrentDescriptor: Equatable, Sendable, Identifiable {
         self.fileIndex = fileIndex
         self.trackers = normalizedTrackers
         self.magnetURL = magnetURL
+        let cleanedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.title = cleanedTitle.isEmpty ? "Torrent source" : cleanedTitle
+        let cleanedProviderName = providerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.providerName = cleanedProviderName.isEmpty ? "Stremio add-on" : cleanedProviderName
     }
 
-    init?(stream: StremioStreamEntry) {
+    init?(stream: StremioStreamEntry, providerName: String = "Stremio add-on") {
         let trackers = (stream.sources ?? []).compactMap { source -> URL? in
             guard source.hasPrefix("tracker:") else { return nil }
             let value = String(source.dropFirst("tracker:".count))
@@ -62,6 +78,29 @@ struct StremioTorrentDescriptor: Equatable, Sendable, Identifiable {
             }
             return url
         }
-        self.init(infoHash: stream.infoHash, fileIndex: stream.fileIndex, trackers: trackers)
+        let titleCandidates = [
+            stream.title,
+            stream.description,
+            stream.behaviorHints?.filename,
+            stream.name
+        ].compactMap { value -> String? in
+            guard let value else { return nil }
+            let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleaned.isEmpty,
+                  !["torrent", "torrent stream", "magnet", "torrent source"].contains(cleaned.lowercased()),
+                  cleaned.range(of: "^[0-9a-f]{32,64}$", options: .regularExpression) == nil,
+                  cleaned.range(of: "^[0-9a-f]{8}-[0-9a-f-]{27,}$", options: .regularExpression) == nil,
+                  cleaned.range(of: "^[0-9a-f]{12,}(?:[-_][0-9a-f]{4,})+$", options: .regularExpression) == nil else {
+                return nil
+            }
+            return cleaned
+        }
+        self.init(
+            infoHash: stream.infoHash,
+            fileIndex: stream.fileIndex,
+            trackers: trackers,
+            title: titleCandidates.first ?? "Torrent source",
+            providerName: providerName
+        )
     }
 }

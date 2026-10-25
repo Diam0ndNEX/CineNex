@@ -80,6 +80,31 @@ final class StremioAddonClientTests: XCTestCase {
         }
     }
 
+    func testSeriesProtocolIDTracksSelectedSeasonAndEpisode() {
+        let firstEpisode = StremioStreamRequest(
+            mediaType: "series",
+            itemID: "tt1234567",
+            seasonNumber: 1,
+            episodeNumber: 1
+        )
+        let laterEpisode = StremioStreamRequest(
+            mediaType: "series",
+            itemID: "tt1234567",
+            seasonNumber: 3,
+            episodeNumber: 7
+        )
+
+        XCTAssertEqual(firstEpisode.protocolID, "tt1234567:1:1")
+        XCTAssertEqual(laterEpisode.protocolID, "tt1234567:3:7")
+        XCTAssertNotEqual(firstEpisode.protocolID, laterEpisode.protocolID)
+    }
+
+    func testMovieProtocolIDDoesNotAddEpisodeSuffix() {
+        let movie = StremioStreamRequest(mediaType: "movie", itemID: "tt1234567")
+
+        XCTAssertEqual(movie.protocolID, "tt1234567")
+    }
+
     func testRejectsMalformedStreamRequestBeforeNetworking() async throws {
         StremioStubURLProtocol.handler = { _ in
             XCTFail("Invalid requests must not perform network calls.")
