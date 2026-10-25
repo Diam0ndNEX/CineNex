@@ -270,7 +270,13 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
         var failures: [String] = []
 
         if clients.count == 1 {
-            batches = [(0, try await clients[0].fetchStreams(for: streamRequest))]
+            do {
+                batches = [(0, try await clients[0].fetchStreams(for: streamRequest))]
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                failures = ["\(clientDisplayNames.first ?? displayName): \(error.localizedDescription)"]
+            }
         } else {
             let aggregated = await withTaskGroup(
                 of: (index: Int, entries: [StremioStreamEntry], failure: String?).self,
@@ -281,7 +287,8 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                         do {
                             return (index, try await client.fetchStreams(for: streamRequest), nil)
                         } catch {
-                            return (index, [], error.localizedDescription)
+                            let providerName = clientDisplayNames.indices.contains(index) ? clientDisplayNames[index] : displayName
+                            return (index, [], "\(providerName): \(error.localizedDescription)")
                         }
                     }
                 }
@@ -314,13 +321,14 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
         }
         var seenDescriptors = Set<String>()
         let descriptors = batches.flatMap { batch in
-            batch.entries.compactMap {
-                StremioTorrentDescriptor(
-                    stream: $0,
-                    providerName: clientDisplayNames.indices.contains(batch.index) ? clientDisplayNames[batch.index] : displayName
-                )
+            let providerName = clientDisplayNames.indices.contains(batch.index) ? clientDisplayNames[batch.index] : displayName
+            return batch.entries.compactMap {
+                StremioTorrentDescriptor(stream: $0, providerName: providerName)
             }
-        }.filter { seenDescriptors.insert($0.id).inserted }
+        }.filter { descriptor in
+            let providerKey = descriptor.providerName.lowercased()
+            return seenDescriptors.insert("\(providerKey):\(descriptor.id)").inserted
+        }
 
         if sources.isEmpty, descriptors.isEmpty, !failures.isEmpty {
             throw StremioAddonClientError.transport(failures.joined(separator: " "))
