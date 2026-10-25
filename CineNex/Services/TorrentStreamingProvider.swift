@@ -332,7 +332,11 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
         lock.unlock()
         telemetry.setActiveConnectionCount(0)
         let snapshot = telemetry.snapshot()
-        logger.info("stream summary: requests=\(snapshot.requestCount, privacy: .public) ranges=\(snapshot.rangeRequestCount, privacy: .public) bytes=\(snapshot.bytesServed, privacy: .public) failures=\(snapshot.failedRequestCount, privacy: .public) readMs=\(snapshot.totalReadMilliseconds, privacy: .public) maxReadMs=\(snapshot.maximumReadMilliseconds, privacy: .public)")
+        logger.info("""
+        stream summary: requests=\(snapshot.requestCount, privacy: .public) ranges=\(snapshot.rangeRequestCount, privacy: .public) \
+        bytes=\(snapshot.bytesServed, privacy: .public) failures=\(snapshot.failedRequestCount, privacy: .public) \
+        readMs=\(snapshot.totalReadMilliseconds, privacy: .public) maxReadMs=\(snapshot.maximumReadMilliseconds, privacy: .public)
+        """)
         tasksToCancel.forEach { $0.cancel() }
         connectionsToCancel.forEach { $0.cancel() }
         currentListener?.cancel()
@@ -475,7 +479,7 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
                 data = try await file.reader.read(offset: offset, length: length)
             } catch {
                 let elapsed = max(0, ProcessInfo.processInfo.systemUptime - readStartedAt)
-                telemetry.recordReadDuration(milliseconds: Int64(min(elapsed * 1_000, Double(Int64.max))))
+                telemetry.recordReadDuration(milliseconds: Int64(min(elapsed * 1_000, 60_000_000_000)))
                 throw error
             }
             let elapsed = max(0, ProcessInfo.processInfo.systemUptime - readStartedAt)
