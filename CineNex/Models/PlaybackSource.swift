@@ -9,6 +9,7 @@ struct PlaybackSourceRequest: Codable, Equatable, Sendable {
     let title: String
     let mediaKind: PlaybackMediaKind
     let tmdbID: Int?
+    let imdbID: String?
     let releaseYear: Int?
     let seasonNumber: Int?
     let episodeNumber: Int?
@@ -17,6 +18,7 @@ struct PlaybackSourceRequest: Codable, Equatable, Sendable {
         title: String,
         mediaKind: PlaybackMediaKind,
         tmdbID: Int? = nil,
+        imdbID: String? = nil,
         releaseYear: Int? = nil,
         seasonNumber: Int? = nil,
         episodeNumber: Int? = nil
@@ -24,6 +26,10 @@ struct PlaybackSourceRequest: Codable, Equatable, Sendable {
         self.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         self.mediaKind = mediaKind
         self.tmdbID = tmdbID
+        let cleanedIMDbID = imdbID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.imdbID = cleanedIMDbID.flatMap {
+            $0.range(of: "^tt[0-9]{5,12}$", options: .regularExpression) != nil ? $0 : nil
+        }
         self.releaseYear = releaseYear
         self.seasonNumber = seasonNumber
         self.episodeNumber = episodeNumber
@@ -32,6 +38,7 @@ struct PlaybackSourceRequest: Codable, Equatable, Sendable {
     var isValid: Bool {
         !title.isEmpty
             && (tmdbID == nil || tmdbID! > 0)
+            && (imdbID == nil || imdbID!.range(of: "^tt[0-9]{5,12}$", options: .regularExpression) != nil)
             && (releaseYear == nil || releaseYear! > 0)
             && (seasonNumber == nil || seasonNumber! >= 0)
             && (episodeNumber == nil || episodeNumber! > 0)

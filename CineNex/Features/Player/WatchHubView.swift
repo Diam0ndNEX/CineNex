@@ -46,6 +46,7 @@ struct WatchHubView: View {
             title: item.title,
             mediaKind: item.kind == .movie ? .movie : .series,
             tmdbID: item.metadataProvider == "tmdb" ? item.externalID : nil,
+            imdbID: item.externalIMDbID,
             releaseYear: item.year > 0 ? item.year : nil,
             seasonNumber: item.kind == .series ? seasonNumber : nil,
             episodeNumber: item.kind == .series ? episodeNumber : nil

@@ -134,6 +134,7 @@ struct CinemetaCatalogProvider: Sendable {
                 posterURL: posterURL,
                 rating: meta.imdbRating.flatMap { Double($0) },
                 externalID: nil,
+                externalIMDbID: meta.id,
                 metadataProvider: "cinemeta"
             )
         }
