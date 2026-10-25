@@ -10,7 +10,7 @@ DEADLINE_METHOD = "- (BOOL)setPieceDeadline:(NSInteger)milliseconds at:(NSIntege
 DEADLINE_IMPLEMENTATION_METHOD = "- (BOOL)setPieceDeadline:(NSInteger)milliseconds at:(NSInteger)pieceIndex {"
 CLEAR_DEADLINE_METHOD = "- (BOOL)clearPieceDeadlineAt:(NSInteger)pieceIndex;"
 CLEAR_DEADLINE_IMPLEMENTATION_METHOD = "- (BOOL)clearPieceDeadlineAt:(NSInteger)pieceIndex {"
-CLEAR_DEADLINE_IMPLEMENTATION = """- (BOOL)setPieceDeadline:(NSInteger)milliseconds at:(NSInteger)pieceIndex {
+DEADLINE_IMPLEMENTATION = """- (BOOL)setPieceDeadline:(NSInteger)milliseconds at:(NSInteger)pieceIndex {
     if (pieceIndex < 0 || milliseconds < 0 || milliseconds > 60000) {
         return NO;
     }
