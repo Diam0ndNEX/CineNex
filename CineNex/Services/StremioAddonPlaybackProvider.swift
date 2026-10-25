@@ -375,8 +375,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                 StremioTorrentDescriptor(stream: $0, providerName: providerName)
             }
         }.filter { descriptor in
-            let providerKey = descriptor.providerName.lowercased()
-            return seenDescriptors.insert("\(providerKey):\(descriptor.id)").inserted
+            seenDescriptors.insert(descriptor.id).inserted
         }
 
         let providerStatuses = clientDisplayNames.enumerated().map { index, name in
