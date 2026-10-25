@@ -16,6 +16,7 @@ final class AnimeProgressStore: ObservableObject {
         defaults: UserDefaults = .standard,
         storageKey: String = "cinenex.animeProgress.v1"
     ) {
+        let resolvedTitlesStorageKey = "\(storageKey).titles"
         self.defaults = defaults
         self.storageKey = storageKey
 
@@ -30,7 +31,7 @@ final class AnimeProgressStore: ObservableObject {
             watchedEpisodes = [:]
         }
 
-        if let data = defaults.data(forKey: titlesStorageKey),
+        if let data = defaults.data(forKey: resolvedTitlesStorageKey),
            let saved = try? JSONDecoder().decode([AnimeTitle].self, from: data) {
             trackedAnime = saved
                 .filter { $0.id > 0 && watchedEpisodes[$0.id, default: 0] > 0 }
