@@ -39,3 +39,7 @@ A green simulator workflow does not prove real-world torrent playback on a physi
 ## Stream diagnostics
 
 The loopback server maintains a thread-safe per-server telemetry snapshot for accepted requests, byte-range requests, bytes successfully written to the client, failed requests, active connections, total time spent waiting for requested torrent bytes, and the slowest individual read. The snapshot is available through `diagnosticsSnapshot()`; on teardown, the server emits a compact summary through the unified logging system. Metrics intentionally omit stream tokens, URLs, titles, and file paths. The counters are covered by concurrent-update unit tests.
+
+## SceneBox-inspired playback deadlines
+
+CineNex assigns libtorrent deadlines to the exact piece range required by each byte-range read. Pieces are scheduled in ascending playback order at 80 ms intervals, capped at 60 seconds for unusually large ranges. When a later read moves the playback window, deadlines for pieces no longer in the requested range are cleared. This supplements piece priorities: priorities guide general selection, while deadlines make the currently requested bytes urgent. Deadlines are relative to the moment they are scheduled and are best-effort targets; a slow or unavailable swarm can still miss them. The pure `TorrentPieceDeadlinePlan` validates ranges and delay bounds and is covered by unit tests. The native bridge is applied by the CI patcher and is built for both device and simulator targets before app tests run.
