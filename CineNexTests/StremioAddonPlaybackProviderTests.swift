@@ -143,6 +143,30 @@ final class StremioAddonPlaybackProviderTests: XCTestCase {
         XCTAssertEqual(discovery.torrentDescriptors.first?.fileIndex, 2)
     }
 
+    func testSameTorrentFromDifferentAddonsKeepsBothProviderChoices() async throws {
+        ProviderStubURLProtocol.handler = { request in
+            if request.url?.path == "/manifest.json" {
+                return (self.response(request, 200), Data(#"{"id":"addon","version":"1","name":"Addon","resources":["stream"],"types":["movie"],"idPrefixes":["tt"]}"#.utf8))
+            }
+            return (self.response(request, 200), Data(#"{"streams":[{"name":"1080p Torrent","infoHash":"0123456789abcdef0123456789abcdef01234567","fileIdx":0}]}"#.utf8))
+        }
+        let provider = try StremioAddonPlaybackProvider(
+            manifestURLs: [
+                URL(string: "https://torrentio.strem.fun/manifest.json")!,
+                URL(string: "https://mediafusion.elfhosted.com/manifest.json")!
+            ],
+            externalIDResolver: StubExternalIDResolver(value: "tt1234567"),
+            session: makeSession()
+        )
+
+        let discovery = try await provider.discover(
+            for: PlaybackSourceRequest(title: "Example", mediaKind: .movie, imdbID: "tt1234567")
+        )
+
+        XCTAssertEqual(discovery.torrentDescriptors.count, 2)
+        XCTAssertEqual(Set(discovery.torrentDescriptors.map(\.providerName)), Set(["Torrentio", "MediaFusion"]))
+    }
+
     func testProviderUsesExactSeriesEpisodeCoordinates() async throws {
         ProviderStubURLProtocol.handler = { request in
             if request.url?.path == "/manifest.json" {
