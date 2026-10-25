@@ -15,6 +15,8 @@ The HTTP server supports GET, HEAD, and single byte ranges, limits each read to 
 
 ## XITRIX engine behavior
 
+Before the first playback range is requested, the engine assigns a high priority to the selected file's first 2 MiB and a lower background priority to its last 16 MiB. This carries over the useful startup/tail priming strategy from the SceneBox architecture without coupling CineNex to SceneBox types. The moving playback window can temporarily promote any piece to the highest priority; when that window moves away, pinned head/tail pieces return to their startup priority instead of being accidentally demoted to the lowest background level. The pure `TorrentStartupPiecePriorityPlan` planner validates torrent-global offsets and piece bounds and is covered by unit tests.
+
 The current engine adapter:
 
 1. Creates a per-info-hash cache location and starts a libtorrent session from the selected magnet URI.
@@ -33,6 +35,10 @@ The merged GitHub Actions workflow passed for the XITRIX wrapper builds for iOS 
 
 A green simulator workflow does not prove real-world torrent playback on a physical iPhone. Before claiming end-to-end playback success, test a known legal/public-domain torrent on-device, including metadata acquisition, startup buffering, seeking, cancellation, and cleanup. The XITRIX wrapper repository currently has no GitHub license declaration; resolve its redistribution terms before publicly distributing an app that bundles the dependency. The generated CI IPA is unsigned and must be signed before installation.
 
+
+## Stream diagnostics
+
+The loopback server maintains a thread-safe per-server telemetry snapshot for accepted requests, byte-range requests, bytes successfully written to the client, failed requests, active connections, total time spent waiting for requested torrent bytes, and the slowest individual read. The snapshot is available through `diagnosticsSnapshot()`; on teardown, the server emits a compact summary through the unified logging system. Metrics intentionally omit stream tokens, URLs, titles, and file paths. The counters are covered by concurrent-update unit tests.
 
 ## Stream diagnostics
 
