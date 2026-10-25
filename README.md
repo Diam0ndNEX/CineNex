@@ -8,6 +8,7 @@ The first foundation is committed:
 
 - Native dark SwiftUI interface with Home, Search, and My List tabs.
 - Demo movie and series catalog with title details.
+- Separate Movies & Series and Anime home experiences; Anime uses public AniList trending metadata and local episode progress tracking.
 - Search by title, genre, and media type.
 - Persistent favorites stored on the device.
 - AVPlayer screen for a compatible HTTPS sample video.
@@ -15,7 +16,7 @@ The first foundation is committed:
 - Unit tests for catalog identity and the playable sample.
 - GitHub Actions simulator build and test workflow.
 
-The app starts with local demo data. With a TMDB Read Access Token saved in Tracking, Home loads trending metadata and Search can query TMDB's movie/TV catalog. Metadata does not include playable streams. Big Buck Bunny is included as a sample playback target; it is not a catalog or streaming service.
+The Movies & Series experience starts with local demo data. With a TMDB Read Access Token saved in Tracking, it loads trending metadata and Search can query TMDB's movie/TV catalog. The Anime experience loads trending anime from AniList's public GraphQL API without requiring a token and stores watched episode counts locally. Metadata does not include playable streams; anime playback still depends on compatible providers. Big Buck Bunny is included as a sample playback target; it is not a catalog or streaming service.
 
 ## Build locally
 
