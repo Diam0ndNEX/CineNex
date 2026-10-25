@@ -72,6 +72,10 @@ struct CinemetaExternalIDResolver: PlaybackExternalIDResolving, Sendable {
     }
 
     func imdbID(for request: PlaybackSourceRequest) async throws -> String? {
+        if let existingID = request.imdbID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           existingID.range(of: "^tt[0-9]{5,12}$", options: .regularExpression) != nil {
+            return existingID
+        }
         let title = request.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return nil }
 

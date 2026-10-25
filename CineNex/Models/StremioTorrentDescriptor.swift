@@ -75,15 +75,17 @@ struct StremioTorrentDescriptor: Equatable, Sendable, Identifiable {
             return url
         }
         let titleCandidates = [
-            stream.behaviorHints?.filename,
-            stream.title,
             stream.name,
-            stream.description
+            stream.title,
+            stream.description,
+            stream.behaviorHints?.filename
         ].compactMap { value -> String? in
             guard let value else { return nil }
             let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !cleaned.isEmpty,
-                  !["torrent", "torrent stream", "magnet", "torrent source"].contains(cleaned.lowercased()) else {
+                  !["torrent", "torrent stream", "magnet", "torrent source"].contains(cleaned.lowercased()),
+                  cleaned.range(of: "^[0-9a-f]{32,64}$", options: .regularExpression) == nil,
+                  cleaned.range(of: "^[0-9a-f]{8}-[0-9a-f-]{27,}$", options: .regularExpression) == nil else {
                 return nil
             }
             return cleaned

@@ -364,6 +364,11 @@ struct WatchHubView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if !discoveredSources.isEmpty {
+                    Label("Direct stream links", systemImage: "play.rectangle")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.top, 4)
+                }
                 ForEach(discoveredSources) { source in
                     Button {
                         activePlaybackSheet = .discovered(source)
@@ -394,6 +399,12 @@ struct WatchHubView: View {
                     .accessibilityLabel("Play source: \(source.title)")
                 }
                 
+                if !discoveredTorrentDescriptors.isEmpty {
+                    let providerNames = Array(Set(discoveredTorrentDescriptors.map(\.providerName))).sorted()
+                    Label("Torrent sources · \(providerNames.joined(separator: " · "))", systemImage: "arrow.down.circle")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.top, 4)
+                }
                 ForEach(discoveredTorrentDescriptors) { descriptor in
                     Button {
                         startTorrentPlayback(for: descriptor)

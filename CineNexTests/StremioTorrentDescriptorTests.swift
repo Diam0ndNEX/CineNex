@@ -47,9 +47,8 @@ final class StremioTorrentDescriptorTests: XCTestCase {
     func testCreatesDescriptorDirectlyFromStremioStreamEntry() throws {
         let stream = try JSONDecoder().decode(
             StremioStreamEntry.self,
-            from: Data(#"{"name":"Torrent","infoHash":"0123456789ABCDEF0123456789ABCDEF01234567","fileIdx":3,"sources":["tracker:udp://tracker.example.test:80/announce","tracker:javascript:alert(1)","dht://ignored"]}"#.utf8)
+            from: Data(#"{"name":"Ghost Torrents · 1080p","infoHash":"0123456789abcdef0123456789abcdef01234567","fileIdx":3,"behaviorHints":{"filename":"0123456789abcdef0123456789abcdef01234567.mp4"}}"#.utf8)
         )
-
         let descriptor = try XCTUnwrap(StremioTorrentDescriptor(stream: stream))
         XCTAssertEqual(descriptor.infoHash, validHash)
         XCTAssertEqual(descriptor.fileIndex, 3)

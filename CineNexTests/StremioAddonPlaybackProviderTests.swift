@@ -3,6 +3,22 @@ import XCTest
 @testable import CineNex
 
 final class StremioAddonPlaybackProviderTests: XCTestCase {
+    func testKnownIMDbIDIsUsedWithoutAnotherCatalogRequest() async throws {
+        ProviderStubURLProtocol.handler = { _ in
+            XCTFail("A valid IMDb ID already present on the title should not trigger another lookup.")
+            throw URLError(.badServerResponse)
+        }
+        let resolver = CinemetaExternalIDResolver(session: makeSession())
+        let id = try await resolver.imdbID(
+            for: PlaybackSourceRequest(
+                title: "Example Film",
+                mediaKind: .movie,
+                imdbID: "tt1234567"
+            )
+        )
+        XCTAssertEqual(id, "tt1234567")
+    }
+
     func testCinemetaResolverFindsExactTitleWithoutTMDBToken() async throws {
         ProviderStubURLProtocol.handler = { request in
             XCTAssertEqual(request.url?.host, "v3-cinemeta.strem.io")

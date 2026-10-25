@@ -34,8 +34,8 @@ final class CinemetaCatalogProviderTests: XCTestCase {
             requestedPaths.insert(request.url?.path ?? "")
             let isMovie = request.url?.path.contains("/movie/") == true
             let body = isMovie
-                ? #"{\"metas\":[{\"id\":\"tt1234567\",\"type\":\"movie\",\"name\":\"Example Film\",\"releaseInfo\":\"2024\"}]}"#
-                : #"{\"metas\":[{\"id\":\"tt7654321\",\"type\":\"series\",\"name\":\"Example Series\",\"releaseInfo\":\"2022\"}]}"#
+                ? #"{"metas":[{"id":"tt1234567","type":"movie","name":"Example Film","releaseInfo":"2024"}]}"#
+                : #"{"metas":[{"id":"tt7654321","type":"series","name":"Example Series","releaseInfo":"2022"}]}"#
             return (self.response(request, 200), Data(body.utf8))
         }
         let items = try await CinemetaCatalogProvider(session: makeSession()).fetchCatalog()
