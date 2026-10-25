@@ -46,7 +46,8 @@ final class TorrentPlaybackProviderTests: XCTestCase {
             _ = try await provider.findSources(for: request)
             XCTFail("Preparation failure should be propagated.")
         } catch StubFailure.preparationFailed {
-            XCTAssertTrue(await engine.stopWasCalled())
+            let stopped = await engine.stopWasCalled()
+            XCTAssertTrue(stopped)
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
@@ -60,6 +61,7 @@ final class TorrentPlaybackProviderTests: XCTestCase {
         let sources = try await provider.findSources(for: request)
 
         XCTAssertTrue(sources.isEmpty)
-        XCTAssertTrue(await engine.stopWasCalled())
+        let stopped = await engine.stopWasCalled()
+        XCTAssertTrue(stopped)
     }
 }
