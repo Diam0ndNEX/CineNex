@@ -217,6 +217,7 @@ struct AniListCatalogProvider {
       Page(page: $page, perPage: $perPage) {
         media(type: ANIME, sort: TRENDING_DESC, isAdult: false) {
           id
+          idMal
           title {
             romaji
             english
