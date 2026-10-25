@@ -242,9 +242,17 @@ struct WatchHubView: View {
                     .foregroundStyle(.secondary)
                 HStack(spacing: 14) {
                     Link("Configure Torrentio", destination: URL(string: "https://torrentio.strem.fun/configure")!)
-                    Link("Configure MediaFusion", destination: URL(string: "https://mediafusion.elfhosted.com")!)
+                    Link("MediaFusion", destination: URL(string: "https://mediafusion.elfhosted.com")!)
+                    Spacer(minLength: 0)
+                    Button("Restore defaults") {
+                        stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+                    }
+                    .font(.caption.weight(.medium))
                 }
                 .font(.caption.weight(.medium))
+                Text("One HTTPS manifest URL per line. Configured add-on URLs may include a custom path; keep private configuration URLs on your device.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 TextEditor(text: $stremioAddonManifestURLs)
                     .font(.caption.monospaced())
                     .scrollContentBackground(.hidden)
