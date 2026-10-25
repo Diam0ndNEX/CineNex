@@ -8,7 +8,7 @@ The first foundation is committed:
 
 - Native dark SwiftUI interface with Home, Search, and My List tabs.
 - Demo movie and series catalog with title details.
-- Separate Movies & Series and Anime home experiences; Anime uses public AniList trending metadata and local episode progress tracking.
+- Separate Movies & Series and Anime experiences across Home, Search, and Library; Anime uses public AniList trending/search metadata and local episode progress tracking.
 - Search by title, genre, and media type.
 - Persistent favorites stored on the device.
 - AVPlayer screen for a compatible HTTPS sample video.
