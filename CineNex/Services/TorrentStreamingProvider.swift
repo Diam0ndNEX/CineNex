@@ -202,42 +202,53 @@ final class TorrentLoopbackHTTPServer: @unchecked Sendable {
             throw TorrentStreamingError.listenerUnavailable
         }
 
-        let port: UInt16 = try await withCheckedThrowingContinuation { continuation in
-            let gate = TorrentContinuationGate()
-            newListener.stateUpdateHandler = { state in
-                switch state {
-                case .ready:
-                    guard gate.claim() else { return }
-                    if let port = newListener.port?.rawValue {
-                        continuation.resume(returning: port)
-                    } else {
+        let port: UInt16
+        do {
+            port = try await withCheckedThrowingContinuation { continuation in
+                let gate = TorrentContinuationGate()
+                newListener.stateUpdateHandler = { state in
+                    switch state {
+                    case .ready:
+                        guard gate.claim() else { return }
+                        if let port = newListener.port?.rawValue {
+                            continuation.resume(returning: port)
+                        } else {
+                            continuation.resume(throwing: TorrentStreamingError.listenerUnavailable)
+                        }
+                    case .failed, .cancelled:
+                        guard gate.claim() else { return }
                         continuation.resume(throwing: TorrentStreamingError.listenerUnavailable)
+                    default:
+                        break
                     }
-                case .failed, .cancelled:
+                }
+                newListener.newConnectionHandler = { [weak self] connection in
+                    guard let self else {
+                        connection.cancel()
+                        return
+                    }
+                    let connectionID = UUID()
+                    guard self.registerConnection(connection, id: connectionID) else {
+                        connection.cancel()
+                        return
+                    }
+                    connection.start(queue: self.queue)
+                    let task = Task {
+                        await self.handle(connection)
+                        self.finishConnection(id: connectionID)
+                    }
+                    self.registerTask(task, id: connectionID)
+                }
+                newListener.start(queue: queue)
+                queue.asyncAfter(deadline: .now() + 3) {
                     guard gate.claim() else { return }
+                    newListener.cancel()
                     continuation.resume(throwing: TorrentStreamingError.listenerUnavailable)
-                default:
-                    break
                 }
             }
-            newListener.newConnectionHandler = { [weak self] connection in
-                guard let self else {
-                    connection.cancel()
-                    return
-                }
-                let connectionID = UUID()
-                guard self.registerConnection(connection, id: connectionID) else {
-                    connection.cancel()
-                    return
-                }
-                connection.start(queue: self.queue)
-                let task = Task {
-                    await self.handle(connection)
-                    self.finishConnection(id: connectionID)
-                }
-                self.registerTask(task, id: connectionID)
-            }
-            newListener.start(queue: queue)
+        } catch {
+            newListener.cancel()
+            throw error
         }
 
         let accepted = lock.withLock {
