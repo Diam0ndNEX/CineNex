@@ -10,38 +10,7 @@ DEADLINE_METHOD = "- (BOOL)setPieceDeadline:(NSInteger)milliseconds at:(NSIntege
 DEADLINE_IMPLEMENTATION_METHOD = "- (BOOL)setPieceDeadline:(NSInteger)milliseconds at:(NSInteger)pieceIndex {"
 CLEAR_DEADLINE_METHOD = "- (BOOL)clearPieceDeadlineAt:(NSInteger)pieceIndex;"
 CLEAR_DEADLINE_IMPLEMENTATION_METHOD = "- (BOOL)clearPieceDeadlineAt:(NSInteger)pieceIndex {"
-CLEAR_DEADLINE_IMPLEMENTATION = """- (BOOL)clearPieceDeadlineAt:(NSInteger)pieceIndex {\n    if (pieceIndex < 0) {\n        return NO;\n    }\n\n    __block BOOL didClearDeadline = NO;\n    [self performOperation:@\"clearPieceDeadline\" action:^(lt::torrent_handle const &handle) {\n        auto torrentInfo = handle.torrent_file();\n        if (torrentInfo == nullptr || pieceIndex >= torrentInfo->num_pieces()) {\n            return;\n        }\n\n        handle.reset_piece_deadline(lt::piece_index_t(static_cast<int>(pieceIndex)));\n        didClearDeadline = YES;\n    }];\n    return didClearDeadline;\n}\n\n"""
-FILE_ENTRY_METHOD = "@property (readonly, nonatomic) uint64_t fileOffset;"
-FILE_ENTRY_INTERNAL_METHOD = "@property (readwrite, nonatomic) uint64_t fileOffset;"
-FILE_OFFSET_ASSIGNMENT = "fileEntry.fileOffset = static_cast<uint64_t>(layout.file_offset(fileIndex));"
-PIECE_LENGTH_METHOD = "@property (readonly) uint32_t pieceLength;"
-PIECE_LENGTH_GETTER = "- (uint32_t)pieceLength {"
-
-IMPLEMENTATION = """- (BOOL)setPiecePriority:(NSInteger)priority at:(NSInteger)pieceIndex {
-    if (pieceIndex < 0 || priority < 0 || priority > 7) {
-        return NO;
-    }
-
-    __block BOOL didSetPriority = NO;
-    [self performOperation:@"setPiecePriority" action:^(lt::torrent_handle const &handle) {
-        auto torrentInfo = handle.torrent_file();
-        if (torrentInfo == nullptr || pieceIndex >= torrentInfo->num_pieces()) {
-            return;
-        }
-
-        handle.piece_priority(
-            lt::piece_index_t(static_cast<int>(pieceIndex)),
-            lt::download_priority_t(static_cast<int>(priority))
-        );
-        didSetPriority = YES;
-    }];
-    return didSetPriority;
-}
-
-"""
-
-
-DEADLINE_IMPLEMENTATION = """- (BOOL)setPieceDeadline:(NSInteger)milliseconds at:(NSInteger)pieceIndex {
+CLEAR_DEADLINE_IMPLEMENTATION = """- (BOOL)setPieceDeadline:(NSInteger)milliseconds at:(NSInteger)pieceIndex {
     if (pieceIndex < 0 || milliseconds < 0 || milliseconds > 60000) {
         return NO;
     }
@@ -62,7 +31,9 @@ DEADLINE_IMPLEMENTATION = """- (BOOL)setPieceDeadline:(NSInteger)milliseconds at
     return didSetDeadline;
 }
 
-- (BOOL)clearPieceDeadlineAt:(NSInteger)pieceIndex {
+"""
+
+CLEAR_DEADLINE_IMPLEMENTATION = """- (BOOL)clearPieceDeadlineAt:(NSInteger)pieceIndex {
     if (pieceIndex < 0) {
         return NO;
     }
