@@ -219,6 +219,9 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             settings: settings,
             storages: [:]
         )
+        self.downloadRoot = root
+        self.session = session
+
         guard let magnet = MagnetURI(with: descriptor.magnetURL) else {
             throw TorrentStreamingError.invalidRequest
         }
@@ -226,9 +229,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             throw TorrentStreamingError.engineUnavailable
         }
 
-        self.session = session
         self.handle = handle
-        self.downloadRoot = root
         session.resume()
         handle.resume()
 
