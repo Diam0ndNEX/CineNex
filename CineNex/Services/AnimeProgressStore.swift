@@ -54,7 +54,7 @@ final class AnimeProgressStore: ObservableObject {
 
     func watchedEpisodeCount(for anime: AnimeTitle) -> Int {
         let count = watchedEpisodeCount(for: anime.id)
-        return min(count, anime.episodeCount ?? 9_999)
+        return max(0, min(count, anime.episodeCount ?? 9_999))
     }
 
     func setWatchedEpisodeCount(_ count: Int, for anime: AnimeTitle) {
