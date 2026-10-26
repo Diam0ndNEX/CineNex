@@ -281,13 +281,63 @@ struct ContentView: View {
     }
 
     private var experiencePicker: some View {
-        Picker("Content experience", selection: $selectedHomeExperience) {
-            Text("Movies & Series").tag("moviesAndSeries")
-            Text("Anime").tag("anime")
+        HStack(spacing: 10) {
+            experienceButton(
+                title: "Movies & Series",
+                symbol: "play.rectangle.on.rectangle",
+                isSelected: selectedHomeExperience != "anime"
+            ) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    selectedHomeExperience = "moviesAndSeries"
+                    selectedHomeCategory = .forYou
+                }
+            }
+
+            experienceButton(
+                title: "Anime",
+                symbol: "sparkles.tv",
+                isSelected: selectedHomeExperience == "anime"
+            ) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    selectedHomeExperience = "anime"
+                }
+            }
         }
-        .pickerStyle(.segmented)
         .padding(.horizontal, 20)
-        .accessibilityLabel("Choose Movies and Series or Anime")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Content type")
+    }
+
+    private func experienceButton(
+        title: String,
+        symbol: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(isSelected ? .white : Color.primary)
+                .background(
+                    isSelected ? Color.cineNexAccent : Color.cineNexSurface,
+                    in: Capsule()
+                )
+                .overlay {
+                    Capsule()
+                        .strokeBorder(
+                            isSelected ? Color.clear : Color.primary.opacity(0.12),
+                            lineWidth: 1
+                        )
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, minHeight: 48)
+        .contentShape(Rectangle())
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var moviesAndSeriesHomeContent: some View {
@@ -483,13 +533,20 @@ struct ContentView: View {
     }
 
     private var searchScreen: some View {
-        Group {
-            if selectedHomeExperience == "anime" {
-                animeSearchScreen
-            } else {
-                moviesAndSeriesSearchScreen
+        VStack(spacing: 0) {
+            experiencePicker
+                .padding(.top, 10)
+                .padding(.bottom, 8)
+
+            Group {
+                if selectedHomeExperience == "anime" {
+                    animeSearchScreen
+                } else {
+                    moviesAndSeriesSearchScreen
+                }
             }
         }
+        .background(Color.cineNexBackground.ignoresSafeArea())
         .sheet(item: $selectedAnime) { anime in
             AnimeDetailView(anime: anime, progressStore: animeProgressStore)
                 .presentationDetents([.medium, .large])
@@ -692,13 +749,20 @@ struct ContentView: View {
     }
 
     private var libraryScreen: some View {
-        Group {
-            if selectedHomeExperience == "anime" {
-                animeLibraryScreen
-            } else {
-                moviesAndSeriesLibraryScreen
+        VStack(spacing: 0) {
+            experiencePicker
+                .padding(.top, 10)
+                .padding(.bottom, 8)
+
+            Group {
+                if selectedHomeExperience == "anime" {
+                    animeLibraryScreen
+                } else {
+                    moviesAndSeriesLibraryScreen
+                }
             }
         }
+        .background(Color.cineNexBackground.ignoresSafeArea())
         .sheet(item: $selectedAnime) { anime in
             AnimeDetailView(anime: anime, progressStore: animeProgressStore)
                 .presentationDetents([.medium, .large])
