@@ -42,7 +42,7 @@ final class CatalogCacheStore {
                 && !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
         guard !validItems.isEmpty,
-              Set(validItems.map(\\.id)).count == validItems.count else {
+              Set(validItems.map(\.id)).count == validItems.count else {
             return
         }
 
