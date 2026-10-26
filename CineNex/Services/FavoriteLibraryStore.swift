@@ -1,5 +1,6 @@
 import Foundation
 
+@MainActor
 final class FavoriteLibraryStore {
     static let shared = FavoriteLibraryStore()
 
