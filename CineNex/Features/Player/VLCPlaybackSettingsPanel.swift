@@ -40,7 +40,7 @@ struct VLCPlaybackSettingsPanel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: 360, maxHeight: .infinity)
-            .background(Color(uiColor: .secondarySystemBackground))
+            .background(Color.black.opacity(0.92))
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .padding(12)
         }
