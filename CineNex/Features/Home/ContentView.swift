@@ -313,6 +313,15 @@ struct ContentView: View {
                     .padding(.horizontal, 20)
             }
 
+            if selectedHomeCategory == .forYou && !continueWatchingItems.isEmpty {
+                mediaSection(
+                    title: "Continue Watching",
+                    subtitle: "Pick up right where you left off",
+                    items: continueWatchingItems,
+                    showProgress: true
+                )
+            }
+
             if let featured = featuredHomeItem {
                 FeaturedBanner(item: featured) {
                     selectedItem = featured
@@ -323,9 +332,6 @@ struct ContentView: View {
 
             switch selectedHomeCategory {
             case .forYou:
-                if !continueWatchingItems.isEmpty {
-                    mediaSection(title: "Continue Watching", subtitle: "Pick up right where you left off", items: continueWatchingItems, showProgress: true)
-                }
                 mediaSection(title: "Popular right now", subtitle: "Discover something worth watching", items: catalog)
                 let movies = catalog.filter { $0.kind == .movie }
                 if !movies.isEmpty {
@@ -426,17 +432,12 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 20)
 
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
-                        ForEach(animeCatalog) { anime in
-                            AnimePosterCard(
-                                anime: anime,
-                                watchedEpisodes: animeProgressStore.watchedEpisodeCount(for: anime)
-                            ) {
-                                selectedAnime = anime
-                            }
-                        }
+                    AnimePosterShelf(
+                        items: animeCatalog,
+                        progressStore: animeProgressStore
+                    ) { anime in
+                        selectedAnime = anime
                     }
-                    .padding(.horizontal, 20)
                 }
             }
         }
@@ -1223,7 +1224,7 @@ private struct FeaturedBanner: View {
             }
             .padding(22)
         }
-        .frame(height: 360)
+        .frame(height: 300)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .overlay {
             RoundedRectangle(cornerRadius: 24)

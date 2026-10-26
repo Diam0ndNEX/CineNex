@@ -65,7 +65,7 @@ struct AnimeFeaturedBanner: View {
             }
             .padding(22)
         }
-        .frame(height: 355)
+        .frame(height: 300)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .overlay {
             RoundedRectangle(cornerRadius: 24)
@@ -149,6 +149,31 @@ struct AnimePosterCard: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens anime details and episode tracking")
+    }
+}
+
+struct AnimePosterShelf: View {
+    let items: [AnimeTitle]
+    let progressStore: AnimeProgressStore
+    let onSelect: (AnimeTitle) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(alignment: .top, spacing: 14) {
+                ForEach(items) { anime in
+                    AnimePosterCard(
+                        anime: anime,
+                        watchedEpisodes: progressStore.watchedEpisodeCount(for: anime)
+                    ) {
+                        onSelect(anime)
+                    }
+                    .frame(width: 152)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 4)
+        }
+        .accessibilityLabel("Trending anime")
     }
 }
 
