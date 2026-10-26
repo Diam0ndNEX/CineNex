@@ -821,14 +821,13 @@ struct WatchHubView: View {
         var addonManifestURLs = manifestURLs.filter {
             !($0.host?.lowercased().contains("torrentio") ?? false)
         }
-        let hasMediaFusion = addonManifestURLs.contains {
-            $0.host?.lowercased().contains("mediafusion") ?? false
-        }
-        if !hasMediaFusion {
-            addonManifestURLs.append(contentsOf: Self.defaultStremioAddonManifestURLs.filter {
-                $0.host?.lowercased().contains("mediafusion") ?? false
-            })
-        }
+        addonManifestURLs = MediaFusionEndpointPolicy.withFallbacks(addonManifestURLs)
+        PlaybackDiagnostics.record("discovery.begin", details: [
+            "addon_hosts": addonManifestURLs.compactMap(\.host).joined(separator: ","),
+            "media_kind": request.mediaKind.rawValue,
+            "season": request.seasonNumber.map(String.init) ?? "none",
+            "episode": request.episodeNumber.map(String.init) ?? "none"
+        ])
         async let torrentioResult = SceneBoxTorrentSearch(sourceBases: manifestURLs.filter {
             $0.host?.lowercased().contains("torrentio") ?? false
         }.map { $0.deletingLastPathComponent().absoluteString } + ["https://torrentio.strem.fun"]).discover(
@@ -863,6 +862,12 @@ struct WatchHubView: View {
         if discoveredSources.isEmpty, !discoveredTorrentDescriptors.isEmpty {
             addonSearchMessage = (addonSearchMessage ?? "") + " Direct links are optional; these add-ons returned torrent streams."
         }
+        for status in statuses {
+            PlaybackDiagnostics.record("discovery.provider.result", details: ["provider": status.name, "outcome": status.outcome.summary])
+        }
+        let displayedCounts = Dictionary(grouping: discoveredTorrentDescriptors, by: \.providerName)
+            .map { "\($0.key)=\($0.value.count)" }.sorted().joined(separator: ",")
+        PlaybackDiagnostics.record("discovery.display", details: ["torrents_by_provider": displayedCounts, "direct_count": String(discoveredSources.count)])
         let providerSummary = statuses.map(\.summary).joined(separator: "\n")
         if !providerSummary.isEmpty {
             addonSearchMessage = [addonSearchMessage, providerSummary].compactMap { $0 }.joined(separator: "\n")
@@ -912,6 +917,7 @@ struct WatchHubView: View {
             torrentPreparationMessage = "This torrent result is malformed. Choose another source."
             return
         }
+        PlaybackDiagnostics.beginAttempt(provider: descriptor.providerName, fileIndex: descriptor.fileIndex)
         preparingTorrentDescriptorID = descriptor.id
         torrentPreparationMessage = "Preparing torrent stream. Torrent metadata may take a moment to load."
         let preparationID = UUID()

@@ -305,14 +305,24 @@ struct StremioAddonClient: Sendable {
         } catch {
             throw StremioAddonClientError.invalidResponse
         }
+        PlaybackDiagnostics.record("addon.streams.parsed", details: [
+            "host": manifestURL.host ?? "unknown",
+            "entry_count": String(response.streams.count),
+            "hash_entries": String(response.streams.filter { $0.infoHash != nil }.count),
+            "direct_candidates": String(response.streams.filter { $0.validatedPlaybackURL != nil }.count)
+        ])
         return response.streams
     }
 
     private func fetchData(from url: URL) async throws -> Data {
+        let startedAt = Date()
+        let host = url.host ?? "unknown"
+        let resource = url.path.contains("/stream/") ? "stream" : "manifest"
+        PlaybackDiagnostics.record("addon.http.begin", details: ["host": host, "resource": resource])
         try Task.checkCancellation()
         guard Self.isSafeHTTPSURL(url) else { throw StremioAddonClientError.invalidManifestURL }
         var request = URLRequest(url: url)
-        request.timeoutInterval = 12
+        request.timeoutInterval = url.path.contains("/stream/") ? 25 : 12
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let redirectDelegate = StremioHTTPSRedirectDelegate()
         do {
@@ -323,6 +333,10 @@ struct StremioAddonClient: Sendable {
             guard let finalURL = httpResponse.url, Self.isSafeHTTPSURL(finalURL) else {
                 throw StremioAddonClientError.invalidManifestURL
             }
+            PlaybackDiagnostics.record("addon.http.response", details: [
+                "host": host, "resource": resource, "http": String(httpResponse.statusCode),
+                "bytes": String(data.count), "elapsed_ms": String(Int(Date().timeIntervalSince(startedAt) * 1000))
+            ])
             if (300..<400).contains(httpResponse.statusCode) {
                 throw StremioAddonClientError.invalidManifestURL
             }
@@ -334,6 +348,7 @@ struct StremioAddonClient: Sendable {
             }
             return data
         } catch let error as StremioAddonClientError {
+            PlaybackDiagnostics.record("addon.http.rejected", details: ["host": host, "resource": resource, "reason": error.localizedDescription])
             throw error
         } catch is CancellationError {
             throw CancellationError()
@@ -341,6 +356,7 @@ struct StremioAddonClient: Sendable {
             if Task.isCancelled {
                 throw CancellationError()
             }
+            PlaybackDiagnostics.record("addon.http.transport_error", details: ["host": host, "resource": resource, "domain": (error as NSError).domain, "code": String((error as NSError).code)])
             throw StremioAddonClientError.transport(error.localizedDescription)
         }
     }

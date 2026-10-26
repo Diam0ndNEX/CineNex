@@ -196,6 +196,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             try ensureCurrentLifecycle(generation)
             return files
         } catch {
+            PlaybackDiagnostics.record("torrent.prepare.error", details: ["domain": (error as NSError).domain, "code": String((error as NSError).code), "reason": error.localizedDescription])
             if lifecycleGeneration == generation {
                 await stop()
             }
@@ -227,6 +228,8 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
 
         let settings = Session.Settings()
         settings.agentName = "CineNex"
+        settings.outgoingInterfaces = ""
+        settings.listenInterfaces = "0.0.0.0:0,[::]:0"
         settings.maxActiveTorrents = 1
         settings.maxDownloadingTorrents = 1
         settings.maxUploadingTorrents = 1
@@ -237,13 +240,18 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         settings.validateHttpsTrackers = true
 
         PlaybackDiagnostics.record("Creating libtorrent session")
-        let session = Session(
+        guard let session = Session(
             root,
             torrentsPath: torrentsDirectory,
             fastResumePath: resumeDirectory,
             settings: settings,
             storages: [:]
-        )
+        ) else {
+            let message = UserDefaults.standard.string(forKey: "cinenex.nativeSessionInitializationError")
+                ?? "Native torrent session could not be initialized."
+            PlaybackDiagnostics.record("Native session initialization failed", details: ["reason": message])
+            throw NSError(domain: "CineNex.NativeSession", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+        }
         PlaybackDiagnostics.record("Libtorrent session created")
         self.downloadRoot = root
         self.session = session
@@ -350,6 +358,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             contentType: contentType,
             reader: reader
         )
+        PlaybackDiagnostics.record("torrent.file.prepared", details: ["file_index": String(selectedFile.index), "bytes": String(selectedFile.size), "piece_length": String(snapshot.pieceLength), "content_type": contentType])
         self.reader = reader
         self.preparedFile = prepared
         return [prepared]
@@ -425,11 +434,14 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
               pieces.allSatisfy({ $0 >= 0 && $0 < Int64(initialPieceStates.count) }) else {
             throw TorrentStreamingError.invalidTorrentLayout
         }
-        for _ in 0..<360 {
+        for tick in 0..<360 {
             try Task.checkCancellation()
             try ensureCurrentLifecycle(generation)
             handle.updateSnapshot()
             let availablePieces = handle.snapshot.pieces ?? []
+            if tick % 20 == 0 {
+                PlaybackDiagnostics.record("torrent.pieces.wait", details: ["from": String(pieces.lowerBound), "to_exclusive": String(pieces.upperBound), "wait_seconds": String(tick / 4), "download_bytes_per_second": String(handle.snapshot.downloadRate)])
+            }
             if pieces.allSatisfy({ index in
                 index >= 0 &&
                 index < Int64(availablePieces.count) &&
@@ -494,10 +506,17 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         on handle: TorrentHandle,
         generation: UInt64
     ) async throws -> TorrentHandle.Snapshot {
-        for _ in 0..<240 {
+        for tick in 0..<240 {
             try ensureCurrentLifecycle(generation)
             handle.updateSnapshot()
             let snapshot = handle.snapshot
+            if tick % 20 == 0 {
+                PlaybackDiagnostics.record("torrent.metadata.wait", details: [
+                    "wait_seconds": String(tick / 4), "has_metadata": String(snapshot.hasMetadata),
+                    "files": String(snapshot.files.count), "peers": String(snapshot.numberOfPeers),
+                    "seeds": String(snapshot.numberOfSeeds), "download_bytes_per_second": String(snapshot.downloadRate)
+                ])
+            }
             if snapshot.hasMetadata, !snapshot.files.isEmpty {
                 return snapshot
             }
