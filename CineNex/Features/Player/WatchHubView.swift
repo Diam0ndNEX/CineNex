@@ -17,10 +17,11 @@ struct WatchHubView: View {
         "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json",
         "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusionfortheweebs.midnightignite.me/manifest.json"
     ]
-    private static let defaultStremioAddonManifestURLText = "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
+    private static let defaultStremioAddonManifestURLText = "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json\nhttps://mediafusionfortheweebs.midnightignite.me/manifest.json"
     private static let defaultStremioAddonManifestURLs: [URL] = [
         URL(string: "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json")!,
-        URL(string: "https://mediafusion.elfhosted.com/manifest.json")!
+        URL(string: "https://mediafusion.elfhosted.com/manifest.json")!,
+        URL(string: "https://mediafusionfortheweebs.midnightignite.me/manifest.json")!
     ]
     @State private var activePlaybackSheet: WatchPlaybackSheet?
     @State private var discoveredSources: [PlaybackSource] = []
