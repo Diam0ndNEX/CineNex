@@ -850,47 +850,75 @@ struct WatchHubView: View {
             }
         }
 
+        let resolver = AutomaticExternalIDResolver(tmdbReadAccessToken: TMDBTokenStore.load())
+        let addonManifestURLs = manifestURLs.filter {
+            !($0.host?.lowercased().contains("torrentio") ?? false)
+        }
+        async let torrentioResult = SceneBoxTorrentSearch().discover(
+            for: request,
+            externalIDResolver: resolver
+        )
+        async let addonResult = Self.discoverAddonSources(
+            manifestURLs: addonManifestURLs,
+            request: request,
+            resolver: resolver
+        )
+        let (torrentioDiscovery, addonDiscovery) = await (torrentioResult, addonResult)
+        guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
+
+        var seenSourceIDs = Set<String>()
+        discoveredSources = (torrentioDiscovery.sources + addonDiscovery.sources).filter {
+            seenSourceIDs.insert($0.id).inserted
+        }
+        var seenDescriptorIDs = Set<String>()
+        discoveredTorrentDescriptors = Array(
+            (torrentioDiscovery.torrentDescriptors + addonDiscovery.torrentDescriptors).filter {
+                seenDescriptorIDs.insert($0.id).inserted
+            }.prefix(12)
+        )
+        let statuses = torrentioDiscovery.providerStatuses + addonDiscovery.providerStatuses
+        if !discoveredSources.isEmpty, !discoveredTorrentDescriptors.isEmpty {
+            addonSearchMessage = "Found \(discoveredSources.count) direct source(s) and \(discoveredTorrentDescriptors.count) torrent option(s). Torrent transfers start only when you select one."
+        } else if !discoveredSources.isEmpty {
+            addonSearchMessage = "Found \(discoveredSources.count) direct source(s). VLC will attempt playback; unavailable sources can be skipped."
+        } else if !discoveredTorrentDescriptors.isEmpty {
+            addonSearchMessage = "Found \(discoveredTorrentDescriptors.count) torrent option(s). Select one to prepare playback."
+        } else {
+            addonSearchMessage = "No playable sources were returned. Check the provider status below or try another source instance."
+        }
+        let providerSummary = statuses.map(\.summary).joined(separator: "\n")
+        if !providerSummary.isEmpty {
+            addonSearchMessage = [addonSearchMessage, providerSummary].joined(separator: "\n")
+        }
+    }
+
+    private static func discoverAddonSources(
+        manifestURLs: [URL],
+        request: PlaybackSourceRequest,
+        resolver: AutomaticExternalIDResolver
+    ) async -> StremioAddonDiscovery {
+        guard !manifestURLs.isEmpty else {
+            return StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: [])
+        }
         do {
             let provider = try StremioAddonPlaybackProvider(
                 manifestURLs: manifestURLs,
-                externalIDResolver: AutomaticExternalIDResolver(tmdbReadAccessToken: TMDBTokenStore.load())
+                externalIDResolver: resolver
             )
-            let discovery = try await provider.discover(for: request)
-            let torrentDescriptors = Array(
-                discovery.torrentDescriptors.reduce(into: [StremioTorrentDescriptor]()) { result, descriptor in
-                    if !result.contains(where: { $0.id == descriptor.id }) {
-                        result.append(descriptor)
-                    }
-                }.prefix(12)
-            )
-            discoveredSources = discovery.sources
-            discoveredTorrentDescriptors = torrentDescriptors
-            if !discovery.sources.isEmpty, !torrentDescriptors.isEmpty {
-                addonSearchMessage = "Found \(discovery.sources.count) direct source(s) and \(torrentDescriptors.count) torrent option(s). Torrent transfers start only when you select one."
-            } else if !discovery.sources.isEmpty {
-                addonSearchMessage = "Found \(discovery.sources.count) direct source(s). Availability and playback compatibility are not guaranteed until playback starts."
-            } else if !torrentDescriptors.isEmpty {
-                addonSearchMessage = "Found \(torrentDescriptors.count) torrent option(s). Select one to prepare native playback."
-            } else {
-                addonSearchMessage = "No playable sources were returned. CineNex searched by title automatically; try again later because add-ons can be temporarily unavailable or may require their own authentication."
-            }
-            let providerSummary = discovery.providerStatuses.map(\.summary).joined(separator: "\n")
-            if !providerSummary.isEmpty {
-                addonSearchMessage = [addonSearchMessage, providerSummary]
-                    .compactMap { $0 }
-                    .joined(separator: "\n")
-            }
+            return try await provider.discover(for: request)
         } catch is CancellationError {
-            guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
-            await TorrentPlaybackSessionRegistry.shared.stopAll()
-            addonSearchMessage = "Source search was cancelled."
-            discoveredSources = []
-            discoveredTorrentDescriptors = []
+            return StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: [])
         } catch {
-            guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
-            addonSearchMessage = error.localizedDescription
-            discoveredSources = []
-            discoveredTorrentDescriptors = []
+            let statuses = manifestURLs.enumerated().map { index, url in
+                let host = (url.host ?? "External add-on").lowercased()
+                let name = host.contains("mediafusion") ? "MediaFusion" : host
+                return StremioAddonProviderStatus(
+                    id: "addon-error-\(index)-\(host)",
+                    name: name,
+                    outcome: .failed(error.localizedDescription)
+                )
+            }
+            return StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: statuses)
         }
     }
 
