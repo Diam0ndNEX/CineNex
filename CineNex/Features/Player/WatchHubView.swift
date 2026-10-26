@@ -61,7 +61,8 @@ struct WatchHubView: View {
     }
 
     private var visibleTorrentSources: [StremioTorrentDescriptor] {
-        selectedSourceFilter == "All" || selectedSourceFilter == "Torrent" ? discoveredTorrentDescriptors : []
+        guard selectedSourceFilter == "All" || selectedSourceFilter == "Torrent" else { return [] }
+        return SceneBoxStreamPicker.ordered(discoveredTorrentDescriptors)
     }
 
     private var visibleEmbeddedSources: [ResolvedEmbedSource] {
@@ -464,7 +465,13 @@ struct WatchHubView: View {
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(.primary)
                                     .lineLimit(2)
-                                Text([descriptor.providerName, descriptor.fileIndex.map { "File index \($0)" }].compactMap { $0 }.joined(separator: " · "))
+                                Text([
+                                    descriptor.providerName,
+                                    SceneBoxStreamPicker.resolution(for: descriptor),
+                                    SceneBoxStreamPicker.seeders(for: descriptor).map { "\($0) seeders" },
+                                    SceneBoxStreamPicker.size(for: descriptor),
+                                    descriptor.fileIndex.map { "File index \($0)" }
+                                ].compactMap { $0 }.joined(separator: " · "))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
