@@ -228,9 +228,9 @@ struct ContentView: View {
             .tag(AppTab.downloads)
 
             NavigationStack {
-                TrackingView()
+                CineNexSettingsView()
             }
-            .tabItem { Label("Tracking", systemImage: "arrow.triangle.2.circlepath") }
+            .tabItem { Label("Settings", systemImage: "gearshape.fill") }
             .tag(AppTab.tracking)
         }
         .tint(Color.cineNexAccent)
@@ -252,7 +252,7 @@ struct ContentView: View {
                 .zIndex(1)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                LazyVStack(alignment: .leading, spacing: 22) {
                     header
 
                     if selectedHomeExperience == "anime" {
@@ -350,10 +350,10 @@ struct ContentView: View {
     private var moviesAndSeriesHomeContent: some View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 5) {
-                Text("Find your next obsession")
+                Text("Discover")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .tracking(-0.7)
-                Text("A world of stories, picked for your mood.")
+                Text("Movies, series, and your next episode.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -361,6 +361,12 @@ struct ContentView: View {
             .accessibilityElement(children: .combine)
 
             homeCategoryPicker
+
+            if catalogLoading && catalog.isEmpty {
+                ProgressView("Finding movies and series…")
+                    .frame(maxWidth: .infinity)
+                    .padding(32)
+            }
 
             if let catalogError {
                 Label(catalogError, systemImage: "exclamationmark.triangle")
@@ -389,7 +395,20 @@ struct ContentView: View {
 
             switch selectedHomeCategory {
             case .forYou:
-                mediaSection(title: "Popular right now", subtitle: "Discover something worth watching", items: catalog)
+                let unwatched = favoriteItems.filter { playbackProgressStore.progress(for: $0.id) == nil }
+                if !unwatched.isEmpty {
+                    mediaSection(title: "From your watchlist", subtitle: "Saved and ready to explore", items: unwatched)
+                }
+                mediaSection(title: "Popular right now", subtitle: "Explore the current catalog", items: catalog)
+                let topRated = catalog.filter { ($0.rating ?? 0) >= 7 }
+                    .sorted { ($0.rating ?? 0) > ($1.rating ?? 0) }
+                if !topRated.isEmpty {
+                    mediaSection(title: "Highly rated", subtitle: "Standouts from the current catalog", items: topRated)
+                }
+                let recent = catalog.sorted { $0.year > $1.year }
+                if !recent.isEmpty {
+                    mediaSection(title: "Newer discoveries", subtitle: "Browse by release year", items: recent)
+                }
                 let movies = catalog.filter { $0.kind == .movie }
                 if !movies.isEmpty {
                     mediaSection(title: "Movies for every mood", subtitle: "Big stories, one great night", items: movies)
@@ -892,9 +911,9 @@ struct ContentView: View {
                     .frame(width: 42, height: 42)
                     .background(Color.cineNexSurface, in: Circle())
             }
-            .accessibilityLabel("Customize appearance")
+            .accessibilityLabel("Open settings")
             .sheet(isPresented: $showingAppearanceSettings) {
-                AppearanceSettingsView()
+                NavigationStack { CineNexSettingsView() }
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
@@ -915,7 +934,7 @@ struct ContentView: View {
             .padding(.horizontal, 20)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 14) {
+                LazyHStack(alignment: .top, spacing: 14) {
                     ForEach(items) { item in
                         VStack(alignment: .leading, spacing: 8) {
                             MediaPosterCard(item: item) {
