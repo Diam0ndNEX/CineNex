@@ -71,9 +71,10 @@ struct SceneBoxTorrentSearch: Sendable {
                 let descriptors = entries.compactMap {
                     StremioTorrentDescriptor(stream: $0, providerName: "Torrentio")
                 }.filter { seen.insert($0.id).inserted }
-                let outcome: StremioAddonProviderOutcome = sources.isEmpty && descriptors.isEmpty
-                    ? .noSources
-                    : .found(directSourceCount: sources.count, torrentSourceCount: descriptors.count)
+                guard !sources.isEmpty || !descriptors.isEmpty else { continue }
+                let outcome = StremioAddonProviderOutcome.found(
+                    directSourceCount: sources.count, torrentSourceCount: descriptors.count
+                )
                 return StremioAddonDiscovery(
                     sources: sources,
                     torrentDescriptors: descriptors,
@@ -118,7 +119,7 @@ struct SceneBoxTorrentSearch: Sendable {
     private func fetchStreams(from base: String, request: StremioStreamRequest) async throws -> [StremioStreamEntry] {
         let allowedIDCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~:")
         guard let encodedID = request.protocolID.addingPercentEncoding(withAllowedCharacters: allowedIDCharacters),
-              let url = URL(string: "(base)/stream/(request.mediaType)/(encodedID).json"),
+              let url = URL(string: "\(base)/stream/\(request.mediaType)/\(encodedID).json"),
               StremioAddonClient.isSafeHTTPSURL(url) else {
             throw StremioAddonClientError.invalidRequest
         }
@@ -164,7 +165,7 @@ struct SceneBoxTorrentSearch: Sendable {
             let quality = ["2160P", "4K", "1080P", "720P", "480P", "SD", "HD"]
                 .first(where: { text.uppercased().contains($0) })
             return PlaybackSource(
-                id: "scenebox-torrentio-(imdbID)-(url.absoluteString)",
+                id: "scenebox-torrentio-\(imdbID)-\(url.absoluteString)",
                 providerID: "torrentio",
                 providerName: "Torrentio",
                 title: title,
