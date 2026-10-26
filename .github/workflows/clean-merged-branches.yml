@@ -1,0 +1,74 @@
+name: Clean merged branches
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [closed]
+  push:
+    branches: [main]
+    paths: [.github/workflows/clean-merged-branches.yml]
+permissions:
+  contents: write
+  pull-requests: read
+concurrency:
+  group: merged-branch-cleanup
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Delete only branches fully contained in main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: python
+        run: |
+          import json, os, subprocess, urllib.request
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+          protected = {"main", "build/ipa"}
+          page = 1
+          while True:
+              req = urllib.request.Request(
+                  "https://api.github.com/repos/" + os.environ["REPOSITORY"] + "/pulls?state=open&per_page=100&page=" + str(page),
+                  headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"], "Accept": "application/vnd.github+json"})
+              with urllib.request.urlopen(req) as response:
+                  pulls = json.load(response)
+              for pr in pulls:
+                  protected.add(pr["base"]["ref"])
+                  if pr["head"]["repo"] and pr["head"]["repo"]["full_name"] == os.environ["REPOSITORY"]:
+                      protected.add(pr["head"]["ref"])
+              if len(pulls) < 100:
+                  break
+              page += 1
+          git("fetch", "--prune", "origin", "+refs/heads/*:refs/remotes/origin/*")
+          main = git("rev-parse", "refs/remotes/origin/main")
+          deleted, retained, failed = [], [], []
+          for line in git("for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes/origin/").splitlines():
+              ref, sha = line.split()
+              name = ref.removeprefix("refs/remotes/origin/")
+              if name == "HEAD" or name in protected:
+                  continue
+              if subprocess.run(["git", "merge-base", "--is-ancestor", sha, main]).returncode != 0:
+                  retained.append(name)
+                  continue
+              result = subprocess.run(["git", "push", "--force-with-lease=refs/heads/" + name + ":" + sha,
+                                       "origin", ":refs/heads/" + name], capture_output=True, text=True)
+              if result.returncode == 0:
+                  deleted.append(name)
+                  print("Deleted merged branch:", name, sha)
+              else:
+                  failed.append(name)
+                  print("Kept branch after deletion was refused:", name)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("## Branch cleanup\nDeleted: " + str(len(deleted)) + "\n\n")
+              summary.write("\n".join("- Deleted: " + n for n in deleted))
+              summary.write("\n\n" + "\n".join("- Retained unique work: " + n for n in retained))
+              summary.write("\n\n" + "\n".join("- Deletion refused: " + n for n in failed))
+          if failed:
+              raise SystemExit("Some branch deletions were refused; see the summary.")
