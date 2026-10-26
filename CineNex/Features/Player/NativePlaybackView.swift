@@ -5,6 +5,11 @@ struct NativePlaybackView: UIViewControllerRepresentable {
     let player: AVPlayer
     @Binding var videoGravity: AVLayerVideoGravity
 
+    init(player: AVPlayer, videoGravity: Binding<AVLayerVideoGravity> = .constant(.resizeAspect)) {
+        self.player = player
+        self._videoGravity = videoGravity
+    }
+
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
