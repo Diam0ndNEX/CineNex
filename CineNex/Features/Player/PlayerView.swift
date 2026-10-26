@@ -12,6 +12,7 @@ struct PlayerView: View {
     @State private var subtitleGroup: AVMediaSelectionGroup?
     @State private var audioOptions: [AVMediaSelectionOption] = []
     @State private var subtitleOptions: [AVMediaSelectionOption] = []
+    @State private var nowPlayingController: NowPlayingController?
     @State private var isSettingsPresented = false
     @State private var videoGravity: AVLayerVideoGravity = .resizeAspect
     @State private var playbackRate: Float = 1
@@ -134,6 +135,8 @@ struct PlayerView: View {
             }
             player.pause()
             PlaybackAudioSession.deactivate()
+            nowPlayingController?.end()
+            nowPlayingController = nil
             if let timeObserver {
                 player.removeTimeObserver(timeObserver)
                 self.timeObserver = nil
@@ -189,6 +192,7 @@ struct PlayerView: View {
                     duration: duration.isFinite ? duration : 0,
                     item: item
                 )
+                nowPlayingController?.refresh()
             }
         }
 
@@ -214,6 +218,13 @@ struct PlayerView: View {
                         return
                     }
                     player.playImmediately(atRate: playbackRate)
+                    if nowPlayingController == nil {
+                        let controller = NowPlayingController()
+                        controller.begin(player: player, title: item.title, artworkURL: item.posterURL)
+                        nowPlayingController = controller
+                    } else {
+                        nowPlayingController?.refresh()
+                    }
                     Task { await TraktIntegration.shared.scrobbleStart(for: item) }
                     return
                 case .failed:
