@@ -88,7 +88,7 @@ struct StremioTorrentDescriptor: Equatable, Sendable, Identifiable {
             let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !cleaned.isEmpty,
                   !["torrent", "torrent stream", "magnet", "torrent source"].contains(cleaned.lowercased()),
-                  cleaned.range(of: "^[0-9a-f]{32,64}$", options: .regularExpression) == nil,
+                  (cleaned as NSString).deletingPathExtension.range(of: "^[0-9a-f]{32,64}$", options: [.regularExpression, .caseInsensitive]) == nil,
                   cleaned.range(of: "^[0-9a-f]{8}-[0-9a-f-]{27,}$", options: .regularExpression) == nil,
                   cleaned.range(of: "^[0-9a-f]{12,}(?:[-_][0-9a-f]{4,})+$", options: .regularExpression) == nil else {
                 return nil

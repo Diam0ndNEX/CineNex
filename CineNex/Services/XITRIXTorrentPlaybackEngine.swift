@@ -169,6 +169,7 @@ struct TorrentPiecePriorityWindow: Equatable {
 
 actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabilityScheduling {
     private let descriptor: StremioTorrentDescriptor
+    private let onPreparationUpdate: @Sendable (String) -> Void
     private var session: Session?
     private var handle: TorrentHandle?
     private var downloadRoot: URL?
@@ -181,8 +182,9 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
     private var isStopping = false
     private var stopWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(descriptor: StremioTorrentDescriptor) {
+    init(descriptor: StremioTorrentDescriptor, onPreparationUpdate: @escaping @Sendable (String) -> Void = { _ in }) {
         self.descriptor = descriptor
+        self.onPreparationUpdate = onPreparationUpdate
     }
 
     func prepareFiles(for request: PlaybackSourceRequest) async throws -> [TorrentPreparedFile] {
@@ -241,6 +243,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         settings.preallocateStorage = false
         settings.validateHttpsTrackers = true
 
+        onPreparationUpdate("Starting torrent engine…")
         PlaybackDiagnostics.record("Creating libtorrent session")
         guard let session = Session(
             root,
@@ -274,6 +277,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         PlaybackDiagnostics.record("Waiting for torrent metadata")
         let snapshot = try await waitForMetadata(on: handle, generation: generation)
         try ensureCurrentLifecycle(generation)
+        onPreparationUpdate("Metadata received. Selecting the video…")
         let selectedFile: FileEntry
         if let requestedIndex = descriptor.fileIndex {
             guard let indexedFile = snapshot.files.first(where: { Int($0.index) == requestedIndex }),
@@ -442,9 +446,6 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             try ensureCurrentLifecycle(generation)
             handle.updateSnapshot()
             let availablePieces = handle.snapshot.pieces ?? []
-            if tick % 20 == 0 {
-                PlaybackDiagnostics.record("torrent.pieces.wait", details: ["from": String(pieces.lowerBound), "to_exclusive": String(pieces.upperBound), "wait_seconds": String(tick / 4), "download_bytes_per_second": String(handle.snapshot.downloadRate)])
-            }
             if pieces.allSatisfy({ index in
                 index >= 0 &&
                 index < Int64(availablePieces.count) &&
@@ -452,8 +453,14 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             }) {
                 return
             }
+            PlaybackDiagnostics.sample("torrent.pieces.wait", details: [
+                "from": String(pieces.lowerBound), "to_exclusive": String(pieces.upperBound),
+                "wait_seconds": String(tick / 4), "download_bytes_per_second": String(handle.snapshot.downloadRate),
+                "peers": String(handle.snapshot.numberOfPeers), "seeds": String(handle.snapshot.numberOfSeeds)
+            ])
             try await Task.sleep(for: .milliseconds(250))
         }
+        PlaybackDiagnostics.record("torrent.pieces.timeout")
         throw TorrentStreamingError.pieceAvailabilityTimeout
     }
 
@@ -509,14 +516,29 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         on handle: TorrentHandle,
         generation: UInt64
     ) async throws -> TorrentHandle.Snapshot {
-        for tick in 0..<240 {
+        let started = ProcessInfo.processInfo.systemUptime
+        var lastUpdate = -Double.infinity
+        while ProcessInfo.processInfo.systemUptime - started < 60 {
             try ensureCurrentLifecycle(generation)
+            let snapshotStarted = ProcessInfo.processInfo.systemUptime
+            PlaybackDiagnostics.sample("torrent.metadata.snapshot.begin", details: [:])
             handle.updateSnapshot()
             let snapshot = handle.snapshot
-            if tick % 20 == 0 {
-                PlaybackDiagnostics.record("torrent.metadata.wait", details: [
-                    "wait_seconds": String(tick / 4), "has_metadata": String(snapshot.hasMetadata),
+            let now = ProcessInfo.processInfo.systemUptime
+            let snapshotDuration = now - snapshotStarted
+            if snapshotDuration > 1 {
+                PlaybackDiagnostics.record("torrent.metadata.snapshot.slow", details: ["seconds": String(format: "%.3f", snapshotDuration)])
+            }
+            if now - lastUpdate >= 5 {
+                lastUpdate = now
+                let peers = snapshot.numberOfPeers
+                onPreparationUpdate(peers == 0
+                    ? "Finding peers… No connections yet. Try another release if this stays here."
+                    : "Connected to \(peers) peers. Fetching video metadata…")
+                PlaybackDiagnostics.sample("torrent.metadata.wait", details: [
+                    "wait_seconds": String(Int(now - started)), "has_metadata": String(snapshot.hasMetadata),
                     "files": String(snapshot.files.count), "peers": String(snapshot.numberOfPeers),
+                    "configured_trackers": String(SceneBoxTorrentBootstrap.withDefaultTrackers(descriptor)?.trackers.count ?? descriptor.trackers.count),
                     "seeds": String(snapshot.numberOfSeeds), "download_bytes_per_second": String(snapshot.downloadRate)
                 ])
             }
@@ -525,6 +547,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             }
             try await Task.sleep(for: .milliseconds(250))
         }
+        PlaybackDiagnostics.record("torrent.metadata.timeout")
         throw TorrentStreamingError.metadataTimeout
     }
 

@@ -12,9 +12,22 @@ final class PlaybackDiagnosticsTests: XCTestCase {
         XCTAssertTrue(event.contains("elapsed="))
     }
 
+    func testFrequentPieceTelemetryDoesNotEvictProviderOrAttemptEvents() {
+        PlaybackDiagnostics.clear()
+        PlaybackDiagnostics.record("discovery.provider.result", details: ["provider": "MediaFusion", "returned": "5"])
+        PlaybackDiagnostics.beginAttempt(provider: "MediaFusion", fileIndex: 0)
+        for index in 0..<1_000 {
+            PlaybackDiagnostics.sample("torrent.pieces.wait", details: ["from": String(index)])
+        }
+        XCTAssertTrue(PlaybackDiagnostics.events.contains { $0.contains("discovery.provider.result") })
+        XCTAssertTrue(PlaybackDiagnostics.events.contains { $0.contains("playback.attempt.begin") })
+        XCTAssertEqual(PlaybackDiagnostics.events.filter { $0.contains("torrent.pieces.wait") }.count, 1)
+        PlaybackDiagnostics.clear()
+    }
+
     func testReportIdentifiesDiagnosticsSchemaAndNativeSection() {
         let report = PlaybackDiagnostics.report
-        XCTAssertTrue(report.contains("playback report v2"))
+        XCTAssertTrue(report.contains("playback report v3"))
         XCTAssertTrue(report.contains("NATIVE SESSION EVENTS"))
         XCTAssertTrue(report.contains("Physical memory"))
     }

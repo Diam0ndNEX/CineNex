@@ -110,12 +110,13 @@ struct ContentView: View {
 
     @State private var showingDownloads = false
     @State private var libraryShowsProgress = false
+    @State private var libraryQuery = ""
     @State private var pendingDirectPlayback: MediaItem?
 
     var body: some View {
         NavigationStack {
             TabView(selection: $selectedTab) {
-                Tab("Discover", systemImage: "square.stack.fill", value: AppTab.home) {
+                Tab("Home", systemImage: "house.fill", value: AppTab.home) {
                     homeScreen
                 }
                 Tab("Search", systemImage: "magnifyingglass", value: AppTab.search) {
@@ -138,7 +139,7 @@ struct ContentView: View {
                 )
             }
             .navigationTitle(navigationTitle)
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if selectedTab == .home {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -193,7 +194,7 @@ struct ContentView: View {
 
     private var navigationTitle: String {
         switch selectedTab {
-        case .home: return "Discover"
+        case .home: return "CineNex"
         case .search: return "Search"
         case .library: return "Your library"
         case .tracking: return "Settings"
@@ -244,11 +245,32 @@ struct ContentView: View {
                         .buttonStyle(.borderedProminent)
                 }
             } else {
-                if let featured = catalog.first {
-                    DiscoverySpotlight(item: featured, saved: favorites.contains(featured.id),
-                                       onDetails: { selectedItem = featured },
-                                       onPlay: { watchHubItem = featured },
-                                       onSave: { toggleFavorite(featured) })
+                if !continueWatchingItems.isEmpty {
+                    continueWatchingSection
+                }
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("Featured").font(.title.bold())
+                            Text("Movies and series to explore").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }.padding(.horizontal, 20)
+                    ScrollView(.horizontal) {
+                        LazyHStack(alignment: .top, spacing: 14) {
+                            ForEach(Array(catalog.prefix(5))) { item in
+                                CatalogFeatureCard(item: item, saved: favorites.contains(item.id),
+                                                   onDetails: { selectedItem = item },
+                                                   onPlay: { watchHubItem = item },
+                                                   onSave: { toggleFavorite(item) })
+                                    .containerRelativeFrame(.horizontal) { width, _ in min(width - 40, 480) }
+                            }
+                        }
+                        .scrollTargetLayout()
+                        .padding(.horizontal, 20)
+                    }
+                    .scrollTargetBehavior(.viewAligned)
+                    .scrollIndicators(.hidden)
                 }
                 browseDestinations
                 if let catalogError {
@@ -257,20 +279,17 @@ struct ContentView: View {
                         .foregroundStyle(.orange)
                         .padding(.horizontal, 20)
                 }
-                if !continueWatchingItems.isEmpty {
-                    mediaSection(title: "Continue watching", subtitle: "Pick up where you left off", items: continueWatchingItems, showProgress: true)
-                }
                 let unwatched = favoriteItems.filter { playbackProgressStore.progress(for: $0.id) == nil }
                 if !unwatched.isEmpty {
                     mediaSection(title: "Your watchlist", subtitle: "Saved for a night like this", items: unwatched)
                 }
-                mediaSection(title: "Trending now", subtitle: "Explore the current catalog", items: catalog)
                 let topRated = catalog.filter { ($0.rating ?? 0) >= 7 }.sorted { ($0.rating ?? 0) > ($1.rating ?? 0) }
-                if !topRated.isEmpty { mediaSection(title: "Highly rated", subtitle: "Standouts worth a closer look", items: topRated) }
+                if !topRated.isEmpty { mediaSection(title: "Highly rated", subtitle: "Standouts worth a closer look", items: Array(topRated.prefix(10))) }
                 let movies = catalog.filter { $0.kind == .movie }
                 if !movies.isEmpty { mediaSection(title: "Movie night", subtitle: "Find your next feature", items: movies) }
                 let series = catalog.filter { $0.kind == .series }
                 if !series.isEmpty { mediaSection(title: "One more episode", subtitle: "Series to spend time with", items: series) }
+                genreDestinations
             }
         }
     }
@@ -280,16 +299,71 @@ struct ContentView: View {
             NavigationLink {
                 catalogCollection(title: "Movies", items: catalog.filter { $0.kind == .movie })
             } label: {
-                DiscoveryShortcut(title: "Movies", symbol: "film.stack", subtitle: "Explore films")
+                Label("All movies", systemImage: "film.stack")
+                    .frame(maxWidth: .infinity).padding(.vertical, 14)
+                    .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
             }
             NavigationLink {
                 catalogCollection(title: "Series", items: catalog.filter { $0.kind == .series })
             } label: {
-                DiscoveryShortcut(title: "Series", symbol: "tv", subtitle: "Find a new series")
+                Label("All series", systemImage: "tv")
+                    .frame(maxWidth: .infinity).padding(.vertical, 14)
+                    .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
             }
         }
+        .font(.subheadline.weight(.semibold))
         .buttonStyle(.plain)
         .padding(.horizontal, 20)
+    }
+
+    private var catalogGenres: [String] {
+        Array(Set(catalog.flatMap { $0.genre.components(separatedBy: CharacterSet(charactersIn: ",·/")) }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && $0 != "Unknown" })).sorted()
+    }
+
+    private var genreDestinations: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Browse by genre").font(.title2.bold())
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                ForEach(catalogGenres, id: \.self) { genre in
+                    NavigationLink {
+                        catalogCollection(title: genre, items: catalog.filter { $0.genre.localizedCaseInsensitiveContains(genre) })
+                    } label: {
+                        HStack {
+                            Text(genre).font(.subheadline.weight(.semibold)).lineLimit(2)
+                            Spacer(minLength: 4)
+                            Image(systemName: "arrow.up.right").font(.caption)
+                        }
+                        .foregroundStyle(.primary)
+                        .padding(18)
+                        .background(Color.cineNexAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+                    }.buttonStyle(.plain)
+                }
+            }
+        }.padding(.horizontal, 20)
+    }
+
+    private var continueWatchingSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Continue watching").font(.title2.bold())
+                Spacer()
+                Button("See all") {
+                    libraryShowsProgress = true
+                    selectedTab = .library
+                }.font(.subheadline.weight(.semibold))
+            }
+            ForEach(Array(continueWatchingItems.prefix(2))) { item in
+                CatalogLibraryRow(item: item, progress: playbackProgressStore.progress(for: item.id),
+                                  onDetails: { selectedItem = item }, onPlay: { play(item) })
+                    .contextMenu {
+                        Button("Remove progress", systemImage: "xmark.circle", role: .destructive) {
+                            playbackProgressStore.remove(itemID: item.id)
+                        }
+                    }
+            }
+        }.padding(.horizontal, 20)
     }
 
     private var animeHomeContent: some View {
@@ -382,27 +456,20 @@ struct ContentView: View {
     }
 
     private var searchPrompt: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("What are you looking for?").font(.title2.bold())
-            Text("Search the full catalog by title. Results appear as you type.").foregroundStyle(.secondary)
-            if selectedHomeExperience != "anime" {
-                Text("Explore instead").font(.headline).padding(.top, 12)
-                ForEach(Array(catalog.prefix(5))) { item in
-                    Button { selectedItem = item } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: item.kind == .movie ? "film" : "tv")
-                                .foregroundStyle(Color.cineNexAccent)
-                                .frame(width: 28)
-                            Text(item.title).foregroundStyle(.primary)
-                            Spacer()
-                            Image(systemName: "arrow.up.left").foregroundStyle(.secondary)
-                        }
-                        .padding(14)
-                        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14))
-                    }.buttonStyle(.plain)
-                }
+        VStack(alignment: .leading, spacing: 24) {
+            if selectedHomeExperience == "anime" {
+                ContentUnavailableView("Find your next anime", systemImage: "sparkles.tv",
+                                       description: Text("Search titles from AniList above."))
+            } else {
+                genreDestinations
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Popular titles").font(.title2.bold())
+                    ForEach(Array(catalog.prefix(6))) { item in
+                        CatalogLibraryRow(item: item, onDetails: { selectedItem = item }, onPlay: { watchHubItem = item })
+                    }
+                }.padding(.horizontal, 20)
             }
-        }.padding(20)
+        }
     }
 
     private var libraryScreen: some View {
@@ -424,7 +491,7 @@ struct ContentView: View {
                     .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
                 }.buttonStyle(.plain).padding(.horizontal, 20)
                 if selectedHomeExperience == "anime" {
-                    let saved = animeProgressStore.trackedAnime
+                    let saved = animeProgressStore.trackedAnime.filter { libraryQuery.isEmpty || $0.title.localizedCaseInsensitiveContains(libraryQuery) }
                     if saved.isEmpty {
                         ContentUnavailableView("No anime in progress", systemImage: "play.circle", description: Text("Update the episode progress on an anime to find it here."))
                     } else {
@@ -439,19 +506,48 @@ struct ContentView: View {
                         Text("Watchlist").tag(false)
                         Text("Continue watching").tag(true)
                     }.pickerStyle(.segmented).padding(.horizontal, 20)
-                    let items = libraryShowsProgress ? continueWatchingItems : favoriteItems
+                    let sourceItems = libraryShowsProgress ? continueWatchingItems : favoriteItems.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+                    let items = sourceItems.filter { libraryQuery.isEmpty || $0.title.localizedCaseInsensitiveContains(libraryQuery) }
                     if items.isEmpty {
-                        ContentUnavailableView(libraryShowsProgress ? "Nothing in progress" : "Your watchlist is empty",
-                                               systemImage: libraryShowsProgress ? "play.circle" : "bookmark",
-                                               description: Text(libraryShowsProgress ? "Started movies appear here so you can resume them." : "Save a title from its details to find it here."))
-                        Button("Discover something new") { selectedTab = .home }
-                            .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
+                        if !libraryQuery.isEmpty {
+                            ContentUnavailableView.search(text: libraryQuery)
+                            Button("Clear search") { libraryQuery = "" }
+                                .buttonStyle(.bordered).frame(maxWidth: .infinity)
+                        } else {
+                            ContentUnavailableView(libraryShowsProgress ? "Nothing in progress" : "Your watchlist is empty",
+                                                   systemImage: libraryShowsProgress ? "play.circle" : "bookmark",
+                                                   description: Text(libraryShowsProgress ? "Started movies appear here so you can resume them." : "Save a title from its details to find it here."))
+                            Button("Discover something new") { selectedTab = .home }
+                                .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
+                        }
                     } else {
-                        posterGrid(items)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("\(items.count) titles").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                                .padding(.bottom, 8)
+                            ForEach(items) { item in
+                                CatalogLibraryRow(item: item,
+                                                  progress: libraryShowsProgress ? playbackProgressStore.progress(for: item.id) : nil,
+                                                  onDetails: { selectedItem = item }, onPlay: { play(item) })
+                                    .contextMenu {
+                                        if libraryShowsProgress {
+                                            Button("Remove progress", systemImage: "xmark.circle", role: .destructive) {
+                                                playbackProgressStore.remove(itemID: item.id)
+                                            }
+                                        } else {
+                                            Button("Remove from watchlist", systemImage: "bookmark.slash", role: .destructive) {
+                                                toggleFavorite(item)
+                                            }
+                                        }
+                                    }
+                                Divider().opacity(0.35)
+                            }
+                        }.padding(.horizontal, 20)
                     }
                 }
             }.padding(.bottom, 30)
-        }.background(Color.cineNexBackground.ignoresSafeArea())
+        }
+        .background(Color.cineNexBackground.ignoresSafeArea())
+        .searchable(text: $libraryQuery, prompt: "Search your library")
     }
 
     private var posterColumns: [GridItem] { [GridItem(.adaptive(minimum: 140), spacing: 16, alignment: .top)] }
@@ -469,20 +565,7 @@ struct ContentView: View {
     }
 
     private func catalogCollection(title: String, items: [MediaItem]) -> some View {
-        ScrollView {
-            if items.isEmpty {
-                ContentUnavailableView("No titles yet", systemImage: "film.stack", description: Text("Refresh Discover to load the catalog."))
-            } else {
-                HStack {
-                    Text("\(items.count) titles").font(.subheadline).foregroundStyle(.secondary)
-                    Spacer()
-                }.padding(20)
-                posterGrid(items)
-            }
-        }
-        .background(Color.cineNexBackground.ignoresSafeArea())
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.large)
+        CatalogBrowserView(title: title, items: items) { selectedItem = $0 }
     }
 
     private func mediaSection(title: String, subtitle: String, items: [MediaItem], showProgress: Bool = false) -> some View {
@@ -494,7 +577,10 @@ struct ContentView: View {
                 }
                 Spacer(minLength: 8)
                 NavigationLink { catalogCollection(title: title, items: items) } label: {
-                    Image(systemName: "arrow.right.circle.fill").font(.title2)
+                    HStack(spacing: 4) {
+                        Text("See all")
+                        Image(systemName: "chevron.right").font(.caption2.weight(.bold))
+                    }.font(.subheadline.weight(.semibold))
                 }.accessibilityLabel("See all \(title)")
             }.padding(.horizontal, 20)
             ScrollView(.horizontal) {
@@ -794,158 +880,14 @@ extension Color {
     }
 }
 
-private struct DiscoveryShortcut: View {
-    let title: String
-    let symbol: String
-    let subtitle: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Image(systemName: symbol).font(.title2).foregroundStyle(Color.cineNexAccent)
-                Spacer()
-                Image(systemName: "arrow.up.right").font(.caption.weight(.bold)).foregroundStyle(.secondary)
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.headline).foregroundStyle(.primary)
-                Text(subtitle).font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
-        .contentShape(RoundedRectangle(cornerRadius: 18))
-    }
-}
-
-/// SceneBox's artwork-first detail presentation adapted for a Discover spotlight.
-private struct DiscoverySpotlight: View {
-    let item: MediaItem
-    let saved: Bool
-    let onDetails: () -> Void
-    let onPlay: () -> Void
-    let onSave: () -> Void
-
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            CachedPosterImage(url: item.posterURL, fallbackSymbol: item.symbol, symbolSize: 90)
-                .frame(height: 440)
-                .clipped()
-            LinearGradient(colors: [.clear, .black.opacity(0.28), Color.cineNexBackground], startPoint: .top, endPoint: .bottom)
-                .allowsHitTesting(false)
-            VStack(spacing: 13) {
-                Text("IN THE SPOTLIGHT")
-                    .font(.caption2.weight(.bold)).tracking(2.4)
-                    .foregroundStyle(.white.opacity(0.8))
-                Button(action: onDetails) {
-                    Text(item.title)
-                        .font(.largeTitle.weight(.heavy))
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.white)
-                        .lineLimit(3)
-                }.buttonStyle(.plain)
-                HStack(spacing: 8) {
-                    Text(item.kind.rawValue)
-                    if let year = item.yearLabel { Text("·"); Text(year) }
-                    if let rating = item.rating, rating > 0 {
-                        Text("·")
-                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                            .foregroundStyle(.yellow)
-                    }
-                }.font(.caption.weight(.medium)).foregroundStyle(.white.opacity(0.8))
-                HStack(spacing: 12) {
-                    Button(action: onPlay) {
-                        Label("Watch", systemImage: "play.fill")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 12))
-                            .foregroundStyle(.black)
-                    }
-                    Button(action: onSave) {
-                        Label(saved ? "Saved" : "Watchlist", systemImage: saved ? "checkmark" : "plus")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(.white.opacity(0.13), in: RoundedRectangle(cornerRadius: 12))
-                            .foregroundStyle(.white)
-                    }
-                }.buttonStyle(.plain)
-                Button("View details", action: onDetails)
-                    .font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.75))
-            }
-            .padding(.horizontal, 28)
-            .padding(.bottom, 10)
-        }
-        .frame(height: 440)
-        .clipped()
-    }
-}
-
 private struct MediaPosterCard: View {
     let item: MediaItem
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 9) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.cineNexAccent.opacity(0.42),
-                                    Color.cineNexSurface,
-                                    Color(red: 0.13, green: 0.20, blue: 0.28)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    CachedPosterImage(
-                        url: item.posterURL,
-                        fallbackSymbol: item.symbol,
-                        symbolSize: 38
-                    )
-                    VStack {
-                        HStack {
-                            Text(item.kind.rawValue.uppercased())
-                                .font(.system(size: 8, weight: .heavy))
-                                .tracking(0.8)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 5)
-                                .background(.black.opacity(0.42), in: Capsule())
-                            Spacer()
-                            if let rating = item.rating {
-                                Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                                    .font(.system(size: 9, weight: .heavy))
-                                    .foregroundStyle(Color(red: 1.0, green: 0.78, blue: 0.28))
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 5)
-                                    .background(.black.opacity(0.48), in: Capsule())
-                            }
-                        }
-                        Spacer()
-                    }
-                    .padding(8)
-                }
-                .aspectRatio(0.72, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-
-                Text(item.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                Text(([item.yearLabel, item.genre].compactMap { $0 }).joined(separator: " · "))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(item.title), \(item.kind.rawValue), \(item.year)")
+        Button(action: action) { CatalogPosterTile(item: item) }
+            .buttonStyle(.plain)
+            .accessibilityLabel(item.accessibilitySummary)
     }
 }
 
@@ -968,79 +910,28 @@ private struct MediaDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                ZStack(alignment: .bottomLeading) {
-                    CachedPosterImage(
-                        url: item.posterURL,
-                        fallbackSymbol: item.symbol,
-                        symbolSize: 92
-                    )
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 370)
-                    .clipped()
-
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black.opacity(0.05), location: 0),
-                            .init(color: Color.cineNexBackground.opacity(0.28), location: 0.38),
-                            .init(color: Color.cineNexBackground.opacity(0.98), location: 1)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-
+                HStack(alignment: .top, spacing: 20) {
+                    CachedPosterImage(url: item.posterURL, fallbackSymbol: item.symbol, symbolSize: 42)
+                        .frame(width: 132, height: 198)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .shadow(color: .black.opacity(0.35), radius: 14, y: 7)
                     VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Label("CINENEX", systemImage: "play.rectangle.fill")
-                                .font(.caption.weight(.heavy))
-                                .tracking(1.3)
-                                .foregroundStyle(Color.cineNexAccent)
-                            Spacer()
-                            Text(item.kind.rawValue.uppercased())
-                                .font(.caption2.weight(.heavy))
-                                .tracking(0.8)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(.black.opacity(0.42), in: Capsule())
-                                .overlay(Capsule().strokeBorder(.white.opacity(0.18), lineWidth: 1))
-                        }
-
-                        Spacer(minLength: 72)
-
-                        Text(item.title)
-                            .font(.system(size: 34, weight: .heavy, design: .rounded))
-                            .tracking(-0.8)
-                            .foregroundStyle(.white)
-                            .lineLimit(3)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Text(item.kind.rawValue.uppercased()).font(.caption2.weight(.bold)).tracking(1.7)
+                            .foregroundStyle(Color.cineNexAccent)
+                        Text(item.title).font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
                             .accessibilityAddTraits(.isHeader)
-
-                        HStack(spacing: 8) {
-                            if let year = item.yearLabel {
-                                Text(year)
-                                Text("·")
-                            }
-                            Text(item.genre)
-                            if let rating = item.rating {
-                                Text("·")
-                                Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                                    .foregroundStyle(Color(red: 1.0, green: 0.78, blue: 0.28))
-                            }
+                        Text([item.yearLabel, item.runtime.isEmpty ? nil : item.runtime].compactMap { $0 }.joined(separator: " · "))
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        if let rating = item.rating, rating > 0 {
+                            Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                                .font(.subheadline.weight(.semibold)).foregroundStyle(.yellow)
                         }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.86))
-                        .lineLimit(2)
-
-                        if !item.runtime.isEmpty {
-                            Label(item.runtime, systemImage: "clock")
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.72))
-                        }
+                        Text(item.genre).font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(22)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(height: 400)
-                .clipped()
-                .padding(.horizontal, -20)
+                .padding(.vertical, 12)
 
                 VStack(alignment: .leading, spacing: 12) {
                     if let tagline = extendedDetails?.tagline,
@@ -1050,10 +941,8 @@ private struct MediaDetailView: View {
                             .foregroundStyle(Color.cineNexAccent)
                     }
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("ABOUT THIS TITLE")
-                            .font(.caption.weight(.heavy))
-                            .tracking(1.1)
-                            .foregroundStyle(Color.cineNexAccent)
+                        Text("Story")
+                            .font(.title3.bold())
                         Text(item.synopsis)
                             .font(.body)
                             .foregroundStyle(.white.opacity(0.84))
@@ -1088,7 +977,7 @@ private struct MediaDetailView: View {
 
                 if let details = extendedDetails {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("More details")
+                        Text("Details")
                             .font(.title3.bold())
                         if let runtime = details.runtimeLabel {
                             detailRow("Runtime", value: runtime, symbol: "clock")
@@ -1235,16 +1124,7 @@ private struct MediaDetailView: View {
                                                 onSelectItem(recommendation)
                                             }
                                             .frame(width: 132)
-                                            Text(recommendation.title)
-                                                .font(.subheadline.weight(.medium))
-                                                .lineLimit(2)
-                                                .frame(width: 132, alignment: .leading)
-                                            if recommendation.year > 0 {
-                                                Text(String(recommendation.year))
-                                                    .font(.caption)
-                                                    .foregroundStyle(.secondary)
-                                                    .frame(width: 132, alignment: .leading)
-                                            }
+
                                         }
                                     }
                                 }
