@@ -7,10 +7,21 @@ enum XITRIXTorrentFileSupport {
         case "mp4": return "video/mp4"
         case "m4v": return "video/x-m4v"
         case "mov": return "video/quicktime"
+        case "mkv": return "video/x-matroska"
+        case "avi": return "video/x-msvideo"
+        case "webm": return "video/webm"
+        case "ts", "m2ts", "mts": return "video/mp2t"
+        case "flv": return "video/x-flv"
+        case "wmv": return "video/x-ms-wmv"
+        case "ogv": return "video/ogg"
+        case "mpg", "mpeg", "mpe": return "video/mpeg"
+        case "3gp", "3g2": return "video/3gpp"
         case "mp3": return "audio/mpeg"
         case "m4a": return "audio/mp4"
         case "aac": return "audio/aac"
         case "wav": return "audio/wav"
+        case "flac": return "audio/flac"
+        case "ogg", "opus": return "audio/ogg"
         default: return nil
         }
     }
