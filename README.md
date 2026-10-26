@@ -11,7 +11,8 @@ The first foundation is committed:
 - Separate Movies & Series and Anime experiences across Home, Search, and Library; Anime uses public AniList trending/search metadata and local episode progress tracking.
 - Search by title, genre, and media type.
 - Persistent favorites stored on the device.
-- AVPlayer screen for a compatible HTTPS sample video.
+- Hybrid playback using SwiftVLC/libVLC first with AVPlayer as a manual fallback.
+- Local playback progress and Trakt scrobbling read the active engine's timeline.
 - Catalog provider protocol for future metadata integrations.
 - Unit tests for catalog identity and the playable sample.
 - GitHub Actions simulator build and test workflow.
@@ -20,7 +21,7 @@ The Movies & Series experience starts with local demo data. With a TMDB Read Acc
 
 ## Build locally
 
-Requirements: macOS, Xcode with an iOS Simulator runtime, and XcodeGen.
+Requirements: macOS, **Xcode 26.4 or later**, an iOS 18 or later Simulator runtime, and XcodeGen. SwiftVLC's package contains a prebuilt libVLC XCFramework and requires Swift 6.3 / iOS 18 or later.
 
 ```sh
 brew install xcodegen
