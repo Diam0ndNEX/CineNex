@@ -46,6 +46,18 @@ jobs:
               if len(pulls) < 100:
                   break
               page += 1
+          merged_heads = set()
+          page = 1
+          while True:
+              req = urllib.request.Request(
+                  "https://api.github.com/repos/" + os.environ["REPOSITORY"] + "/pulls?state=closed&per_page=100&page=" + str(page),
+                  headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"], "Accept": "application/vnd.github+json"})
+              with urllib.request.urlopen(req) as response:
+                  pulls = json.load(response)
+              merged_heads.update(pr["head"]["sha"] for pr in pulls if pr["merged_at"])
+              if len(pulls) < 100:
+                  break
+              page += 1
           git("fetch", "--prune", "origin", "+refs/heads/*:refs/remotes/origin/*")
           main = git("rev-parse", "refs/remotes/origin/main")
           deleted, retained, failed = [], [], []
@@ -54,7 +66,7 @@ jobs:
               name = ref.removeprefix("refs/remotes/origin/")
               if name == "HEAD" or name in protected:
                   continue
-              if subprocess.run(["git", "merge-base", "--is-ancestor", sha, main]).returncode != 0:
+              if sha not in merged_heads and subprocess.run(["git", "merge-base", "--is-ancestor", sha, main]).returncode != 0:
                   retained.append(name)
                   continue
               result = subprocess.run(["git", "push", "--force-with-lease=refs/heads/" + name + ":" + sha,
