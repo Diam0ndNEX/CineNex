@@ -851,8 +851,16 @@ struct WatchHubView: View {
         }
 
         let resolver = AutomaticExternalIDResolver(tmdbReadAccessToken: TMDBTokenStore.load())
-        let addonManifestURLs = manifestURLs.filter {
+        var addonManifestURLs = manifestURLs.filter {
             !($0.host?.lowercased().contains("torrentio") ?? false)
+        }
+        let hasMediaFusion = addonManifestURLs.contains {
+            $0.host?.lowercased().contains("mediafusion") ?? false
+        }
+        if !hasMediaFusion {
+            addonManifestURLs.append(contentsOf: Self.defaultStremioAddonManifestURLs.filter {
+                $0.host?.lowercased().contains("mediafusion") ?? false
+            })
         }
         async let torrentioResult = SceneBoxTorrentSearch().discover(
             for: request,
