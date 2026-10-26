@@ -6,6 +6,20 @@ struct WatchHubView: View {
     let onPlayDirect: (MediaItem) -> Void
     let onSelectItem: (MediaItem) -> Void
 
+    init(
+        item: MediaItem,
+        onPlayDirect: @escaping (MediaItem) -> Void,
+        onSelectItem: @escaping (MediaItem) -> Void,
+        initialSeasonNumber: Int = 1,
+        initialEpisodeNumber: Int = 1
+    ) {
+        self.item = item
+        self.onPlayDirect = onPlayDirect
+        self.onSelectItem = onSelectItem
+        _seasonNumber = State(initialValue: max(0, initialSeasonNumber))
+        _episodeNumber = State(initialValue: max(1, initialEpisodeNumber))
+    }
+
     @Environment(\.dismiss) private var dismiss
     @AppStorage("cinenex.defaultPlaybackProvider") private var defaultProviderID = "smart"
     @State private var stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
@@ -62,7 +76,7 @@ struct WatchHubView: View {
 
     private var visibleTorrentSources: [StremioTorrentDescriptor] {
         guard selectedSourceFilter == "All" || selectedSourceFilter == "Torrent" else { return [] }
-        return SceneBoxStreamPicker.ordered(discoveredTorrentDescriptors)
+        return SceneBoxStreamPicker.balanced(discoveredTorrentDescriptors)
     }
 
     private var visibleEmbeddedSources: [ResolvedEmbedSource] {
@@ -94,14 +108,14 @@ struct WatchHubView: View {
                 .padding(.bottom, 28)
             }
             .background(Color.cineNexBackground.ignoresSafeArea())
-            .navigationTitle("Watch")
+            .navigationTitle("Sources")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Done") { dismiss() }
                 }
             }
-            .sheet(item: $activePlaybackSheet) { playbackSheet in
+            .fullScreenCover(item: $activePlaybackSheet) { playbackSheet in
                 switch playbackSheet {
                 case .embedded(let provider):
                     EmbedWebPlaybackView(
@@ -133,6 +147,7 @@ struct WatchHubView: View {
                 await loadCatalogDetails()
             }
             .onDisappear {
+                guard activePlaybackSheet == nil else { return }
                 torrentPreparationTask?.cancel()
                 torrentPreparationTask = nil
                 torrentPreparationGeneration = UUID()
@@ -146,80 +161,31 @@ struct WatchHubView: View {
     }
 
     private var hero: some View {
-        ZStack(alignment: .bottomLeading) {
-            CachedPosterImage(
-                url: item.posterURL,
-                fallbackSymbol: item.symbol,
-                symbolSize: 94
-            )
-            .frame(maxWidth: .infinity)
-            .frame(height: 360)
-            .clipped()
-
-            LinearGradient(
-                stops: [
-                    .init(color: .black.opacity(0.08), location: 0),
-                    .init(color: Color.cineNexBackground.opacity(0.35), location: 0.42),
-                    .init(color: Color.cineNexBackground.opacity(0.98), location: 1)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-
-            VStack(alignment: .leading, spacing: 13) {
-                HStack {
-                    Label("CINENEX WATCH", systemImage: "play.rectangle.fill")
-                        .font(.caption.weight(.heavy))
-                        .tracking(1.2)
-                        .foregroundStyle(Color.cineNexAccent)
-                    Spacer()
-                    Text(item.kind == .movie ? "MOVIE" : "SERIES")
-                        .font(.caption2.weight(.bold))
-                        .tracking(0.8)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(.black.opacity(0.42), in: Capsule())
-                        .overlay(Capsule().strokeBorder(.white.opacity(0.18), lineWidth: 1))
-                }
-
-                Spacer(minLength: 80)
-
+        HStack(alignment: .top, spacing: 18) {
+            CachedPosterImage(url: item.posterURL, fallbackSymbol: item.symbol, symbolSize: 30)
+                .frame(width: 80, height: 118)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .allowsHitTesting(false)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("CHOOSE A STREAM")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.5)
+                    .foregroundStyle(Color.cineNexAccent)
                 Text(item.title)
-                    .font(.system(size: 32, weight: .heavy, design: .rounded))
-                    .tracking(-0.7)
-                    .foregroundStyle(.white)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityAddTraits(.isHeader)
-
-                HStack(spacing: 8) {
-                    if let year = item.yearLabel {
-                        Text(year)
-                        Text("·")
-                    }
-                    Text(item.genre)
-                    if let rating = item.rating {
-                        Text("·")
-                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                            .foregroundStyle(Color(red: 1, green: 0.78, blue: 0.28))
-                    }
+                    .font(.title2.bold())
+                    .lineLimit(3)
+                Text([item.yearLabel, item.genre].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if item.kind == .series {
+                    Text("Season \(seasonNumber) · Episode \(episodeNumber)")
+                        .font(.caption.bold())
                 }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.82))
-
-                Text(item.synopsis)
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.82))
-                    .lineLimit(4)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(20)
+            Spacer(minLength: 0)
         }
-        .frame(height: 360)
-        .clipShape(RoundedRectangle(cornerRadius: 26))
-        .overlay {
-            RoundedRectangle(cornerRadius: 26)
-                .strokeBorder(.white.opacity(0.08), lineWidth: 1)
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var quickActions: some View {
@@ -230,6 +196,7 @@ struct WatchHubView: View {
                 } else if (defaultProviderID == "smart" || defaultProviderID == "direct"), item.streamURL != nil {
                     onPlayDirect(item)
                 } else if defaultProviderID == "stremio-addons", let source = discoveredSources.first {
+                    PlaybackDiagnostics.record("Opening direct stream")
                     activePlaybackSheet = .discovered(source)
                 } else if defaultProviderID == "libtorrent", let descriptor = discoveredTorrentDescriptors.first {
                     startTorrentPlayback(for: descriptor)
@@ -292,7 +259,7 @@ struct WatchHubView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Available sources")
                         .font(.title3.bold())
-                    Text("Direct streams and torrents come from add-ons. Embedded websites open third-party players and may fail for individual titles.")
+                    Text("Choose a release below. Torrentio and MediaFusion are searched independently.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -750,7 +717,7 @@ struct WatchHubView: View {
 
             if item.kind == .series {
                 seasons = details.seasonSummaries
-                if let firstSeason = seasons.first {
+                if !seasons.contains(where: { $0.seasonNumber == seasonNumber }), let firstSeason = seasons.first {
                     seasonNumber = firstSeason.seasonNumber
                 }
                 await loadEpisodes(for: seasonNumber, provider: provider, token: token)
@@ -862,7 +829,9 @@ struct WatchHubView: View {
                 $0.host?.lowercased().contains("mediafusion") ?? false
             })
         }
-        async let torrentioResult = SceneBoxTorrentSearch().discover(
+        async let torrentioResult = SceneBoxTorrentSearch(sourceBases: manifestURLs.filter {
+            $0.host?.lowercased().contains("torrentio") ?? false
+        }.map { $0.deletingLastPathComponent().absoluteString } + ["https://torrentio.strem.fun"]).discover(
             for: request,
             externalIDResolver: resolver
         )
@@ -878,21 +847,21 @@ struct WatchHubView: View {
         discoveredSources = (torrentioDiscovery.sources + addonDiscovery.sources).filter {
             seenSourceIDs.insert($0.id).inserted
         }
-        var seenDescriptorIDs = Set<String>()
-        discoveredTorrentDescriptors = Array(
-            (torrentioDiscovery.torrentDescriptors + addonDiscovery.torrentDescriptors).filter {
-                seenDescriptorIDs.insert($0.id).inserted
-            }.prefix(12)
+        discoveredTorrentDescriptors = SceneBoxStreamPicker.balanced(
+            torrentioDiscovery.torrentDescriptors + addonDiscovery.torrentDescriptors
         )
         let statuses = torrentioDiscovery.providerStatuses + addonDiscovery.providerStatuses
         if !discoveredSources.isEmpty, !discoveredTorrentDescriptors.isEmpty {
             addonSearchMessage = "Found \(discoveredSources.count) direct source(s) and \(discoveredTorrentDescriptors.count) torrent option(s). Torrent transfers start only when you select one."
         } else if !discoveredSources.isEmpty {
-            addonSearchMessage = "Found \(discoveredSources.count) direct source(s). VLC will attempt playback; unavailable sources can be skipped."
+            addonSearchMessage = "Found \(discoveredSources.count) direct source(s). Unavailable sources can be skipped."
         } else if !discoveredTorrentDescriptors.isEmpty {
             addonSearchMessage = "Found \(discoveredTorrentDescriptors.count) torrent option(s). Select one to prepare playback."
         } else {
             addonSearchMessage = "No playable sources were returned. Check the provider status below or try another source instance."
+        }
+        if discoveredSources.isEmpty, !discoveredTorrentDescriptors.isEmpty {
+            addonSearchMessage = (addonSearchMessage ?? "") + " Direct links are optional; these add-ons returned torrent streams."
         }
         let providerSummary = statuses.map(\.summary).joined(separator: "\n")
         if !providerSummary.isEmpty {
@@ -954,6 +923,7 @@ struct WatchHubView: View {
 
     @MainActor
     private func prepareTorrentPlayback(for descriptor: StremioTorrentDescriptor, preparationID: UUID) async {
+        PlaybackDiagnostics.record("Preparing native torrent session")
         let engine = XITRIXTorrentPlaybackEngine(descriptor: descriptor)
         let provider = TorrentPlaybackProvider(engine: engine)
         defer {
@@ -977,6 +947,7 @@ struct WatchHubView: View {
                 torrentPreparationMessage = "This torrent did not contain a playable file supported by CineNex."
                 return
             }
+            PlaybackDiagnostics.record("Torrent HTTP stream ready; opening player")
             activePlaybackSheet = .discovered(source)
             torrentPreparationMessage = "Torrent source is ready. Opening the VLC player."
         } catch is CancellationError {

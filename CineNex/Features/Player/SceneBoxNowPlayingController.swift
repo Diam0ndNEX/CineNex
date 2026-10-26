@@ -20,46 +20,34 @@ final class SceneBoxNowPlayingController {
         end()
         let center = MPRemoteCommandCenter.shared()
         addTarget(to: center.playCommand) { [weak self] _ in
-            guard let self else { return .commandFailed }
+            guard let self else { return }
             try? self.player.play()
             self.refresh()
-            return .success
         }
         addTarget(to: center.pauseCommand) { [weak self] _ in
-            guard let self else { return .commandFailed }
-            self.player.pause()
-            self.refresh()
-            return .success
+            self?.player.pause()
+            self?.refresh()
         }
         addTarget(to: center.togglePlayPauseCommand) { [weak self] _ in
-            guard let self else { return .commandFailed }
-            self.player.togglePlayPause()
-            self.refresh()
-            return .success
+            self?.player.togglePlayPause()
+            self?.refresh()
         }
-
         center.skipForwardCommand.preferredIntervals = [10]
-        addTarget(to: center.skipForwardCommand) { [weak self] event in
-            guard let self, let skip = event as? MPSkipIntervalCommandEvent else { return .commandFailed }
-            try? self.player.seek(by: .seconds(skip.interval), fast: true)
+        addTarget(to: center.skipForwardCommand) { [weak self] interval in
+            guard let self, let interval, interval.isFinite, self.player.isSeekable else { return }
+            try? self.player.seek(by: .seconds(interval), fast: true)
             self.refresh()
-            return .success
         }
-
         center.skipBackwardCommand.preferredIntervals = [10]
-        addTarget(to: center.skipBackwardCommand) { [weak self] event in
-            guard let self, let skip = event as? MPSkipIntervalCommandEvent else { return .commandFailed }
-            try? self.player.seek(by: .seconds(-skip.interval), fast: true)
+        addTarget(to: center.skipBackwardCommand) { [weak self] interval in
+            guard let self, let interval, interval.isFinite, self.player.isSeekable else { return }
+            try? self.player.seek(by: .seconds(-interval), fast: true)
             self.refresh()
-            return .success
         }
-
-        addTarget(to: center.changePlaybackPositionCommand) { [weak self] event in
-            guard let self, let seek = event as? MPChangePlaybackPositionCommandEvent,
-                  seek.positionTime.isFinite else { return .commandFailed }
-            try? self.player.seek(to: .seconds(max(0, seek.positionTime)))
+        addTarget(to: center.changePlaybackPositionCommand) { [weak self] position in
+            guard let self, let position, position.isFinite, self.player.isSeekable else { return }
+            try? self.player.seek(to: .seconds(max(0, position)))
             self.refresh()
-            return .success
         }
 
         refresh()
@@ -70,7 +58,7 @@ final class SceneBoxNowPlayingController {
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: finiteSeconds(seconds(player.currentTime)),
-            MPNowPlayingInfoPropertyPlaybackRate: player.isPlaying ? 1.0 : 0.0
+            MPNowPlayingInfoPropertyPlaybackRate: player.isPlaying ? Double(player.rate) : 0.0
         ]
         if let duration = player.duration {
             let durationSeconds = seconds(duration)
@@ -96,11 +84,28 @@ final class SceneBoxNowPlayingController {
 
     private func addTarget(
         to command: MPRemoteCommand,
-        handler: @escaping (MPRemoteCommandEvent) -> MPRemoteCommandHandlerStatus
+        action: @escaping @MainActor @Sendable (Double?) -> Void
     ) {
         command.isEnabled = true
-        let target = command.addTarget(handler: handler)
+        let target = Self.installTarget(on: command, action: action)
         commandTargets.append((command, target))
+    }
+
+    /// MediaPlayer may call handlers on its own queue. Move only scalar data to the player actor.
+    nonisolated private static func installTarget(
+        on command: MPRemoteCommand,
+        action: @escaping @MainActor @Sendable (Double?) -> Void
+    ) -> Any {
+        command.addTarget { event in
+            let value = (event as? MPChangePlaybackPositionCommandEvent)?.positionTime
+                ?? (event as? MPSkipIntervalCommandEvent)?.interval
+            Task { @MainActor in action(value) }
+            return .success
+        }
+    }
+
+    nonisolated private static func artwork(for image: UIImage) -> MPMediaItemArtwork {
+        MPMediaItemArtwork(boundsSize: image.size) { _ in image }
     }
 
     private func loadArtwork(from url: URL) {
@@ -111,7 +116,7 @@ final class SceneBoxNowPlayingController {
                   (200..<300).contains(http.statusCode),
                   let image = UIImage(data: data) else { return }
             guard let self, !Task.isCancelled else { return }
-            self.artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            self.artwork = Self.artwork(for: image)
             self.refresh()
         }
     }

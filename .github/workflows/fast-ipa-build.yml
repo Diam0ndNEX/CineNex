@@ -2,6 +2,8 @@ name: Fast IPA Build
 
 on:
   workflow_dispatch:
+  push:
+    branches: [build/ipa]
 
 concurrency:
   group: cinenex-fast-ipa-${{ github.ref }}
@@ -35,7 +37,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: Thirdparty/LibTorrent-Swift/Build
-          key: native-v1-${{ runner.os }}-${{ runner.arch }}-device-${{ steps.native-key.outputs.fingerprint }}-${{ hashFiles('Scripts/patch_xitrix_piece_priority.py', '.github/workflows/fast-ipa-build.yml') }}
+          key: native-v2-${{ runner.os }}-${{ runner.arch }}-device-${{ steps.native-key.outputs.fingerprint }}-${{ hashFiles('Scripts/patch_xitrix_piece_priority.py', 'Scripts/build_native_frameworks.sh') }}
 
       - name: Install native build tools
         run: brew install xcodegen
@@ -49,27 +51,7 @@ jobs:
 
       - name: Build native iOS frameworks
         if: steps.native-cache.outputs.cache-hit != 'true'
-        run: |
-          export BOOST_ROOT="$(brew --prefix boost)"
-          export BOOST_INCLUDEDIR="$BOOST_ROOT/include"
-          test -f "$BOOST_INCLUDEDIR/boost/version.hpp"
-          bash Thirdparty/LibTorrent-Swift/make.sh
-          xcodebuild \
-            -project Thirdparty/LibTorrent-Swift/LibTorrent.xcodeproj \
-            -scheme LibTorrent \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath Thirdparty/LibTorrent-Swift/DerivedData \
-            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-          mkdir -p Thirdparty/LibTorrent-Swift/Build
-          xcodebuild -create-xcframework \
-            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphoneos/LibTorrent.framework \
-            -output Thirdparty/LibTorrent-Swift/Build/LibTorrent.xcframework
-          xcodebuild -create-xcframework \
-            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphoneos/OpenSSL.framework \
-            -output Thirdparty/LibTorrent-Swift/Build/OpenSSL.xcframework
+        run: bash Scripts/build_native_frameworks.sh "device"
 
       - name: Save native frameworks before app compilation
         if: steps.native-cache.outputs.cache-hit != 'true'

@@ -7,6 +7,11 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      mode:
+        description: IPA only skips simulator builds and tests; full runs regression checks
+        type: choice
+        default: ipa_only
+        options: [ipa_only, full]
       build_ipa:
         description: Build an installable unsigned IPA
         type: boolean
@@ -27,11 +32,13 @@ jobs:
       tests: ${{ steps.plan.outputs.tests }}
       native_tests: ${{ steps.plan.outputs.native_tests }}
       ipa: ${{ steps.plan.outputs.ipa }}
+      ipa_only: ${{ steps.plan.outputs.ipa_only }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Verify CI build selection
+        if: github.event_name != 'workflow_dispatch' || inputs.mode != 'ipa_only'
         run: python3 -m unittest discover -s Scripts/tests -p test_ci_build_plan.py -v
       - name: Choose checks from changed files
         id: plan
@@ -70,7 +77,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: Thirdparty/LibTorrent-Swift/Build
-          key: native-v1-${{ runner.os }}-${{ runner.arch }}-device-simulator-${{ steps.native-key.outputs.fingerprint }}-${{ hashFiles('Scripts/patch_xitrix_piece_priority.py', '.github/workflows/ios-build.yml') }}
+          key: native-v2-${{ runner.os }}-${{ runner.arch }}-${{ needs.plan.outputs.ipa_only == 'true' && 'device' || 'both' }}-${{ steps.native-key.outputs.fingerprint }}-${{ hashFiles('Scripts/patch_xitrix_piece_priority.py', 'Scripts/build_native_frameworks.sh') }}
 
       - name: Install native build tools
         if: steps.native-cache.outputs.cache-hit != 'true'
@@ -78,39 +85,7 @@ jobs:
 
       - name: Build patched XITRIX wrapper for iOS and simulator
         if: steps.native-cache.outputs.cache-hit != 'true'
-        run: |
-          export BOOST_ROOT="$(brew --prefix boost)"
-          export BOOST_INCLUDEDIR="$BOOST_ROOT/include"
-          test -f "$BOOST_INCLUDEDIR/boost/version.hpp"
-          bash Thirdparty/LibTorrent-Swift/make.sh
-          xcodebuild \
-            -project Thirdparty/LibTorrent-Swift/LibTorrent.xcodeproj \
-            -scheme LibTorrent \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath Thirdparty/LibTorrent-Swift/DerivedData \
-            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-          xcodebuild \
-            -project Thirdparty/LibTorrent-Swift/LibTorrent.xcodeproj \
-            -scheme LibTorrent \
-            -configuration Release \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath Thirdparty/LibTorrent-Swift/DerivedData \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES EXCLUDED_ARCHS=x86_64 \
-            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-          mkdir -p Thirdparty/LibTorrent-Swift/Build
-          xcodebuild -create-xcframework \
-            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphoneos/LibTorrent.framework \
-            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphonesimulator/LibTorrent.framework \
-            -output Thirdparty/LibTorrent-Swift/Build/LibTorrent.xcframework
-          xcodebuild -create-xcframework \
-            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphoneos/OpenSSL.framework \
-            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphonesimulator/OpenSSL.framework \
-            -output Thirdparty/LibTorrent-Swift/Build/OpenSSL.xcframework
+        run: bash Scripts/build_native_frameworks.sh "${{ needs.plan.outputs.ipa_only == 'true' && 'device' || 'both' }}"
 
       - name: Save native frameworks before app compilation
         if: steps.native-cache.outputs.cache-hit != 'true'
@@ -209,7 +184,7 @@ jobs:
             test
 
       - name: Compile presentation changes
-        if: needs.plan.outputs.tests != 'true'
+        if: needs.plan.outputs.tests != 'true' && needs.plan.outputs.ipa_only != 'true'
         run: |
           xcodebuild -project CineNex.xcodeproj -scheme CineNex \
             -clonedSourcePackagesDirPath SourcePackages \

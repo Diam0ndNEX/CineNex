@@ -18,6 +18,8 @@ settings:
     INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
     INFOPLIST_KEY_UILaunchScreen_Generation: YES
     INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleLightContent
+    INFOPLIST_KEY_NSLocalNetworkUsageDescription: CineNex connects to peers and its local streaming server for torrent playback.
+    OTHER_LDFLAGS: "$(inherited) -ObjC"
     SWIFT_EMIT_LOC_STRINGS: YES
 targets:
   CineNex:

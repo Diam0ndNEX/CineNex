@@ -14,3 +14,5 @@ The authoritative CI selection rules live in Scripts/ci_build_plan.py and .githu
 - Changes to selection rules must retain conservative defaults and update Scripts/tests/test_ci_build_plan.py. Run python3 -m unittest discover -s Scripts/tests -v.
 
 Before continuing an existing PR, verify it contains the current CI policy from its base branch. Report which checks actually ran and distinguish pending CI, cache misses, skipped work and unverified device behavior. Do not claim success while relevant checks fail.
+
+Explicit requests for an IPA without validation use the manual iOS Build mode `ipa_only` or Fast IPA Build. This path builds device frameworks and packages the device app without simulator compilation or test execution; label it untested. Full validation remains mandatory before claiming a fix verified.

@@ -432,7 +432,11 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
     private static func displayName(for manifestURL: URL) -> String {
         let host = (manifestURL.host ?? "").lowercased()
         if host.contains("torrentio") { return "Torrentio" }
-        if host.contains("mediafusion") { return "MediaFusion" }
+        if host.contains("mediafusion") {
+            if host.contains("midnightignite") { return "MediaFusion Midnight" }
+            if host.contains("elfhosted") { return "MediaFusion ElfHosted" }
+            return "MediaFusion · " + host
+        }
         let label = host.split(separator: ".").first.map(String.init) ?? "External add-on"
         return label.replacingOccurrences(of: "-", with: " ")
             .split(whereSeparator: \.isWhitespace)

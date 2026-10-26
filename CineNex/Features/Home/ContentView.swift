@@ -1,34 +1,8 @@
 import SwiftUI
 
-private enum HomeCategory: String, CaseIterable, Identifiable {
-    case forYou
-    case movies
-    case series
-    case myList
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .forYou: return "For You"
-        case .movies: return "Movies"
-        case .series: return "Series"
-        case .myList: return "My List"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .forYou: return "sparkles"
-        case .movies: return "film"
-        case .series: return "tv"
-        case .myList: return "bookmark"
-        }
-    }
-}
-
 struct ContentView: View {
     @State private var selectedTab = AppTab.home
+    @AppStorage("cinenex.accentPreset") private var accentPreset = "violet"
     @State private var searchText = ""
     @AppStorage("cinenex.favoriteIDs") private var favoriteIDsStorage = ""
     @State private var favoriteSnapshots = FavoriteLibraryStore.shared.load()
@@ -40,8 +14,6 @@ struct ContentView: View {
     @State private var selectedItem: MediaItem?
     @State private var activePlayerItem: MediaItem?
     @State private var watchHubItem: MediaItem?
-    @State private var showingAppearanceSettings = false
-    @State private var selectedHomeCategory = HomeCategory.forYou
     @AppStorage("cinenex.homeExperience") private var selectedHomeExperience = "moviesAndSeries"
     @State private var selectedAnime: AnimeTitle?
     @State private var animeCatalog: [AnimeTitle] = []
@@ -136,842 +108,431 @@ struct ContentView: View {
         }
     }
 
-    private var featuredHomeItem: MediaItem? {
-        switch selectedHomeCategory {
-        case .forYou:
-            return catalog.first
-        case .movies:
-            return catalog.first(where: { $0.kind == .movie })
-        case .series:
-            return catalog.first(where: { $0.kind == .series })
-        case .myList:
-            return nil
-        }
-    }
-
-    private var homeCategoryItems: [MediaItem] {
-        switch selectedHomeCategory {
-        case .forYou:
-            return catalog
-        case .movies:
-            return catalog.filter { $0.kind == .movie }
-        case .series:
-            return catalog.filter { $0.kind == .series }
-        case .myList:
-            return favoriteItems
-        }
-    }
+    @State private var showingDownloads = false
+    @State private var libraryShowsProgress = false
+    @State private var pendingDirectPlayback: MediaItem?
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            NavigationStack {
-                homeScreen
-                    .navigationDestination(item: $selectedItem) { item in
-                        MediaDetailView(
-                            item: item,
-                            isFavorite: favorites.contains(item.id),
-                            onFavoriteToggle: { toggleFavorite(item) },
-                            onPlay: { watchHubItem = item },
-                            onSelectItem: { selectedItem = $0 }
-                        )
-                    }
-            }
-            .tabItem { Label("Home", systemImage: "house.fill") }
-            .tag(AppTab.home)
-
-            NavigationStack {
-                searchScreen
-                    .navigationDestination(item: $selectedItem) { item in
-                        MediaDetailView(
-                            item: item,
-                            isFavorite: favorites.contains(item.id),
-                            onFavoriteToggle: { toggleFavorite(item) },
-                            onPlay: { watchHubItem = item },
-                            onSelectItem: { selectedItem = $0 }
-                        )
-                    }
-            }
-            .tabItem { Label("Search", systemImage: "magnifyingglass") }
-            .tag(AppTab.search)
-
-            NavigationStack {
-                libraryScreen
-                    .navigationDestination(item: $selectedItem) { item in
-                        MediaDetailView(
-                            item: item,
-                            isFavorite: favorites.contains(item.id),
-                            onFavoriteToggle: { toggleFavorite(item) },
-                            onPlay: { watchHubItem = item },
-                            onSelectItem: { selectedItem = $0 }
-                        )
-                    }
-            }
-            .tabItem { Label(selectedHomeExperience == "anime" ? "Anime List" : "My List", systemImage: "bookmark.fill") }
-            .tag(AppTab.library)
-
-            NavigationStack {
-                OfflineLibraryView { download, localURL in
-                    activePlayerItem = MediaItem(
-                        id: "offline-\(download.id)",
-                        title: download.title,
-                        kind: .movie,
-                        year: 0,
-                        genre: "Offline",
-                        synopsis: "Downloaded for offline playback.",
-                        symbol: "arrow.down.circle.fill",
-                        runtime: "Offline media",
-                        streamURL: localURL
-                    )
+        NavigationStack {
+            TabView(selection: $selectedTab) {
+                Tab("Discover", systemImage: "square.stack.fill", value: AppTab.home) {
+                    homeScreen
+                }
+                Tab("Search", systemImage: "magnifyingglass", value: AppTab.search) {
+                    searchScreen
+                }
+                Tab("Library", systemImage: "bookmark.fill", value: AppTab.library) {
+                    libraryScreen
+                }
+                Tab("Settings", systemImage: "gearshape.fill", value: AppTab.tracking) {
+                    CineNexSettingsView()
                 }
             }
-            .tabItem { Label("Downloads", systemImage: "arrow.down.circle.fill") }
-            .tag(AppTab.downloads)
-
-            NavigationStack {
-                CineNexSettingsView()
+            .navigationDestination(item: $selectedItem) { item in
+                MediaDetailView(
+                    item: item,
+                    isFavorite: favorites.contains(item.id),
+                    onFavoriteToggle: { toggleFavorite(item) },
+                    onPlay: { watchHubItem = item },
+                    onSelectItem: { selectedItem = $0 }
+                )
             }
-            .tabItem { Label("Settings", systemImage: "gearshape.fill") }
-            .tag(AppTab.tracking)
+            .navigationTitle(navigationTitle)
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                if selectedTab == .home {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Search", systemImage: "magnifyingglass") { selectedTab = .search }
+                    }
+                }
+            }
         }
-        .tint(Color.cineNexAccent)
+        .tint(currentAccent)
+        .preferredColorScheme(.dark)
         .task { await loadCatalog() }
+        .task(id: selectedHomeExperience) {
+            if selectedHomeExperience == "anime" { await loadAnimeCatalog() }
+        }
+        .sheet(item: $selectedAnime) { anime in
+            AnimeDetailView(anime: anime, progressStore: animeProgressStore)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $watchHubItem, onDismiss: presentPendingDirectPlayback) { item in
+            WatchHubView(item: item, onPlayDirect: { directItem in
+                pendingDirectPlayback = directItem
+                watchHubItem = nil
+            }, onSelectItem: { watchHubItem = $0 })
+        }
+        .sheet(isPresented: $showingDownloads, onDismiss: presentPendingDirectPlayback) {
+            NavigationStack {
+                OfflineLibraryView { download, localURL in
+                    pendingDirectPlayback = MediaItem(
+                        id: "offline-\(download.id)", title: download.title, kind: .movie,
+                        year: 0, genre: "Offline", synopsis: "Downloaded for offline playback.",
+                        symbol: "arrow.down.circle.fill", runtime: "Offline media", streamURL: localURL
+                    )
+                    showingDownloads = false
+                }
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { showingDownloads = false }
+                    }
+                }
+            }
+        }
         .fullScreenCover(item: $activePlayerItem) { item in
             PlayerView(item: item, progressStore: playbackProgressStore)
         }
-        .sheet(item: $watchHubItem) { item in
-            WatchHubView(item: item, onPlayDirect: { play($0) }, onSelectItem: { watchHubItem = $0 })
-        }
-
     }
 
-    private var homeScreen: some View {
-        VStack(spacing: 0) {
-            experiencePicker
-                .padding(.top, 10)
-                .padding(.bottom, 8)
-                .zIndex(1)
+    private var currentAccent: Color {
+        _ = accentPreset
+        return Color.cineNexAccent
+    }
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 22) {
-                    header
-
-                    if selectedHomeExperience == "anime" {
-                        animeHomeContent
-                    } else {
-                        moviesAndSeriesHomeContent
-                    }
-                }
-                .padding(.top, 4)
-                .padding(.bottom, 30)
-            }
-            .background(Color.cineNexBackground.ignoresSafeArea())
-            .refreshable {
-                if selectedHomeExperience == "anime" {
-                    await loadAnimeCatalog(force: true)
-                } else {
-                    await loadCatalog(force: true)
-                }
-            }
+    private var navigationTitle: String {
+        switch selectedTab {
+        case .home: return "Discover"
+        case .search: return "Search"
+        case .library: return "Your library"
+        case .tracking: return "Settings"
         }
-        .background(Color.cineNexBackground.ignoresSafeArea())
-        .task(id: selectedHomeExperience) {
-            if selectedHomeExperience == "anime" {
-                await loadAnimeCatalog()
-            }
-        }
-        .sheet(item: $selectedAnime) { anime in
-            AnimeDetailView(anime: anime, progressStore: animeProgressStore)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
-        .toolbar(.hidden, for: .navigationBar)
     }
 
     private var experiencePicker: some View {
-        HStack(spacing: 10) {
-            experienceButton(
-                title: "Movies & Series",
-                symbol: "play.rectangle.on.rectangle",
-                isSelected: selectedHomeExperience != "anime"
-            ) {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    selectedHomeExperience = "moviesAndSeries"
-                    selectedHomeCategory = .forYou
-                }
-            }
-
-            experienceButton(
-                title: "Anime",
-                symbol: "sparkles.tv",
-                isSelected: selectedHomeExperience == "anime"
-            ) {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    selectedHomeExperience = "anime"
-                }
-            }
+        Picker("Browse", selection: $selectedHomeExperience) {
+            Text("Movies & series").tag("moviesAndSeries")
+            Text("Anime").tag("anime")
         }
+        .pickerStyle(.segmented)
         .padding(.horizontal, 20)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Content type")
+        .padding(.vertical, 10)
     }
 
-    private func experienceButton(
-        title: String,
-        symbol: String,
-        isSelected: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: symbol)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .foregroundStyle(isSelected ? .white : Color.primary)
-                .background(
-                    isSelected ? Color.cineNexAccent : Color.cineNexSurface,
-                    in: Capsule()
-                )
-                .overlay {
-                    Capsule()
-                        .strokeBorder(
-                            isSelected ? Color.clear : Color.primary.opacity(0.12),
-                            lineWidth: 1
-                        )
+    private var homeScreen: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 28) {
+                experiencePicker
+                if selectedHomeExperience == "anime" {
+                    animeHomeContent
+                } else {
+                    moviesAndSeriesHomeContent
                 }
-                .contentShape(Rectangle())
+            }
+            .padding(.bottom, 30)
         }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, minHeight: 48)
-        .contentShape(Rectangle())
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .background(Color.cineNexBackground.ignoresSafeArea())
+        .refreshable {
+            if selectedHomeExperience == "anime" { await loadAnimeCatalog(force: true) }
+            else { await loadCatalog(force: true) }
+        }
     }
 
     private var moviesAndSeriesHomeContent: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Discover")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .tracking(-0.7)
-                Text("Movies, series, and your next episode.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 20)
-            .accessibilityElement(children: .combine)
-
-            homeCategoryPicker
-
+        Group {
             if catalogLoading && catalog.isEmpty {
-                ProgressView("Finding movies and series…")
-                    .frame(maxWidth: .infinity)
-                    .padding(32)
-            }
-
-            if let catalogError {
-                Label(catalogError, systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 20)
-            }
-
-            if selectedHomeCategory == .forYou && !continueWatchingItems.isEmpty {
-                mediaSection(
-                    title: "Continue Watching",
-                    subtitle: "Pick up right where you left off",
-                    items: continueWatchingItems,
-                    showProgress: true
-                )
-            }
-
-            if let featured = featuredHomeItem {
-                FeaturedBanner(item: featured) {
-                    selectedItem = featured
-                } onPlay: {
-                    watchHubItem = featured
+                ProgressView("Loading your next watch…")
+                    .frame(maxWidth: .infinity, minHeight: 280)
+            } else if catalog.isEmpty {
+                ContentUnavailableView {
+                    Label("Discover is unavailable", systemImage: "wifi.exclamationmark")
+                } description: {
+                    Text(catalogError ?? "Pull down to reload the catalog.")
+                } actions: {
+                    Button("Try again") { Task { await loadCatalog(force: true) } }
+                        .buttonStyle(.borderedProminent)
                 }
-            }
-
-            switch selectedHomeCategory {
-            case .forYou:
+            } else {
+                if let featured = catalog.first {
+                    DiscoverySpotlight(item: featured, saved: favorites.contains(featured.id),
+                                       onDetails: { selectedItem = featured },
+                                       onPlay: { watchHubItem = featured },
+                                       onSave: { toggleFavorite(featured) })
+                }
+                browseDestinations
+                if let catalogError {
+                    Label(catalogError, systemImage: "wifi.exclamationmark")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 20)
+                }
+                if !continueWatchingItems.isEmpty {
+                    mediaSection(title: "Continue watching", subtitle: "Pick up where you left off", items: continueWatchingItems, showProgress: true)
+                }
                 let unwatched = favoriteItems.filter { playbackProgressStore.progress(for: $0.id) == nil }
                 if !unwatched.isEmpty {
-                    mediaSection(title: "From your watchlist", subtitle: "Saved and ready to explore", items: unwatched)
+                    mediaSection(title: "Your watchlist", subtitle: "Saved for a night like this", items: unwatched)
                 }
-                mediaSection(title: "Popular right now", subtitle: "Explore the current catalog", items: catalog)
-                let topRated = catalog.filter { ($0.rating ?? 0) >= 7 }
-                    .sorted { ($0.rating ?? 0) > ($1.rating ?? 0) }
-                if !topRated.isEmpty {
-                    mediaSection(title: "Highly rated", subtitle: "Standouts from the current catalog", items: topRated)
-                }
-                let recent = catalog.sorted { $0.year > $1.year }
-                if !recent.isEmpty {
-                    mediaSection(title: "Newer discoveries", subtitle: "Browse by release year", items: recent)
-                }
+                mediaSection(title: "Trending now", subtitle: "Explore the current catalog", items: catalog)
+                let topRated = catalog.filter { ($0.rating ?? 0) >= 7 }.sorted { ($0.rating ?? 0) > ($1.rating ?? 0) }
+                if !topRated.isEmpty { mediaSection(title: "Highly rated", subtitle: "Standouts worth a closer look", items: topRated) }
                 let movies = catalog.filter { $0.kind == .movie }
-                if !movies.isEmpty {
-                    mediaSection(title: "Movies for every mood", subtitle: "Big stories, one great night", items: movies)
-                }
+                if !movies.isEmpty { mediaSection(title: "Movie night", subtitle: "Find your next feature", items: movies) }
                 let series = catalog.filter { $0.kind == .series }
-                if !series.isEmpty {
-                    mediaSection(title: "Series to get into", subtitle: "Your next episode starts here", items: series)
-                }
-            case .movies:
-                if homeCategoryItems.isEmpty {
-                    emptyHomeCategory(title: "No movies yet", message: "Refresh the catalog to discover more movies. Connecting TMDB adds expanded metadata but is optional.")
-                } else {
-                    mediaSection(title: "Explore movies", subtitle: "Choose your next feature", items: homeCategoryItems)
-                }
-            case .series:
-                if homeCategoryItems.isEmpty {
-                    emptyHomeCategory(title: "No series yet", message: "Refresh the catalog or connect TMDB in Tracking to discover series.")
-                } else {
-                    mediaSection(title: "Explore series", subtitle: "Find a story to stay with", items: homeCategoryItems)
-                }
-            case .myList:
-                if homeCategoryItems.isEmpty {
-                    ContentUnavailableView(
-                        "Your list is empty",
-                        systemImage: "bookmark",
-                        description: Text("Save a title from its details to keep it close at hand.")
-                    )
-                    .padding(.horizontal, 20)
-                    .padding(.top, 18)
-                } else {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
-                        ForEach(homeCategoryItems) { item in
-                            MediaPosterCard(item: item) {
-                                selectedItem = item
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                }
+                if !series.isEmpty { mediaSection(title: "One more episode", subtitle: "Series to spend time with", items: series) }
             }
         }
+    }
+
+    private var browseDestinations: some View {
+        HStack(spacing: 12) {
+            NavigationLink {
+                catalogCollection(title: "Movies", items: catalog.filter { $0.kind == .movie })
+            } label: {
+                DiscoveryShortcut(title: "Movies", symbol: "film.stack", subtitle: "Explore films")
+            }
+            NavigationLink {
+                catalogCollection(title: "Series", items: catalog.filter { $0.kind == .series })
+            } label: {
+                DiscoveryShortcut(title: "Series", symbol: "tv", subtitle: "Find a new series")
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 20)
     }
 
     private var animeHomeContent: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Your anime universe")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .tracking(-0.7)
-                Text("Trending series, films, and your episode progress.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 20)
-            .accessibilityElement(children: .combine)
-
+        Group {
             if let animeError {
-                Label(animeError, systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 20)
+                Label(animeError, systemImage: "wifi.exclamationmark")
+                    .font(.footnote).foregroundStyle(.orange).padding(.horizontal, 20)
             }
-
-            if let featured = animeCatalog.first {
-                AnimeFeaturedBanner(anime: featured) {
-                    selectedAnime = featured
-                }
-            }
-
             if animeLoading && animeCatalog.isEmpty {
-                HStack(spacing: 12) {
-                    ProgressView()
-                        .tint(Color.cineNexAccent)
-                    Text("Loading trending anime…")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 44)
+                ProgressView("Loading anime…").frame(maxWidth: .infinity, minHeight: 240)
             } else if animeCatalog.isEmpty {
-                ContentUnavailableView(
-                    "Anime is temporarily unavailable",
-                    systemImage: "sparkles.tv",
-                    description: Text("Check your connection and pull down to retry loading the public AniList catalog.")
-                )
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
+                ContentUnavailableView("No anime available", systemImage: "sparkles.tv", description: Text("Pull down to try again."))
             } else {
+                if let featured = animeCatalog.first {
+                    AnimeFeaturedBanner(anime: featured) { selectedAnime = featured }
+                }
                 VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Trending anime")
-                            .font(.title2.bold())
-                        Text("Live metadata from AniList")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 20)
-
-                    AnimePosterShelf(
-                        items: animeCatalog,
-                        progressStore: animeProgressStore
-                    ) { anime in
-                        selectedAnime = anime
-                    }
+                    Text("Trending anime").font(.title2.bold()).padding(.horizontal, 20)
+                    AnimePosterShelf(items: animeCatalog, progressStore: animeProgressStore) { selectedAnime = $0 }
                 }
             }
         }
     }
 
-    private var homeCategoryPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(HomeCategory.allCases) { category in
-                    let isSelected = selectedHomeCategory == category
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedHomeCategory = category
-                        }
-                    } label: {
-                        Label(category.title, systemImage: category.symbol)
-                            .font(.subheadline.weight(.semibold))
-                            .padding(.horizontal, 15)
-                            .padding(.vertical, 11)
-                            .foregroundStyle(isSelected ? .white : .secondary)
-                            .background(
-                                isSelected ? Color.cineNexAccent : Color.cineNexSurface,
-                                in: Capsule()
-                            )
-                            .overlay {
-                                Capsule()
-                                    .strokeBorder(isSelected ? Color.clear : Color.white.opacity(0.06), lineWidth: 1)
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
-                }
-            }
-            .padding(.horizontal, 20)
-        }
-        .accessibilityLabel("Home categories")
-    }
-
-    private func emptyHomeCategory(title: String, message: String) -> some View {
-        ContentUnavailableView(title, systemImage: "square.stack", description: Text(message))
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
+    private var searchBinding: Binding<String> {
+        Binding(get: { selectedHomeExperience == "anime" ? animeSearchText : searchText },
+                set: { if selectedHomeExperience == "anime" { animeSearchText = $0 } else { searchText = $0 } })
     }
 
     private var searchScreen: some View {
-        VStack(spacing: 0) {
-            experiencePicker
-                .padding(.top, 10)
-                .padding(.bottom, 8)
-
-            Group {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                experiencePicker
                 if selectedHomeExperience == "anime" {
-                    animeSearchScreen
-                } else {
-                    moviesAndSeriesSearchScreen
-                }
-            }
-        }
-        .background(Color.cineNexBackground.ignoresSafeArea())
-        .sheet(item: $selectedAnime) { anime in
-            AnimeDetailView(anime: anime, progressStore: animeProgressStore)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
-    }
-
-    private var animeSearchScreen: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Find anime")
-                    .font(.largeTitle.bold())
-                Text("Search AniList for anime titles, films, and series.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                TextField("Search anime titles…", text: $animeSearchText)
-                    .textFieldStyle(.plain)
-                    .padding(14)
-                    .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14))
-                    .accessibilityLabel("Search anime titles")
-                    .submitLabel(.search)
-                    .onSubmit { Task { await searchAniList() } }
-
-                Button {
-                    Task { await searchAniList() }
-                } label: {
-                    HStack(spacing: 10) {
-                        if animeSearchLoading {
-                            ProgressView().tint(.white)
-                        } else {
-                            Image(systemName: "magnifyingglass")
-                        }
-                        Text(animeSearchLoading ? "Searching AniList…" : "Search AniList")
-                        Spacer()
-                        Image(systemName: "arrow.right")
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(14)
-                    .background(Color.cineNexAccent, in: RoundedRectangle(cornerRadius: 14))
-                    .foregroundStyle(.white)
-                }
-                .disabled(animeSearchLoading || animeSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                if let animeSearchError {
-                    Label(animeSearchError, systemImage: "exclamationmark.triangle")
-                        .font(.footnote)
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if animeSearchLoading && animeSearchResults.isEmpty {
-                    ProgressView("Searching anime…")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 35)
-                } else if hasSearchedAnime && animeSearchResults.isEmpty && animeSearchError == nil {
-                    ContentUnavailableView(
-                        "No anime found",
-                        systemImage: "magnifyingglass",
-                        description: Text("Try a different title or spelling.")
-                    )
-                    .padding(.top, 24)
-                } else if !animeSearchResults.isEmpty {
-                    Text("\(animeSearchResults.count) results")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
-                        ForEach(animeSearchResults) { anime in
-                            AnimePosterCard(
-                                anime: anime,
-                                watchedEpisodes: animeProgressStore.watchedEpisodeCount(for: anime)
-                            ) {
-                                selectedAnime = anime
+                    if animeSearchLoading { ProgressView("Searching anime…").frame(maxWidth: .infinity) }
+                    if let animeSearchError { Text(animeSearchError).font(.footnote).foregroundStyle(.orange).padding(.horizontal, 20) }
+                    if animeSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        searchPrompt
+                    } else if hasSearchedAnime && animeSearchResults.isEmpty && !animeSearchLoading {
+                        ContentUnavailableView.search(text: animeSearchText)
+                    } else {
+                        LazyVGrid(columns: posterColumns, alignment: .leading, spacing: 22) {
+                            ForEach(animeSearchResults) { anime in
+                                AnimePosterCard(anime: anime, watchedEpisodes: animeProgressStore.watchedEpisodeCount(for: anime)) { selectedAnime = anime }
                             }
-                        }
+                        }.padding(.horizontal, 20)
                     }
                 } else {
-                    ContentUnavailableView(
-                        "Search anime",
-                        systemImage: "sparkles",
-                        description: Text("Enter an anime title to find results from AniList.")
-                    )
-                    .padding(.top, 20)
-                }
-            }
-            .padding(20)
-        }
-        .background(Color.cineNexBackground.ignoresSafeArea())
-        .navigationTitle("Anime Search")
-    }
-
-    private var moviesAndSeriesSearchScreen: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Discover")
-                    .font(.largeTitle.bold())
-                TextField("Search movies and series…", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .padding(14)
-                    .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14))
-                    .accessibilityLabel("Search movies and series")
-                    .submitLabel(.search)
-                    .onSubmit { Task { await searchTMDB() } }
-
-                Button {
-                    Task { await searchTMDB() }
-                } label: {
                     HStack {
-                        if remoteSearchLoading { ProgressView().tint(.white) } else { Image(systemName: "globe") }
-                        Text(remoteSearchLoading ? "Searching titles…" : "Search titles")
-                        Spacer()
-                        Image(systemName: "arrow.right")
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(14)
-                    .background(Color.cineNexAccent, in: RoundedRectangle(cornerRadius: 14))
-                    .foregroundStyle(.white)
-                }
-                .disabled(remoteSearchLoading || searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                if let remoteSearchError {
-                    Text(remoteSearchError)
-                        .font(.footnote)
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                HStack(spacing: 10) {
-                    Picker("Media type", selection: $selectedSearchKind) {
-                        ForEach(SearchKind.allCases) { kind in
-                            Text(kind.title).tag(kind)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityLabel("Filter search results by media type")
-
-                    Picker("Sort", selection: $selectedSearchSort) {
-                        ForEach(SearchSort.allCases) { sort in
-                            Text(sort.title).tag(sort)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .accessibilityLabel("Sort search results")
-                }
-
-                Text("\(displayedSearchResults.count) titles")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-
-                if displayedSearchResults.isEmpty {
-                    ContentUnavailableView(searchText.isEmpty ? "Search CineNex" : "No matching titles", systemImage: "magnifyingglass", description: Text(searchText.isEmpty ? "Search CineNex's catalog for movies and series." : "Try another title or change the media type filter."))
-                        .padding(.top, 40)
-                } else {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
-                        ForEach(displayedSearchResults) { item in
-                            MediaPosterCard(item: item) {
-                                selectedItem = item
+                        Picker("Type", selection: $selectedSearchKind) {
+                            ForEach(SearchKind.allCases) { Text($0.title).tag($0) }
+                        }.pickerStyle(.segmented)
+                        Menu {
+                            Picker("Sort results", selection: $selectedSearchSort) {
+                                ForEach(SearchSort.allCases) { Text($0.title).tag($0) }
                             }
-                            .onAppear {
-                                let isRemoteSearch = !remoteSearchQuery.isEmpty &&
-                                    remoteSearchQuery.caseInsensitiveCompare(searchText.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
-                                let nearEndIDs = Set(displayedSearchResults.suffix(4).map(\.id))
-                                if isRemoteSearch &&
-                                    nearEndIDs.contains(item.id) &&
-                                    remoteSearchPage < remoteSearchTotalPages {
-                                    Task { await loadMoreTMDBSearchResults() }
-                                }
+                        } label: { Image(systemName: "line.3.horizontal.decrease").font(.title3) }
+                        .accessibilityLabel("Sort results")
+                    }.padding(.horizontal, 20)
+                    if remoteSearchLoading { ProgressView("Searching…").frame(maxWidth: .infinity) }
+                    if let remoteSearchError { Text(remoteSearchError).font(.footnote).foregroundStyle(.orange).padding(.horizontal, 20) }
+                    if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        searchPrompt
+                    } else if displayedSearchResults.isEmpty && !remoteSearchLoading {
+                        ContentUnavailableView.search(text: searchText)
+                    } else {
+                        posterGrid(displayedSearchResults)
+                        if remoteSearchPage < remoteSearchTotalPages {
+                            Button(remoteSearchLoadingMore ? "Loading…" : "Load more results") {
+                                Task { await loadMoreTMDBSearchResults() }
                             }
-                        }
-                    }
-
-                    if remoteSearchQuery.caseInsensitiveCompare(searchText.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame,
-                       remoteSearchPage > 0,
-                       remoteSearchPage < remoteSearchTotalPages {
-                        Button {
-                            Task { await loadMoreTMDBSearchResults() }
-                        } label: {
-                            HStack(spacing: 10) {
-                                if remoteSearchLoadingMore {
-                                    ProgressView()
-                                } else {
-                                    Image(systemName: "plus.circle")
-                                }
-                                Text(remoteSearchLoadingMore ? "Loading more titles…" : "Load more results")
-                            }
-                            .font(.subheadline.weight(.semibold))
+                            .disabled(remoteSearchLoadingMore)
+                            .buttonStyle(.bordered)
                             .frame(maxWidth: .infinity)
-                            .padding(14)
-                            .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14))
                         }
-                        .disabled(remoteSearchLoading || remoteSearchLoadingMore)
-                        .accessibilityHint("Loads the next page of TMDB search results")
                     }
                 }
-            }
-            .padding(20)
+            }.padding(.bottom, 30)
         }
         .background(Color.cineNexBackground.ignoresSafeArea())
-        .navigationTitle("Search")
+        .searchable(text: searchBinding, prompt: "Titles, movies, series, anime")
+        .task(id: "\(selectedHomeExperience)|\(searchBinding.wrappedValue)") {
+            guard selectedTab == .search else { return }
+            let query = searchBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else { return }
+            do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+            if selectedHomeExperience == "anime" { await searchAniList() }
+            else { await searchTMDB() }
+        }
+    }
+
+    private var searchPrompt: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("What are you looking for?").font(.title2.bold())
+            Text("Search the full catalog by title. Results appear as you type.").foregroundStyle(.secondary)
+            if selectedHomeExperience != "anime" {
+                Text("Explore instead").font(.headline).padding(.top, 12)
+                ForEach(Array(catalog.prefix(5))) { item in
+                    Button { selectedItem = item } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: item.kind == .movie ? "film" : "tv")
+                                .foregroundStyle(Color.cineNexAccent)
+                                .frame(width: 28)
+                            Text(item.title).foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "arrow.up.left").foregroundStyle(.secondary)
+                        }
+                        .padding(14)
+                        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14))
+                    }.buttonStyle(.plain)
+                }
+            }
+        }.padding(20)
     }
 
     private var libraryScreen: some View {
-        VStack(spacing: 0) {
-            experiencePicker
-                .padding(.top, 10)
-                .padding(.bottom, 8)
-
-            Group {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 22) {
+                experiencePicker
+                Button { showingDownloads = true } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: "arrow.down.circle.fill").font(.title)
+                            .foregroundStyle(Color.cineNexAccent)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Downloads").font(.headline)
+                            Text("Available without a connection").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                    }
+                    .padding(18)
+                    .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
+                }.buttonStyle(.plain).padding(.horizontal, 20)
                 if selectedHomeExperience == "anime" {
-                    animeLibraryScreen
-                } else {
-                    moviesAndSeriesLibraryScreen
-                }
-            }
-        }
-        .background(Color.cineNexBackground.ignoresSafeArea())
-        .sheet(item: $selectedAnime) { anime in
-            AnimeDetailView(anime: anime, progressStore: animeProgressStore)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
-    }
-
-    private var animeLibraryScreen: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Anime List")
-                    .font(.largeTitle.bold())
-                Text("Anime you have started tracking, with progress saved on this device.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                if animeProgressStore.trackedAnime.isEmpty {
-                    ContentUnavailableView(
-                        "No anime tracked yet",
-                        systemImage: "bookmark",
-                        description: Text("Open an anime title and update Episodes watched to add it to your Anime List.")
-                    )
-                    .padding(.top, 40)
-                } else {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
-                        ForEach(animeProgressStore.trackedAnime) { anime in
-                            AnimePosterCard(
-                                anime: anime,
-                                watchedEpisodes: animeProgressStore.watchedEpisodeCount(for: anime)
-                            ) {
-                                selectedAnime = anime
-                            }
-                        }
-                    }
-                }
-            }
-            .padding(20)
-        }
-        .background(Color.cineNexBackground.ignoresSafeArea())
-        .navigationTitle("Anime List")
-    }
-
-    private var moviesAndSeriesLibraryScreen: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("My List")
-                    .font(.largeTitle.bold())
-                Text("Your saved titles, all in one place.")
-                    .foregroundStyle(.secondary)
-
-                if favoriteItems.isEmpty {
-                    ContentUnavailableView(
-                        "Your list is empty",
-                        systemImage: "bookmark",
-                        description: Text("Open a title and tap Save to add it here.")
-                    )
-                    .padding(.top, 45)
-                } else {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
-                        ForEach(favoriteItems) { item in
-                            MediaPosterCard(item: item) {
-                                selectedItem = item
-                            }
-                        }
-                    }
-                }
-            }
-            .padding(20)
-        }
-        .background(Color.cineNexBackground.ignoresSafeArea())
-        .navigationTitle("My List")
-    }
-
-    private var header: some View {
-        HStack(alignment: .center) {
-            HStack(spacing: 8) {
-                Image(systemName: "play.rectangle.fill")
-                    .font(.title2)
-                    .foregroundStyle(Color.cineNexAccent)
-                Text("CineNex")
-                    .font(.title2.bold())
-                    .tracking(-0.6)
-            }
-            Spacer()
-            Button {
-                Task {
-                    if selectedHomeExperience == "anime" {
-                        await loadAnimeCatalog(force: true)
+                    let saved = animeProgressStore.trackedAnime
+                    if saved.isEmpty {
+                        ContentUnavailableView("No anime in progress", systemImage: "play.circle", description: Text("Update the episode progress on an anime to find it here."))
                     } else {
-                        await loadCatalog(force: true)
+                        LazyVGrid(columns: posterColumns, spacing: 22) {
+                            ForEach(saved) { anime in
+                                AnimePosterCard(anime: anime, watchedEpisodes: animeProgressStore.watchedEpisodeCount(for: anime)) { selectedAnime = anime }
+                            }
+                        }.padding(.horizontal, 20)
+                    }
+                } else {
+                    Picker("Your library", selection: $libraryShowsProgress) {
+                        Text("Watchlist").tag(false)
+                        Text("Continue watching").tag(true)
+                    }.pickerStyle(.segmented).padding(.horizontal, 20)
+                    let items = libraryShowsProgress ? continueWatchingItems : favoriteItems
+                    if items.isEmpty {
+                        ContentUnavailableView(libraryShowsProgress ? "Nothing in progress" : "Your watchlist is empty",
+                                               systemImage: libraryShowsProgress ? "play.circle" : "bookmark",
+                                               description: Text(libraryShowsProgress ? "Started movies appear here so you can resume them." : "Save a title from its details to find it here."))
+                        Button("Discover something new") { selectedTab = .home }
+                            .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
+                    } else {
+                        posterGrid(items)
                     }
                 }
-            } label: {
-                if selectedHomeExperience == "anime" ? animeLoading : catalogLoading {
-                    ProgressView()
-                        .frame(width: 42, height: 42)
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.title3.weight(.semibold))
-                        .frame(width: 42, height: 42)
-                        .background(Color.cineNexSurface, in: Circle())
-                }
+            }.padding(.bottom, 30)
+        }.background(Color.cineNexBackground.ignoresSafeArea())
+    }
+
+    private var posterColumns: [GridItem] { [GridItem(.adaptive(minimum: 140), spacing: 16, alignment: .top)] }
+
+    private func posterGrid(_ items: [MediaItem]) -> some View {
+        LazyVGrid(columns: posterColumns, alignment: .leading, spacing: 24) {
+            ForEach(items) { item in
+                MediaPosterCard(item: item) { selectedItem = item }
+                    .contextMenu {
+                        Button(favorites.contains(item.id) ? "Remove from watchlist" : "Save to watchlist",
+                               systemImage: favorites.contains(item.id) ? "bookmark.slash" : "bookmark") { toggleFavorite(item) }
+                    }
             }
-            .disabled(selectedHomeExperience == "anime" ? animeLoading : catalogLoading)
-            .accessibilityLabel(selectedHomeExperience == "anime" ? "Refresh anime catalog" : "Refresh catalog")
-            Button {
-                selectedTab = .search
-            } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(.title3.weight(.semibold))
-                    .frame(width: 42, height: 42)
-                    .background(Color.cineNexSurface, in: Circle())
-            }
-            .accessibilityLabel("Open search")
-            Button {
-                showingAppearanceSettings = true
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.title3.weight(.semibold))
-                    .frame(width: 42, height: 42)
-                    .background(Color.cineNexSurface, in: Circle())
-            }
-            .accessibilityLabel("Open settings")
-            .sheet(isPresented: $showingAppearanceSettings) {
-                NavigationStack { CineNexSettingsView() }
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
+        }.padding(.horizontal, 20)
+    }
+
+    private func catalogCollection(title: String, items: [MediaItem]) -> some View {
+        ScrollView {
+            if items.isEmpty {
+                ContentUnavailableView("No titles yet", systemImage: "film.stack", description: Text("Refresh Discover to load the catalog."))
+            } else {
+                HStack {
+                    Text("\(items.count) titles").font(.subheadline).foregroundStyle(.secondary)
+                    Spacer()
+                }.padding(20)
+                posterGrid(items)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
+        .background(Color.cineNexBackground.ignoresSafeArea())
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.large)
     }
 
     private func mediaSection(title: String, subtitle: String, items: [MediaItem], showProgress: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.title2.bold())
-                Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 20)
-
-            ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title).font(.title2.bold())
+                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                NavigationLink { catalogCollection(title: title, items: items) } label: {
+                    Image(systemName: "arrow.right.circle.fill").font(.title2)
+                }.accessibilityLabel("See all \(title)")
+            }.padding(.horizontal, 20)
+            ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: 14) {
-                    ForEach(items) { item in
+                    ForEach(Array(items.prefix(20))) { item in
                         VStack(alignment: .leading, spacing: 8) {
-                            MediaPosterCard(item: item) {
-                                if showProgress {
+                            MediaPosterCard(item: item) { selectedItem = item }.frame(width: 148)
+                            if showProgress, let progress = playbackProgressStore.progress(for: item.id) {
+                                ProgressView(value: progress.completionFraction ?? 0).tint(Color.cineNexAccent)
+                                Button {
                                     play(item)
-                                } else {
-                                    selectedItem = item
-                                }
+                                } label: {
+                                    Label("Resume · \(Int(progress.position / 60)) min", systemImage: "play.fill")
+                                        .font(.caption.weight(.semibold))
+                                }.buttonStyle(.plain)
                             }
-                            .frame(width: 148)
-                            .contextMenu {
-                                if showProgress {
-                                    Button(role: .destructive) {
-                                        playbackProgressStore.remove(itemID: item.id)
-                                    } label: {
-                                        Label("Remove from Continue Watching", systemImage: "xmark.circle")
-                                    }
+                        }
+                        .frame(width: 148)
+                        .contextMenu {
+                            if showProgress {
+                                Button("Remove from continue watching", systemImage: "xmark.circle", role: .destructive) {
+                                    playbackProgressStore.remove(itemID: item.id)
                                 }
-                            }
-                            if showProgress,
-                               let progress = playbackProgressStore.progress(for: item.id),
-                               let fraction = progress.completionFraction {
-                                ProgressView(value: fraction)
-                                    .tint(Color.cineNexAccent)
-                                    .frame(width: 148)
-                                Text("Resume · \(Int(progress.position / 60)) min watched")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .frame(width: 148, alignment: .leading)
+                            } else {
+                                Button(favorites.contains(item.id) ? "Remove from watchlist" : "Save to watchlist",
+                                       systemImage: "bookmark") { toggleFavorite(item) }
                             }
                         }
                     }
-                }
-                .padding(.horizontal, 20)
-            }
+                }.padding(.horizontal, 20)
+            }.scrollIndicators(.hidden)
         }
+    }
+
+    private func presentPendingDirectPlayback() {
+        guard let pending = pendingDirectPlayback else { return }
+        pendingDirectPlayback = nil
+        activePlayerItem = pending
     }
 
     @MainActor
@@ -1043,7 +604,7 @@ struct ContentView: View {
             }
             guard !Task.isCancelled else { return }
             guard !liveCatalog.isEmpty else {
-                catalogError = "TMDB returned no trending titles. Showing the last saved catalog."
+                catalogError = "No titles were returned. Showing the last saved catalog."
                 return
             }
             catalog = liveCatalog
@@ -1176,7 +737,6 @@ private enum AppTab: Hashable {
     case home
     case search
     case library
-    case downloads
     case tracking
 }
 
@@ -1234,93 +794,91 @@ extension Color {
     }
 }
 
-private struct FeaturedBanner: View {
-    let item: MediaItem
-    let onDetails: () -> Void
-    let onPlay: () -> Void
+private struct DiscoveryShortcut: View {
+    let title: String
+    let symbol: String
+    let subtitle: String
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            CachedPosterImage(
-                url: item.posterURL,
-                fallbackSymbol: item.symbol,
-                symbolSize: 94
-            )
-            LinearGradient(
-                stops: [
-                    .init(color: .black.opacity(0.02), location: 0),
-                    .init(color: Color(red: 0.035, green: 0.043, blue: 0.065).opacity(0.42), location: 0.36),
-                    .init(color: Color(red: 0.035, green: 0.043, blue: 0.065).opacity(0.98), location: 1)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            LinearGradient(
-                colors: [Color.cineNexAccent.opacity(0.26), .clear],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            Circle()
-                .fill(Color.white.opacity(0.07))
-                .frame(width: 220, height: 220)
-                .blur(radius: 1)
-                .offset(x: 185, y: -110)
-
-            VStack(alignment: .leading, spacing: 12) {
-                Label((item.metadataProvider == "tmdb" || item.metadataProvider == "cinemeta") ? "TRENDING PICK" : "FEATURED SAMPLE", systemImage: "sparkles")
-                    .font(.caption.weight(.bold))
-                    .tracking(1.3)
-                    .foregroundStyle(Color.cineNexAccent)
-                Text(item.title)
-                    .font(.system(size: 32, weight: .heavy, design: .rounded))
-                    .tracking(-0.5)
-                    .lineLimit(2)
-                    .shadow(color: .black.opacity(0.35), radius: 12, y: 2)
-                HStack(spacing: 7) {
-                    if let year = item.yearLabel {
-                        Text(year)
-                        Text("·")
-                    }
-                    Text(item.kind.rawValue)
-                    Text("·")
-                    Text(item.genre)
-                }
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.white.opacity(0.82))
-                .lineLimit(1)
-                if let rating = item.rating {
-                    Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(Color(red: 1.0, green: 0.78, blue: 0.28))
-                }
-                HStack(spacing: 10) {
-                    Button(action: onPlay) {
-                        Label("Find a source", systemImage: "play.fill")
-                            .font(.subheadline.bold())
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 12)
-                            .foregroundStyle(.white)
-                            .background(Color.cineNexAccent, in: Capsule())
-                    }
-                    .accessibilityHint("Finds available playback sources for this title")
-                    Button(action: onDetails) {
-                        Label("Details", systemImage: "info.circle")
-                            .font(.subheadline.bold())
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 12)
-                            .background(.white.opacity(0.14), in: Capsule())
-                    }
-                }
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: symbol).font(.title2).foregroundStyle(Color.cineNexAccent)
+                Spacer()
+                Image(systemName: "arrow.up.right").font(.caption.weight(.bold)).foregroundStyle(.secondary)
             }
-            .padding(22)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.headline).foregroundStyle(.primary)
+                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+            }
         }
-        .frame(height: 300)
-        .clipShape(RoundedRectangle(cornerRadius: 24))
-        .overlay {
-            RoundedRectangle(cornerRadius: 24)
-                .strokeBorder(.white.opacity(0.07), lineWidth: 1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
+        .contentShape(RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+/// SceneBox's artwork-first detail presentation adapted for a Discover spotlight.
+private struct DiscoverySpotlight: View {
+    let item: MediaItem
+    let saved: Bool
+    let onDetails: () -> Void
+    let onPlay: () -> Void
+    let onSave: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            CachedPosterImage(url: item.posterURL, fallbackSymbol: item.symbol, symbolSize: 90)
+                .frame(height: 440)
+                .clipped()
+            LinearGradient(colors: [.clear, .black.opacity(0.28), Color.cineNexBackground], startPoint: .top, endPoint: .bottom)
+                .allowsHitTesting(false)
+            VStack(spacing: 13) {
+                Text("IN THE SPOTLIGHT")
+                    .font(.caption2.weight(.bold)).tracking(2.4)
+                    .foregroundStyle(.white.opacity(0.8))
+                Button(action: onDetails) {
+                    Text(item.title)
+                        .font(.largeTitle.weight(.heavy))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white)
+                        .lineLimit(3)
+                }.buttonStyle(.plain)
+                HStack(spacing: 8) {
+                    Text(item.kind.rawValue)
+                    if let year = item.yearLabel { Text("·"); Text(year) }
+                    if let rating = item.rating, rating > 0 {
+                        Text("·")
+                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                            .foregroundStyle(.yellow)
+                    }
+                }.font(.caption.weight(.medium)).foregroundStyle(.white.opacity(0.8))
+                HStack(spacing: 12) {
+                    Button(action: onPlay) {
+                        Label("Watch", systemImage: "play.fill")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 12))
+                            .foregroundStyle(.black)
+                    }
+                    Button(action: onSave) {
+                        Label(saved ? "Saved" : "Watchlist", systemImage: saved ? "checkmark" : "plus")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(.white.opacity(0.13), in: RoundedRectangle(cornerRadius: 12))
+                            .foregroundStyle(.white)
+                    }
+                }.buttonStyle(.plain)
+                Button("View details", action: onDetails)
+                    .font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.75))
+            }
+            .padding(.horizontal, 28)
+            .padding(.bottom, 10)
         }
-        .padding(.horizontal, 20)
+        .frame(height: 440)
+        .clipped()
     }
 }
 
@@ -1480,12 +1038,9 @@ private struct MediaDetailView: View {
                     }
                     .padding(22)
                 }
-                .frame(height: 370)
-                .clipShape(RoundedRectangle(cornerRadius: 26))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 26)
-                        .strokeBorder(.white.opacity(0.08), lineWidth: 1)
-                }
+                .frame(height: 400)
+                .clipped()
+                .padding(.horizontal, -20)
 
                 VStack(alignment: .leading, spacing: 12) {
                     if let tagline = extendedDetails?.tagline,
@@ -1494,26 +1049,6 @@ private struct MediaDetailView: View {
                             .font(.subheadline.italic())
                             .foregroundStyle(Color.cineNexAccent)
                     }
-                    HStack(spacing: 10) {
-                        Button(action: onPlay) {
-                            Label(item.streamURL == nil ? "Find sources" : "Play now", systemImage: item.streamURL == nil ? "dot.radiowaves.left.and.right" : "play.fill")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 15)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityHint(item.streamURL == nil ? "Search built-in playback providers for this movie or series" : "Start playback")
-
-                        Button(action: onFavoriteToggle) {
-                            Image(systemName: isFavorite ? "bookmark.fill" : "bookmark")
-                                .font(.headline)
-                                .frame(width: 54, height: 52)
-                        }
-                        .buttonStyle(.bordered)
-                        .accessibilityLabel(isFavorite ? "Remove from My List" : "Save to My List")
-                    }
-
-
                     VStack(alignment: .leading, spacing: 8) {
                         Text("ABOUT THIS TITLE")
                             .font(.caption.weight(.heavy))
@@ -1539,12 +1074,7 @@ private struct MediaDetailView: View {
                         }
                     }
 
-                    if item.streamURL == nil {
-                        Label("No direct link is attached. Find sources opens automatic provider search and does not require a TMDB token.", systemImage: "dot.radiowaves.left.and.right")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+
                 }
 
                 if detailsLoading {
@@ -1757,7 +1287,9 @@ private struct MediaDetailView: View {
             .padding(20)
         }
         .background(Color.cineNexBackground.ignoresSafeArea())
+        .navigationTitle(item.title)
         .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) { detailActions }
         .task(id: item.id) {
             await loadExtendedDetails()
         }
@@ -1769,6 +1301,30 @@ private struct MediaDetailView: View {
         } message: {
             Text(offlineDownloadMessage ?? "The download request has been processed.")
         }
+    }
+
+    private var detailActions: some View {
+        HStack(spacing: 12) {
+            Button(action: onPlay) {
+                Label(item.kind == .series ? "Choose episode & watch" : "Watch movie", systemImage: "play.fill")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
+                    .background(Color.cineNexAccent, in: RoundedRectangle(cornerRadius: 14))
+                    .foregroundStyle(.white)
+            }
+            Button(action: onFavoriteToggle) {
+                Image(systemName: isFavorite ? "bookmark.fill" : "bookmark")
+                    .font(.title3)
+                    .frame(width: 54, height: 52)
+                    .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14))
+            }
+            .accessibilityLabel(isFavorite ? "Remove from watchlist" : "Save to watchlist")
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial)
     }
 
     private func detailRow(_ title: String, value: String, symbol: String) -> some View {

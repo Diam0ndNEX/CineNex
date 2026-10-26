@@ -5,6 +5,9 @@ struct SeasonEpisodesView: View {
     let season: TMDBTitleSeason
 
     @Environment(\.dismiss) private var dismiss
+    @State private var watchRequest: EpisodeWatchRequest?
+    @State private var pendingDirectPlayback: MediaItem?
+    @State private var activeDirectPlayback: MediaItem?
     @State private var episodes: [TMDBSeasonEpisode] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -34,7 +37,13 @@ struct SeasonEpisodesView: View {
                     )
                 } else {
                     List(episodes) { episode in
-                        episodeRow(episode)
+                        Button {
+                            watchRequest = EpisodeWatchRequest(item: item, seasonNumber: season.seasonNumber, episodeNumber: episode.episodeNumber)
+                        } label: {
+                            episodeRow(episode)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Choose a source for this episode")
                             .listRowBackground(Color.cineNexSurface)
                     }
                     .listStyle(.plain)
@@ -61,6 +70,28 @@ struct SeasonEpisodesView: View {
             }
         }
         .tint(Color.cineNexAccent)
+        .sheet(item: $watchRequest, onDismiss: {
+            if let pending = pendingDirectPlayback {
+                pendingDirectPlayback = nil
+                activeDirectPlayback = pending
+            }
+        }) { request in
+            WatchHubView(
+                item: request.item,
+                onPlayDirect: { directItem in
+                    pendingDirectPlayback = directItem
+                    watchRequest = nil
+                },
+                onSelectItem: { recommendation in
+                    watchRequest = EpisodeWatchRequest(item: recommendation, seasonNumber: 1, episodeNumber: 1)
+                },
+                initialSeasonNumber: request.seasonNumber,
+                initialEpisodeNumber: request.episodeNumber
+            )
+        }
+        .fullScreenCover(item: $activeDirectPlayback) { directItem in
+            PlayerView(item: directItem, progressStore: PlaybackProgressStore.shared)
+        }
     }
 
     private func episodeRow(_ episode: TMDBSeasonEpisode) -> some View {
@@ -71,6 +102,12 @@ struct SeasonEpisodesView: View {
                 symbolSize: 24
             )
             .frame(width: 112, height: 70)
+            .overlay {
+                Image(systemName: "play.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(.white)
+                    .shadow(radius: 4)
+            }
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 5) {
@@ -117,7 +154,7 @@ struct SeasonEpisodesView: View {
         guard let token = TMDBTokenStore.load()?
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !token.isEmpty else {
-            errorMessage = "Add your TMDB Read Access Token in Tracking to view season episodes."
+            errorMessage = "Connect TMDB in Settings → Accounts & tracking to view season episodes."
             return
         }
 
@@ -134,4 +171,11 @@ struct SeasonEpisodesView: View {
             errorMessage = error.localizedDescription
         }
     }
+}
+
+private struct EpisodeWatchRequest: Identifiable {
+    let item: MediaItem
+    let seasonNumber: Int
+    let episodeNumber: Int
+    var id: String { "\(item.id)-\(seasonNumber)-\(episodeNumber)" }
 }

@@ -164,7 +164,7 @@ final class StremioAddonPlaybackProviderTests: XCTestCase {
         )
 
         XCTAssertEqual(discovery.torrentDescriptors.count, 2)
-        XCTAssertEqual(Set(discovery.torrentDescriptors.map(\.providerName)), Set(["Torrentio", "MediaFusion"]))
+        XCTAssertEqual(Set(discovery.torrentDescriptors.map(\.providerName)), Set(["Torrentio", "MediaFusion ElfHosted"]))
     }
 
     func testOneAddonFailureDoesNotHideTheOtherAddonsResults() async throws {
@@ -207,7 +207,7 @@ final class StremioAddonPlaybackProviderTests: XCTestCase {
             return false
         })
         XCTAssertTrue(discovery.providerStatuses.contains { status in
-            guard status.name == "MediaFusion" else { return false }
+            guard status.name == "MediaFusion ElfHosted" else { return false }
             if case .failed = status.outcome {
                 return true
             }

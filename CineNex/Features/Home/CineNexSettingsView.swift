@@ -8,14 +8,20 @@ struct CineNexSettingsView: View {
     var body: some View {
         List {
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Make CineNex yours", systemImage: "play.rectangle.fill")
-                        .font(.title2.bold())
-                    Text("Your playback, your library, your preferences.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 18) {
+                    Image(systemName: "play.rectangle.fill")
+                        .font(.system(size: 34, weight: .semibold))
+                        .foregroundStyle(Color.cineNexAccent)
+                        .frame(width: 70, height: 70)
+                        .background(Color.cineNexAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: 20))
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("CineNex").font(.title2.bold())
+                        Text("Your watching experience, on your terms.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, 12)
             }
             Section("Playback") {
                 NavigationLink {
@@ -35,12 +41,19 @@ struct CineNexSettingsView: View {
                 Button {
                     showingAppearance = true
                 } label: {
-                    Label("Appearance & layout", systemImage: "paintpalette")
+                    Label("Appearance", systemImage: "paintpalette")
                 }
                 NavigationLink {
                     TrackingView()
                 } label: {
                     Label("Accounts & tracking", systemImage: "person.crop.circle")
+                }
+            }
+            Section("Troubleshooting") {
+                NavigationLink {
+                    PlaybackDiagnosticsView()
+                } label: {
+                    Label("Playback diagnostics", systemImage: "stethoscope")
                 }
             }
             Section {
