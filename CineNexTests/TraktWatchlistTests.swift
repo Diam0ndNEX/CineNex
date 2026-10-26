@@ -1,6 +1,7 @@
 import XCTest
 @testable import CineNex
 
+@MainActor
 final class TraktWatchlistTests: XCTestCase {
     func testWatchlistDecodeMapsMovieMetadataAndDeduplicatesEntries() throws {
         let data = Data("""

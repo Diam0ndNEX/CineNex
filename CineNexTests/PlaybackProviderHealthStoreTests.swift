@@ -61,7 +61,7 @@ final class PlaybackProviderHealthStoreTests: XCTestCase {
         let date = Date(timeIntervalSince1970: 1_760_000_000)
 
         let firstStore = PlaybackProviderHealthStore(
-            defaults: defaults,
+            defaults: UserDefaults(suiteName: suiteName)!,
             storageKey: "health",
             baseCooldown: 15,
             maximumCooldown: 60
@@ -69,7 +69,7 @@ final class PlaybackProviderHealthStoreTests: XCTestCase {
         await firstStore.recordFailure(providerID: "provider-b", message: "HTTP 503", at: date)
 
         let secondStore = PlaybackProviderHealthStore(
-            defaults: defaults,
+            defaults: UserDefaults(suiteName: suiteName)!,
             storageKey: "health",
             baseCooldown: 15,
             maximumCooldown: 60
@@ -134,7 +134,7 @@ final class PlaybackProviderHealthStoreTests: XCTestCase {
         ]
         defaults.set(try JSONEncoder().encode(storedRecords), forKey: "health")
 
-        let store = PlaybackProviderHealthStore(defaults: defaults, storageKey: "health")
+        let store = PlaybackProviderHealthStore(defaults: UserDefaults(suiteName: suiteName)!, storageKey: "health")
         let normalizedValue = await store.health(for: "provider-a")
         let normalized = try XCTUnwrap(normalizedValue)
         let healthyValue = await store.health(for: "provider-healthy")
@@ -169,7 +169,7 @@ final class PlaybackProviderHealthStoreTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         return PlaybackProviderHealthStore(
-            defaults: defaults,
+            defaults: UserDefaults(suiteName: suiteName)!,
             storageKey: "health",
             baseCooldown: baseCooldown,
             maximumCooldown: maximumCooldown

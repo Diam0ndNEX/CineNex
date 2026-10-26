@@ -30,10 +30,26 @@ jobs:
       - name: Apply native wrapper bridge
         run: python3 Scripts/patch_xitrix_piece_priority.py Thirdparty/LibTorrent-Swift
 
+      - name: Fingerprint native dependencies and toolchain
+        id: native-key
+        shell: bash
+        run: |
+          native_fingerprint=$( { xcodebuild -version; printf '%s\n' "$ImageVersion"; git submodule status --recursive; } | shasum -a 256 | awk '{print $1}')
+          echo "fingerprint=$native_fingerprint" >> "$GITHUB_OUTPUT"
+
+      - name: Restore native frameworks
+        id: native-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: Thirdparty/LibTorrent-Swift/Build
+          key: native-v1-${{ runner.os }}-${{ runner.arch }}-device-simulator-${{ steps.native-key.outputs.fingerprint }}-${{ hashFiles('Scripts/patch_xitrix_piece_priority.py', '.github/workflows/ios-build.yml') }}
+
       - name: Install native build tools
+        if: steps.native-cache.outputs.cache-hit != 'true'
         run: brew install cmake boost
 
       - name: Build patched XITRIX wrapper for iOS and simulator
+        if: steps.native-cache.outputs.cache-hit != 'true'
         run: |
           export BOOST_ROOT="$(brew --prefix boost)"
           export BOOST_INCLUDEDIR="$BOOST_ROOT/include"
@@ -68,22 +84,38 @@ jobs:
             -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphonesimulator/OpenSSL.framework \
             -output Thirdparty/LibTorrent-Swift/Build/OpenSSL.xcframework
 
+      - name: Save native frameworks before app compilation
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: Thirdparty/LibTorrent-Swift/Build
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
+
+      - name: Restore Swift package downloads
+        id: package-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: SourcePackages
+          key: swift-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-key.outputs.fingerprint }}-${{ hashFiles('project.yml') }}
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Build for iOS Simulator
+      - name: Resolve Swift packages
         run: |
-          xcodebuild \
-            -project CineNex.xcodeproj \
-            -scheme CineNex \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath DerivedData \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES EXCLUDED_ARCHS=x86_64 \
-            CODE_SIGNING_ALLOWED=NO \
-            build
+          xcodebuild -resolvePackageDependencies \
+            -project CineNex.xcodeproj -scheme CineNex \
+            -clonedSourcePackagesDirPath SourcePackages
+
+      - name: Save packages before compilation
+        if: steps.package-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: SourcePackages
+          key: ${{ steps.package-cache.outputs.cache-primary-key }}
 
       - name: Select an available iPhone simulator
         id: simulator
@@ -134,6 +166,7 @@ jobs:
           xcodebuild \
             -project CineNex.xcodeproj \
             -scheme CineNex \
+            -clonedSourcePackagesDirPath SourcePackages \
             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.device_id }}" \
             -derivedDataPath DerivedData \
             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES EXCLUDED_ARCHS=x86_64 \
@@ -150,6 +183,7 @@ jobs:
           xcodebuild \
             -project CineNex.xcodeproj \
             -scheme CineNex \
+            -clonedSourcePackagesDirPath SourcePackages \
             -destination 'generic/platform=iOS' \
             -derivedDataPath DerivedDataDevice \
             CODE_SIGNING_ALLOWED=NO \
