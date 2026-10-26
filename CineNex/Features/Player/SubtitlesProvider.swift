@@ -11,7 +11,7 @@ import CryptoKit
 actor SubtitlesProvider {
     private let base = "https://opensubtitles-v3.strem.io"
 
-    func subtitles(imdbID: String, type: MediaType, season: Int?, episode: Int?) async -> [SubtitleTrack] {
+    func subtitles(imdbID: String, type: PlaybackMediaKind, season: Int?, episode: Int?) async -> [SubtitleTrack] {
         var id = imdbID
         if type == .series, let season, let episode { id += ":\(season):\(episode)" }
         guard let url = URL(string: "\(base)/subtitles/\(type.rawValue)/\(id).json") else { return [] }
