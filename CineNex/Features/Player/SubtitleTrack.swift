@@ -7,7 +7,7 @@
 
 import Foundation
 
-nonisolated struct SubtitleTrack: Identifiable, Sendable, Hashable {
+struct SubtitleTrack: Identifiable, Sendable, Hashable {
     let id: String
     let languageCode: String   // ISO 639-2, e.g. "eng"
     let url: URL
