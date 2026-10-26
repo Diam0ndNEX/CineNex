@@ -1,6 +1,7 @@
 import XCTest
 @testable import CineNex
 
+@MainActor
 final class FavoriteLibraryStoreTests: XCTestCase {
     private func makeStore() -> (FavoriteLibraryStore, UserDefaults, String) {
         let suite = "CineNexFavoriteTests." + UUID().uuidString

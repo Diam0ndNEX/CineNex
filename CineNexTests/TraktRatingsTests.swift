@@ -1,6 +1,7 @@
 import XCTest
 @testable import CineNex
 
+@MainActor
 final class TraktRatingsTests: XCTestCase {
     func testRatingsDecodeDeduplicatesAndKeepsMostRecentlyRatedValue() throws {
         let data = Data("""

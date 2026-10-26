@@ -88,6 +88,23 @@ enum StremioAddonResource: Decodable, Equatable, Sendable {
 
 struct StremioStreamResponse: Decodable, Equatable, Sendable {
     let streams: [StremioStreamEntry]
+
+    private enum CodingKeys: String, CodingKey {
+        case streams
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        var streamContainer = try container.nestedUnkeyedContainer(forKey: .streams)
+        var decoded: [StremioStreamEntry] = []
+        while !streamContainer.isAtEnd {
+            let elementDecoder = try streamContainer.superDecoder()
+            if let stream = try? StremioStreamEntry(from: elementDecoder) {
+                decoded.append(stream)
+            }
+        }
+        streams = decoded
+    }
 }
 
 struct StremioStreamEntry: Decodable, Equatable, Sendable, Identifiable {
@@ -111,6 +128,21 @@ struct StremioStreamEntry: Decodable, Equatable, Sendable, Identifiable {
         case sources
         case description
         case behaviorHints
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = (try? container.decodeIfPresent(String.self, forKey: .name)) ?? nil
+        title = (try? container.decodeIfPresent(String.self, forKey: .title)) ?? nil
+        let rawURL = (try? container.decodeIfPresent(String.self, forKey: .url)) ?? nil
+        let rawExternalURL = (try? container.decodeIfPresent(String.self, forKey: .externalURL)) ?? nil
+        url = rawURL.flatMap(URL.init(string:))
+        externalURL = rawExternalURL.flatMap(URL.init(string:))
+        infoHash = (try? container.decodeIfPresent(String.self, forKey: .infoHash)) ?? nil
+        fileIndex = (try? container.decodeIfPresent(Int.self, forKey: .fileIndex)) ?? nil
+        sources = (try? container.decodeIfPresent([String].self, forKey: .sources)) ?? nil
+        description = (try? container.decodeIfPresent(String.self, forKey: .description)) ?? nil
+        behaviorHints = (try? container.decodeIfPresent(StremioStreamBehaviorHints.self, forKey: .behaviorHints)) ?? nil
     }
 
     var id: String {

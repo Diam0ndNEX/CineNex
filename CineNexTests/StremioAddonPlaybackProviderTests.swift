@@ -275,7 +275,11 @@ private struct StubExternalIDResolver: PlaybackExternalIDResolving {
 }
 
 private final class ProviderStubURLProtocol: URLProtocol {
-    static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    private static let handlerStorage = LockedURLRequestHandler()
+    static var handler: LockedURLRequestHandler.Handler? {
+        get { handlerStorage.handler }
+        set { handlerStorage.handler = newValue }
+    }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }

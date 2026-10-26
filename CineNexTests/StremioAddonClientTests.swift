@@ -166,6 +166,24 @@ final class StremioAddonClientTests: XCTestCase {
         XCTAssertEqual(followedURL, allowedURL)
     }
 
+    func testMalformedStreamEntriesDoNotDiscardValidMediaFusionResults() throws {
+        let payload = """
+        {
+          "streams": [
+            17,
+            {"name":"Torrentio","infoHash":"0123456789abcdef0123456789abcdef01234567","fileIdx":0,"sources":["tracker:udp://tracker.example:80"]},
+            {"name":"broken URL field","url":17,"infoHash":null},
+            {"name":"MediaFusion direct","url":"https://media.example/video.mkv","title":"1080p WEB-DL"}
+          ]
+        }
+        """
+        let response = try JSONDecoder().decode(StremioStreamResponse.self, from: Data(payload.utf8))
+        XCTAssertEqual(response.streams.count, 3)
+        XCTAssertEqual(response.streams[0].infoHash, "0123456789abcdef0123456789abcdef01234567")
+        XCTAssertNil(response.streams[1].url)
+        XCTAssertEqual(response.streams[2].url?.absoluteString, "https://media.example/video.mkv")
+    }
+
     func testReportsHTTPFailureInsteadOfTreatingItAsAnEmptyResult() async throws {
         StremioStubURLProtocol.handler = { request in
             (self.response(for: request, statusCode: 503), Data())
@@ -192,7 +210,21 @@ final class StremioAddonClientTests: XCTestCase {
 }
 
 private final class StremioStubURLProtocol: URLProtocol {
-    static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    private static let handlerLock = NSLock()
+    nonisolated(unsafe) private static var storedHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))? {
+        get {
+            handlerLock.lock()
+            defer { handlerLock.unlock() }
+            return storedHandler
+        }
+        set {
+            handlerLock.lock()
+            defer { handlerLock.unlock() }
+            storedHandler = newValue
+        }
+    }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -216,7 +248,21 @@ private final class StremioStubURLProtocol: URLProtocol {
 }
 
 private final class StremioCancellationURLProtocol: URLProtocol {
-    static var requestCount = 0
+    private static let requestCountLock = NSLock()
+    nonisolated(unsafe) private static var storedRequestCount = 0
+
+    static var requestCount: Int {
+        get {
+            requestCountLock.lock()
+            defer { requestCountLock.unlock() }
+            return storedRequestCount
+        }
+        set {
+            requestCountLock.lock()
+            defer { requestCountLock.unlock() }
+            storedRequestCount = newValue
+        }
+    }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
 

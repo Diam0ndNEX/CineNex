@@ -11,6 +11,7 @@ struct CachedCatalogSnapshot: Codable, Equatable {
     }
 }
 
+@MainActor
 final class CatalogCacheStore {
     static let shared = CatalogCacheStore()
 

@@ -1,6 +1,7 @@
 import XCTest
 @testable import CineNex
 
+@MainActor
 final class CatalogCacheStoreTests: XCTestCase {
     private func makeStore() -> (CatalogCacheStore, UserDefaults, String) {
         let suite = "CineNexCatalogCacheTests." + UUID().uuidString

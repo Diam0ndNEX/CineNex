@@ -17,10 +17,11 @@ struct WatchHubView: View {
         "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json",
         "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusionfortheweebs.midnightignite.me/manifest.json"
     ]
-    private static let defaultStremioAddonManifestURLText = "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json"
+    private static let defaultStremioAddonManifestURLText = "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json\nhttps://mediafusionfortheweebs.midnightignite.me/manifest.json"
     private static let defaultStremioAddonManifestURLs: [URL] = [
         URL(string: "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr/manifest.json")!,
-        URL(string: "https://mediafusion.elfhosted.com/manifest.json")!
+        URL(string: "https://mediafusion.elfhosted.com/manifest.json")!,
+        URL(string: "https://mediafusionfortheweebs.midnightignite.me/manifest.json")!
     ]
     @State private var activePlaybackSheet: WatchPlaybackSheet?
     @State private var discoveredSources: [PlaybackSource] = []
@@ -60,7 +61,8 @@ struct WatchHubView: View {
     }
 
     private var visibleTorrentSources: [StremioTorrentDescriptor] {
-        selectedSourceFilter == "All" || selectedSourceFilter == "Torrent" ? discoveredTorrentDescriptors : []
+        guard selectedSourceFilter == "All" || selectedSourceFilter == "Torrent" else { return [] }
+        return SceneBoxStreamPicker.ordered(discoveredTorrentDescriptors)
     }
 
     private var visibleEmbeddedSources: [ResolvedEmbedSource] {
@@ -109,7 +111,12 @@ struct WatchHubView: View {
                         url: provider.url
                     )
                 case .discovered(let source):
-                    DiscoveredSourcePlaybackView(source: source) {
+                    DiscoveredSourcePlaybackView(
+                        source: source,
+                        item: item,
+                        seasonNumber: seasonNumber,
+                        episodeNumber: episodeNumber
+                    ) {
                         discoveredSources.removeAll { $0.id == source.id }
                     }
                 }
@@ -458,7 +465,13 @@ struct WatchHubView: View {
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(.primary)
                                     .lineLimit(2)
-                                Text([descriptor.providerName, descriptor.fileIndex.map { "File index \($0)" }].compactMap { $0 }.joined(separator: " · "))
+                                Text([
+                                    descriptor.providerName,
+                                    SceneBoxStreamPicker.resolution(for: descriptor),
+                                    SceneBoxStreamPicker.seeders(for: descriptor).map { "\($0) seeders" },
+                                    SceneBoxStreamPicker.size(for: descriptor),
+                                    descriptor.fileIndex.map { "File index \($0)" }
+                                ].compactMap { $0 }.joined(separator: " · "))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
@@ -502,7 +515,7 @@ struct WatchHubView: View {
                             Text("Direct playback")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.primary)
-                            Text("Play the supplied media URL with CineNex's native player")
+                            Text("Play the supplied media URL with CineNex's VLC player")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -516,7 +529,7 @@ struct WatchHubView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Play directly: \(item.title)")
-                .accessibilityHint("Plays the supplied media URL in CineNex's native player")
+                .accessibilityHint("Plays the supplied media URL in CineNex's VLC player")
             }
 
             if !hasVisibleSources && !searchingAddonSources {
@@ -837,47 +850,83 @@ struct WatchHubView: View {
             }
         }
 
+        let resolver = AutomaticExternalIDResolver(tmdbReadAccessToken: TMDBTokenStore.load())
+        var addonManifestURLs = manifestURLs.filter {
+            !($0.host?.lowercased().contains("torrentio") ?? false)
+        }
+        let hasMediaFusion = addonManifestURLs.contains {
+            $0.host?.lowercased().contains("mediafusion") ?? false
+        }
+        if !hasMediaFusion {
+            addonManifestURLs.append(contentsOf: Self.defaultStremioAddonManifestURLs.filter {
+                $0.host?.lowercased().contains("mediafusion") ?? false
+            })
+        }
+        async let torrentioResult = SceneBoxTorrentSearch().discover(
+            for: request,
+            externalIDResolver: resolver
+        )
+        async let addonResult = Self.discoverAddonSources(
+            manifestURLs: addonManifestURLs,
+            request: request,
+            resolver: resolver
+        )
+        let (torrentioDiscovery, addonDiscovery) = await (torrentioResult, addonResult)
+        guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
+
+        var seenSourceIDs = Set<String>()
+        discoveredSources = (torrentioDiscovery.sources + addonDiscovery.sources).filter {
+            seenSourceIDs.insert($0.id).inserted
+        }
+        var seenDescriptorIDs = Set<String>()
+        discoveredTorrentDescriptors = Array(
+            (torrentioDiscovery.torrentDescriptors + addonDiscovery.torrentDescriptors).filter {
+                seenDescriptorIDs.insert($0.id).inserted
+            }.prefix(12)
+        )
+        let statuses = torrentioDiscovery.providerStatuses + addonDiscovery.providerStatuses
+        if !discoveredSources.isEmpty, !discoveredTorrentDescriptors.isEmpty {
+            addonSearchMessage = "Found \(discoveredSources.count) direct source(s) and \(discoveredTorrentDescriptors.count) torrent option(s). Torrent transfers start only when you select one."
+        } else if !discoveredSources.isEmpty {
+            addonSearchMessage = "Found \(discoveredSources.count) direct source(s). VLC will attempt playback; unavailable sources can be skipped."
+        } else if !discoveredTorrentDescriptors.isEmpty {
+            addonSearchMessage = "Found \(discoveredTorrentDescriptors.count) torrent option(s). Select one to prepare playback."
+        } else {
+            addonSearchMessage = "No playable sources were returned. Check the provider status below or try another source instance."
+        }
+        let providerSummary = statuses.map(\.summary).joined(separator: "\n")
+        if !providerSummary.isEmpty {
+            addonSearchMessage = [addonSearchMessage, providerSummary].compactMap { $0 }.joined(separator: "\n")
+        }
+    }
+
+    private static func discoverAddonSources(
+        manifestURLs: [URL],
+        request: PlaybackSourceRequest,
+        resolver: AutomaticExternalIDResolver
+    ) async -> StremioAddonDiscovery {
+        guard !manifestURLs.isEmpty else {
+            return StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: [])
+        }
         do {
             let provider = try StremioAddonPlaybackProvider(
                 manifestURLs: manifestURLs,
-                externalIDResolver: AutomaticExternalIDResolver(tmdbReadAccessToken: TMDBTokenStore.load())
+                externalIDResolver: resolver
             )
-            let discovery = try await provider.discover(for: request)
-            let torrentDescriptors = Array(
-                discovery.torrentDescriptors.reduce(into: [StremioTorrentDescriptor]()) { result, descriptor in
-                    if !result.contains(where: { $0.id == descriptor.id }) {
-                        result.append(descriptor)
-                    }
-                }.prefix(12)
-            )
-            discoveredSources = discovery.sources
-            discoveredTorrentDescriptors = torrentDescriptors
-            if !discovery.sources.isEmpty, !torrentDescriptors.isEmpty {
-                addonSearchMessage = "Found \(discovery.sources.count) direct source(s) and \(torrentDescriptors.count) torrent option(s). Torrent transfers start only when you select one."
-            } else if !discovery.sources.isEmpty {
-                addonSearchMessage = "Found \(discovery.sources.count) direct source(s). Availability and playback compatibility are not guaranteed until playback starts."
-            } else if !torrentDescriptors.isEmpty {
-                addonSearchMessage = "Found \(torrentDescriptors.count) torrent option(s). Select one to prepare native playback."
-            } else {
-                addonSearchMessage = "No playable sources were returned. CineNex searched by title automatically; try again later because add-ons can be temporarily unavailable or may require their own authentication."
-            }
-            let providerSummary = discovery.providerStatuses.map(\.summary).joined(separator: "\n")
-            if !providerSummary.isEmpty {
-                addonSearchMessage = [addonSearchMessage, providerSummary]
-                    .compactMap { $0 }
-                    .joined(separator: "\n")
-            }
+            return try await provider.discover(for: request)
         } catch is CancellationError {
-            guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
-            await TorrentPlaybackSessionRegistry.shared.stopAll()
-            addonSearchMessage = "Source search was cancelled."
-            discoveredSources = []
-            discoveredTorrentDescriptors = []
+            return StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: [])
         } catch {
-            guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
-            addonSearchMessage = error.localizedDescription
-            discoveredSources = []
-            discoveredTorrentDescriptors = []
+            let statuses = manifestURLs.enumerated().map { index, url in
+                let host = (url.host ?? "External add-on").lowercased()
+                let name = host.contains("mediafusion") ? "MediaFusion" : host
+                return StremioAddonProviderStatus(
+                    id: "addon-error-\(index)-\(host)",
+                    name: name,
+                    outcome: .failed(error.localizedDescription)
+                )
+            }
+            return StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: statuses)
         }
     }
 
@@ -895,7 +944,7 @@ struct WatchHubView: View {
             return
         }
         preparingTorrentDescriptorID = descriptor.id
-        torrentPreparationMessage = "Preparing native playback. Torrent metadata may take a moment to load."
+        torrentPreparationMessage = "Preparing torrent stream. Torrent metadata may take a moment to load."
         let preparationID = UUID()
         torrentPreparationGeneration = preparationID
         torrentPreparationTask = Task {
@@ -929,7 +978,7 @@ struct WatchHubView: View {
                 return
             }
             activePlaybackSheet = .discovered(source)
-            torrentPreparationMessage = "Torrent source is ready. Opening the native player."
+            torrentPreparationMessage = "Torrent source is ready. Opening the VLC player."
         } catch is CancellationError {
             await provider.stop()
             if torrentPreparationGeneration == preparationID {
@@ -1085,57 +1134,27 @@ private struct EmbedWebPlaybackView: View {
 
 private struct DiscoveredSourcePlaybackView: View {
     let source: PlaybackSource
+    let item: MediaItem
+    let seasonNumber: Int
+    let episodeNumber: Int
     let onTorrentSessionStopped: () -> Void
+
     @Environment(\.dismiss) private var dismiss
-    @AppStorage(PlaybackCleanerPolicy.enabledStorageKey) private var cleanerGloballyEnabled = true
-    @AppStorage(PlaybackCleanerPolicy.disabledProvidersStorageKey) private var disabledProviderStorage = ""
-    @State private var player: AVPlayer
-    @State private var videoGravity: AVLayerVideoGravity = .resizeAspect
-
-    private var cleanerEnabled: Bool {
-        PlaybackCleanerPolicy.isEnabled(
-            globallyEnabled: cleanerGloballyEnabled,
-            providerID: source.providerID,
-            disabledProviderIDs: PlaybackCleanerPolicy.disabledProviderIDs(from: disabledProviderStorage)
-        )
-    }
-
-    init(source: PlaybackSource, onTorrentSessionStopped: @escaping () -> Void = {}) {
-        self.source = source
-        self.onTorrentSessionStopped = onTorrentSessionStopped
-        _player = State(initialValue: AVPlayer(url: source.url))
-    }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if source.supportsNativePlayback {
-                    NativePlaybackView(player: player, videoGravity: $videoGravity)
-                        .onAppear { player.play() }
-                        .onDisappear {
-                            player.pause()
-                            Task { @MainActor in
-                                if await TorrentPlaybackSessionRegistry.shared.stop(for: source.url) {
-                                    onTorrentSessionStopped()
-                                }
-                            }
-                        }
-                        .background(.black)
-                        .ignoresSafeArea(edges: .bottom)
-                } else {
-                    EmbedWebView(url: source.url, cleanerEnabled: cleanerEnabled, onFailure: {})
-                        .background(.black)
-                        .ignoresSafeArea(edges: .bottom)
-                }
-            }
-            .navigationTitle(source.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Sources") { dismiss() }
+        SceneBoxStreamPlaybackView(
+            source: source,
+            item: item,
+            seasonNumber: seasonNumber,
+            episodeNumber: episodeNumber,
+            onClose: { dismiss() }
+        )
+        .onDisappear {
+            Task { @MainActor in
+                if await TorrentPlaybackSessionRegistry.shared.stop(for: source.url) {
+                    onTorrentSessionStopped()
                 }
             }
         }
-        .tint(Color.cineNexAccent)
     }
 }
