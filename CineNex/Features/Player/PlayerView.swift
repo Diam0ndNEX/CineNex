@@ -9,6 +9,8 @@ struct PlayerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var player = AVPlayer()
     @State private var vlcPlayer = SwiftVLC.Player()
+    @State private var vlcNowPlayingController: SceneBoxNowPlayingController?
+    @State private var nowPlayingController: NowPlayingController?
     @State private var isUsingVLC = true
     @State private var playbackError: String?
     @State private var timeObserver: Any?
@@ -183,6 +185,11 @@ struct PlayerView: View {
             vlcStateTask = nil
             player.pause()
             vlcPlayer.stop()
+            vlcNowPlayingController?.end()
+            vlcNowPlayingController = nil
+            nowPlayingController?.end()
+            nowPlayingController = nil
+            PlaybackAudioSession.deactivate()
             if let timeObserver {
                 player.removeTimeObserver(timeObserver)
                 self.timeObserver = nil
@@ -244,15 +251,20 @@ struct PlayerView: View {
         audioOptions = []
         subtitleOptions = []
 
-        do {
-            try vlcPlayer.play(url: url)
-            loadSubtitlesIfAvailable()
-            isUsingVLC = true
-            vlcPositionSeconds = seconds(vlcPlayer.currentTime)
-            vlcDurationSeconds = vlcPlayer.duration.map(seconds) ?? 0
-            startVLCProgressTracking()
-            monitorVLCPlayback(for: url)
-            Task { @MainActor in
+        Task { @MainActor in
+            do {
+                try await PlaybackAudioSession.activate()
+                try Task.checkCancellation()
+                try vlcPlayer.play(url: url)
+                loadSubtitlesIfAvailable()
+                isUsingVLC = true
+                let controller = SceneBoxNowPlayingController(player: vlcPlayer, title: item.title)
+                controller.begin(artworkURL: item.posterURL)
+                vlcNowPlayingController = controller
+                vlcPositionSeconds = seconds(vlcPlayer.currentTime)
+                vlcDurationSeconds = vlcPlayer.duration.map(seconds) ?? 0
+                startVLCProgressTracking()
+                monitorVLCPlayback(for: url)
                 for _ in 0..<40 {
                     guard isUsingVLC, !Task.isCancelled else { return }
                     if vlcPlayer.duration != nil {
@@ -260,15 +272,19 @@ struct PlayerView: View {
                         if position > 5 {
                             try? vlcPlayer.seek(to: .milliseconds(Int64(position * 1_000)))
                         }
-                        return
+                        break
                     }
                     try? await Task.sleep(for: .milliseconds(250))
                 }
+                Task { await TraktIntegration.shared.scrobbleStart(for: item) }
+            } catch is CancellationError {
+                return
+            } catch {
+                vlcNowPlayingController?.end()
+                vlcNowPlayingController = nil
+                isUsingVLC = false
+                startNativePlayback(url: url)
             }
-            Task { await TraktIntegration.shared.scrobbleStart(for: item) }
-        } catch {
-            isUsingVLC = false
-            startNativePlayback(url: url)
         }
     }
 
@@ -280,6 +296,8 @@ struct PlayerView: View {
                 guard state == .error else { continue }
                 saveCurrentProgress()
                 vlcStateTask = nil
+                vlcNowPlayingController?.end()
+                vlcNowPlayingController = nil
                 vlcPlayer.stop()
                 startNativePlayback(url: url)
                 return
@@ -296,6 +314,7 @@ struct PlayerView: View {
                 guard !Task.isCancelled, isUsingVLC else { return }
                 vlcPositionSeconds = seconds(vlcPlayer.currentTime)
                 vlcDurationSeconds = vlcPlayer.duration.map(seconds) ?? 0
+                vlcNowPlayingController?.refresh()
                 if Date().timeIntervalSince(lastProgressSave) >= 10 {
                     saveCurrentProgress()
                     lastProgressSave = Date()
@@ -349,6 +368,23 @@ struct PlayerView: View {
                     if position > 5 {
                         await player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
                     }
+                    do {
+                        try await PlaybackAudioSession.activate()
+                    } catch {
+                        playbackError = "Audio playback could not be initialized: \(error.localizedDescription)"
+                        return
+                    }
+                    guard player.currentItem === playerItem else {
+                        PlaybackAudioSession.deactivate()
+                        return
+                    }
+                    if nowPlayingController == nil {
+                        let controller = NowPlayingController()
+                        controller.begin(player: player, title: item.title, artworkURL: item.posterURL)
+                        nowPlayingController = controller
+                    } else {
+                        nowPlayingController?.refresh()
+                    }
                     player.play()
                     Task { await TraktIntegration.shared.scrobbleStart(for: item) }
                     return
@@ -372,6 +408,8 @@ struct PlayerView: View {
     private func switchToVLC() {
         guard let url = item.streamURL else { return }
         saveCurrentProgress()
+        nowPlayingController?.end()
+        nowPlayingController = nil
         vlcStateTask?.cancel()
         vlcStateTask = nil
         if let timeObserver {
@@ -380,16 +418,22 @@ struct PlayerView: View {
         }
         player.pause()
         player.replaceCurrentItem(with: nil)
-        do {
-            try vlcPlayer.play(url: url)
-            loadSubtitlesIfAvailable()
-            isUsingVLC = true
-            startVLCProgressTracking()
-            monitorVLCPlayback(for: url)
-            let position = progressStore.progress(for: item.id)?.position ?? 0
-            if position > 5 {
-                Task { @MainActor in
+        Task { @MainActor in
+            do {
+                try await PlaybackAudioSession.activate()
+                try Task.checkCancellation()
+                try vlcPlayer.play(url: url)
+                loadSubtitlesIfAvailable()
+                isUsingVLC = true
+                let controller = SceneBoxNowPlayingController(player: vlcPlayer, title: item.title)
+                controller.begin(artworkURL: item.posterURL)
+                vlcNowPlayingController = controller
+                startVLCProgressTracking()
+                monitorVLCPlayback(for: url)
+                let position = progressStore.progress(for: item.id)?.position ?? 0
+                if position > 5 {
                     for _ in 0..<40 {
+                        guard !Task.isCancelled else { return }
                         if vlcPlayer.duration != nil {
                             try? vlcPlayer.seek(to: .milliseconds(Int64(position * 1_000)))
                             return
@@ -397,16 +441,22 @@ struct PlayerView: View {
                         try? await Task.sleep(for: .milliseconds(250))
                     }
                 }
+            } catch is CancellationError {
+                return
+            } catch {
+                vlcNowPlayingController?.end()
+                vlcNowPlayingController = nil
+                isUsingVLC = false
+                startNativePlayback(url: url)
             }
-        } catch {
-            isUsingVLC = false
-            startNativePlayback(url: url)
         }
     }
 
     private func switchToNative() {
         guard let url = item.streamURL else { return }
         saveCurrentProgress()
+        vlcNowPlayingController?.end()
+        vlcNowPlayingController = nil
         vlcPlayer.stop()
         startNativePlayback(url: url)
     }
