@@ -7,7 +7,7 @@
 
 import Foundation
 
-nonisolated struct SubtitleLanguage: Identifiable, Sendable, Hashable {
+struct SubtitleLanguage: Identifiable, Sendable, Hashable {
     let code: String   // "eng", "spa", … ; "" means "off / none"
     let name: String
 
