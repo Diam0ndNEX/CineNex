@@ -198,6 +198,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
 
     func prepareFiles(for request: PlaybackSourceRequest) async throws -> [TorrentPreparedFile] {
         await waitForStopCompletion()
+        try Task.checkCancellation()
         guard request.isValid else { throw TorrentStreamingError.invalidRequest }
         if let preparedFile { return [preparedFile] }
 

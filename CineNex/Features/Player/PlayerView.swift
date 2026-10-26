@@ -73,7 +73,7 @@ private struct LoadedPlayerView: View {
                             .font(.headline.weight(.bold))
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 44)
-                            .background(.black.opacity(0.55), in: Circle())
+                            .cineNexGlass(in: Circle())
                     }
                     .accessibilityLabel("Close player")
 
@@ -99,7 +99,7 @@ private struct LoadedPlayerView: View {
                             .font(.headline.weight(.semibold))
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 44)
-                            .background(.black.opacity(0.55), in: Circle())
+                            .cineNexGlass(in: Circle())
                     }
                     .accessibilityLabel("Choose playback engine")
 
@@ -111,7 +111,7 @@ private struct LoadedPlayerView: View {
                                 .font(.headline.weight(.semibold))
                                 .foregroundStyle(.white)
                                 .frame(width: 44, height: 44)
-                                .background(.black.opacity(0.55), in: Circle())
+                                .cineNexGlass(in: Circle())
                         }
                         .accessibilityLabel("VLC playback settings")
                     }
@@ -128,7 +128,7 @@ private struct LoadedPlayerView: View {
                                 .font(.headline.weight(.semibold))
                                 .foregroundStyle(.white)
                                 .frame(width: 44, height: 44)
-                                .background(.black.opacity(0.55), in: Circle())
+                                .cineNexGlass(in: Circle())
                         }
                         .accessibilityLabel("Select audio track")
                     }
@@ -148,7 +148,7 @@ private struct LoadedPlayerView: View {
                                 .font(.headline.weight(.semibold))
                                 .foregroundStyle(.white)
                                 .frame(width: 44, height: 44)
-                                .background(.black.opacity(0.55), in: Circle())
+                                .cineNexGlass(in: Circle())
                         }
                         .accessibilityLabel("Select subtitles")
                     }
@@ -165,6 +165,19 @@ private struct LoadedPlayerView: View {
                     positionSeconds: $vlcPositionSeconds,
                     durationSeconds: $vlcDurationSeconds
                 )
+            }
+        }
+        .overlay {
+            if isUsingVLC, vlcPlayer.state == .opening || vlcPlayer.state == .buffering {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(vlcPlayer.state == .opening ? "Opening media" : "Buffering video").font(.headline)
+                    ProgressView(value: min(1, max(0, Double(vlcPlayer.bufferFill)))).tint(Color.cineNexAccent)
+                    Text("Player buffer · \(Int((min(1, max(0, vlcPlayer.bufferFill)) * 100).rounded()))%")
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+                .padding(20).frame(maxWidth: 330)
+                .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 20))
+                .padding(20)
             }
         }
         .statusBarHidden()
@@ -566,7 +579,7 @@ private struct VLCTransportControls: View {
                     Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 28, weight: .semibold))
                         .frame(width: 62, height: 62)
-                        .background(.ultraThinMaterial, in: Circle())
+                        .cineNexGlass(in: Circle())
                 }
                 .accessibilityLabel(player.isPlaying ? "Pause playback" : "Resume playback")
 
@@ -613,13 +626,7 @@ private struct VLCTransportControls: View {
         .padding(.horizontal, 18)
         .padding(.top, 24)
         .padding(.bottom, 18)
-        .background(
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.78)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
+        .shadow(color: .black.opacity(0.7), radius: 3, y: 1)
     }
 
     private func timecode(_ seconds: Double) -> String {

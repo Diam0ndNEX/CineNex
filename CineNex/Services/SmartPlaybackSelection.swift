@@ -36,10 +36,10 @@ enum SmartPlaybackSelection {
     /// Sequential preparation avoids starting several native sessions or downloading several films.
     @MainActor
     static func firstReady(candidates: [SmartPlaybackCandidate], maximumAttempts: Int,
-                           onAttempt: (SmartPlaybackCandidate, Int, Int) -> Void,
-                           onFailure: (SmartPlaybackCandidate, String) -> Void,
-                           discard: (PlaybackSource) async -> Void = { _ in },
-                           prepare: (SmartPlaybackCandidate) async throws -> PlaybackSource) async throws -> PlaybackSource {
+                           onAttempt: @MainActor (SmartPlaybackCandidate, Int, Int) -> Void,
+                           onFailure: @MainActor (SmartPlaybackCandidate, String) -> Void,
+                           discard: @MainActor (PlaybackSource) async -> Void = { _ in },
+                           prepare: @MainActor (SmartPlaybackCandidate) async throws -> PlaybackSource) async throws -> PlaybackSource {
         let attempts = Array(candidates.prefix(min(5, max(1, maximumAttempts))))
         guard !attempts.isEmpty else { throw SelectionError.noCandidates }
         for (index, candidate) in attempts.enumerated() {
@@ -72,20 +72,23 @@ enum SmartPlaybackSelection {
 
 struct DirectPlaybackReadinessProbe: Sendable {
     let session: URLSession
+    private static let liveSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 4
+        configuration.timeoutIntervalForResource = 6
+        configuration.urlCache = nil
+        configuration.httpMaximumConnectionsPerHost = 2
+        return URLSession(configuration: configuration)
+    }()
     init(session: URLSession? = nil) {
-        if let session { self.session = session }
-        else {
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.timeoutIntervalForRequest = 4
-            configuration.timeoutIntervalForResource = 6
-            self.session = URLSession(configuration: configuration)
-        }
+        self.session = session ?? Self.liveSession
     }
     func confirm(_ source: PlaybackSource) async throws -> PlaybackSource {
         guard source.isValid, source.hasSecureWebURL, source.supportsNativePlayback else {
             throw SmartPlaybackSelection.SelectionError.unreachableLink
         }
         var request = URLRequest(url: source.url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.httpMethod = "HEAD"
         request.timeoutInterval = 4
         let (_, response) = try await session.data(for: request, delegate: StremioHTTPSRedirectDelegate())

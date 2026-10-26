@@ -64,6 +64,23 @@ final class SmartPlaybackSelectionTests: XCTestCase {
         } catch { XCTAssertEqual(attempts, 5) }
     }
 
+    @MainActor
+    func testCancellationAfterReadinessDiscardsPreparedSession() async {
+        let ready = source("ready")
+        var discarded: [String] = []
+        let task = Task { @MainActor in
+            try await SmartPlaybackSelection.firstReady(candidates: [.direct(ready)], maximumAttempts: 1,
+                onAttempt: { _, _, _ in }, onFailure: { _, _ in XCTFail("Cancellation must not be treated as release failure") },
+                discard: { discarded.append($0.id) }, prepare: { _ in
+                    withUnsafeCurrentTask { $0?.cancel() }
+                    return ready
+                })
+        }
+        do { _ = try await task.value; XCTFail("Expected cancellation") }
+        catch is CancellationError { } catch { XCTFail("Unexpected error: \(error)") }
+        XCTAssertEqual(discarded, [ready.id])
+    }
+
     func testDirectReadinessRejectsHTMLAndUsesHeadWithoutDownloadingVideo() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ReadinessURLProtocol.self]

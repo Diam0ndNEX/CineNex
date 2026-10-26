@@ -1024,7 +1024,7 @@ struct ContentView: View {
 
         do {
             let results = try await AniListCatalogProvider().searchAnime(query: query)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, animeSearchGeneration == generation else { return }
             animeSearchResults = results
         } catch is CancellationError {
             return
@@ -1190,7 +1190,7 @@ struct ContentView: View {
                 pageNumber = page.page
                 totalPages = page.totalPages
             }
-            guard !Task.isCancelled,
+            guard !Task.isCancelled, remoteSearchGeneration == generation,
                   searchText.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(query) == .orderedSame else {
                 return
             }

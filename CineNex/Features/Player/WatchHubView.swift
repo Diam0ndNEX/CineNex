@@ -866,10 +866,11 @@ struct WatchHubView: View {
     @MainActor
     private func searchStremioAddonSources(forceRefresh: Bool = false) async {
         guard !Task.isCancelled else { return }
-        sourceSearchGeneration = UUID()
+        let entryGeneration = UUID()
+        sourceSearchGeneration = entryGeneration
         sourceSearchTask?.cancel()
         if forceRefresh { await SourceDiscoveryCache.shared.clearPlaybackResponses() }
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, sourceSearchGeneration == entryGeneration, activePlaybackSheet == nil else { return }
         let task = Task { await performSourceSearch() }
         sourceSearchTask = task
         await withTaskCancellationHandler {
@@ -979,7 +980,10 @@ struct WatchHubView: View {
             updates.continuation.finish()
         }
         guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
-        selectedTorrentProvider = "All providers"
+        if selectedTorrentProvider != "All providers",
+           !discoveredTorrentDescriptors.contains(where: { $0.providerName == selectedTorrentProvider }) {
+            selectedTorrentProvider = "All providers"
+        }
         PlaybackDiagnostics.record("discovery.received", details: ["torrent_count": String(discoveredTorrentDescriptors.count)])
         let statuses = batches.flatMap(\.providerStatuses)
         providerStatuses = statuses
@@ -1229,6 +1233,7 @@ private struct EmbedWebPlaybackView: View {
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Sources") { dismiss() }
