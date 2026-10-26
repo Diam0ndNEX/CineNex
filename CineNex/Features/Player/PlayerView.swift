@@ -246,21 +246,14 @@ struct PlayerView: View {
     private func monitorVLCPlayback(for url: URL) {
         vlcStateTask?.cancel()
         vlcStateTask = Task { @MainActor in
-            var hasEnteredActivePlayback = false
             for await state in vlcPlayer.stateTransitions {
                 guard !Task.isCancelled, isUsingVLC else { return }
-                switch state {
-                case .opening, .buffering, .playing:
-                    hasEnteredActivePlayback = true
-                case .error where hasEnteredActivePlayback:
-                    saveCurrentProgress()
-                    vlcStateTask = nil
-                    vlcPlayer.stop()
-                    startNativePlayback(url: url)
-                    return
-                default:
-                    break
-                }
+                guard state == .error else { continue }
+                saveCurrentProgress()
+                vlcStateTask = nil
+                vlcPlayer.stop()
+                startNativePlayback(url: url)
+                return
             }
         }
     }
