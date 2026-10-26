@@ -33,8 +33,7 @@ final class SubtitlesController {
 
         isLoading = true
         Task {
-            async let fetched = provider.subtitles(imdbID: context.imdbID, type: context.type,
-                                                   season: context.season, episode: context.episode)
+            async let fetched = provider.subtitles(context: context)
             await awaitEmbeddedPreference(on: player)
             available = await fetched
             isLoading = false
