@@ -409,9 +409,8 @@ private final class BoundedAddonURLProtocol: URLProtocol {
             Self.beganStream()
             let pending = pendingResponse
             pending.install(self)
-            Task.detached {
-                try? await Task.sleep(nanoseconds: 50_000_000)
-                Self.endedStream()
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + .milliseconds(50)) {
+                BoundedAddonURLProtocol.endedStream()
                 pending.deliver()
             }
         }
