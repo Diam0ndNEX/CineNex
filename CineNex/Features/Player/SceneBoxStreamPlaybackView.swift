@@ -13,6 +13,7 @@ struct SceneBoxStreamPlaybackView: View {
     @AppStorage("cinenex.preferredSubtitleLanguage") private var preferredSubtitleLanguage = SubtitleLanguage.deviceDefault.code
     @State private var player = SwiftVLC.Player()
     @State private var subtitles = SubtitlesController()
+    @State private var nowPlayingController: SceneBoxNowPlayingController?
     @State private var isSettingsPresented = false
     @State private var positionSeconds = 0.0
     @State private var durationSeconds = 0.0
@@ -131,6 +132,8 @@ struct SceneBoxStreamPlaybackView: View {
             monitorTask?.cancel()
             progressTask?.cancel()
             player.stop()
+            nowPlayingController?.end()
+            nowPlayingController = nil
             PlaybackAudioSession.deactivate()
             let position = positionSeconds
             let duration = durationSeconds
@@ -157,6 +160,9 @@ struct SceneBoxStreamPlaybackView: View {
                 try Task.checkCancellation()
                 try player.play(url: source.url)
                 loadSubtitlesIfAvailable()
+                let controller = SceneBoxNowPlayingController(player: player, title: item.title)
+                controller.begin(artworkURL: item.posterURL)
+                nowPlayingController = controller
                 monitorPlayback()
                 trackProgress()
                 Task { await TraktIntegration.shared.scrobbleStart(for: item) }
@@ -191,6 +197,7 @@ struct SceneBoxStreamPlaybackView: View {
                 guard !Task.isCancelled else { return }
                 positionSeconds = seconds(player.currentTime)
                 durationSeconds = player.duration.map(seconds) ?? 0
+                nowPlayingController?.refresh()
             }
         }
     }
