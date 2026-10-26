@@ -3,7 +3,7 @@ import XCTest
 @testable import CineNex
 
 final class XITRIXTorrentFileSupportTests: XCTestCase {
-    func testAcceptsNativeAVPlayerFileTypes() {
+    func testAcceptsVLCPlayableTorrentFileTypes() {
         for path in ["movie.mp4", "movie.m4v", "movie.mov", "movie.mkv", "movie.avi", "movie.webm", "movie.ts", "movie.m2ts", "movie.flv", "movie.wmv", "movie.ogv", "movie.mpeg", "movie.3gp", "track.mp3", "track.m4a", "track.aac", "track.wav", "track.flac", "track.ogg", "track.opus"] {
             XCTAssertTrue(XITRIXTorrentFileSupport.isPlayableFile(path), path)
             XCTAssertNotNil(XITRIXTorrentFileSupport.contentType(for: path), path)
