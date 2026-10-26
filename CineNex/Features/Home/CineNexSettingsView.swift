@@ -1,73 +1,103 @@
 import SwiftUI
 
-/// Adapts SceneBox's grouped playback and appearance preferences to CineNex stores.
 struct CineNexSettingsView: View {
     @State private var showingAppearance = false
+    @State private var showingClearConfirmation = false
+    @State private var maintenanceMessage: String?
     @AppStorage("cinenex.preferredSubtitleLanguage") private var subtitleLanguage = SubtitleLanguage.deviceDefault.code
+    @AppStorage("cinenex.skipSeconds") private var skipSeconds = 10
+    @AppStorage("cinenex.defaultPlaybackSpeed") private var playbackSpeed = 1.0
+    @AppStorage("cinenex.resumePlayback") private var resumePlayback = true
+    @AppStorage("cinenex.transferProfile") private var transferProfile = "balanced"
+    @AppStorage("cinenex.canvasStyle") private var canvasStyle = "midnight"
+    @AppStorage("cinenex.accentPreset") private var accent = "violet"
 
     var body: some View {
-        List {
-            Section {
-                HStack(spacing: 18) {
-                    Image(systemName: "play.rectangle.fill")
-                        .font(.system(size: 34, weight: .semibold))
-                        .foregroundStyle(Color.cineNexAccent)
-                        .frame(width: 70, height: 70)
-                        .background(Color.cineNexAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: 20))
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("CineNex").font(.title2.bold())
-                        Text("Your watching experience, on your terms.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("YOUR CINENEX").font(.caption.weight(.bold)).tracking(3).foregroundStyle(Color.cineNexAccent)
+                    Text("Set the scene.").font(.system(size: 36, weight: .bold, design: .rounded))
+                    Text("A personal cinema, tuned to you.").font(.subheadline).foregroundStyle(.secondary)
+                }.padding(.vertical, 20)
+                CineNexPreferenceCard(title: "Studio", symbol: "paintpalette.fill") {
+                    Button { showingAppearance = true } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("Design your space").font(.headline)
+                                Text("Canvas, accent, poster density and motion").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Circle().fill(Color.cineNexAccent).frame(width: 30, height: 30)
+                            Image(systemName: "arrow.up.right")
+                        }.foregroundStyle(.primary)
+                    }.buttonStyle(.plain)
+                }
+                CineNexPreferenceCard(title: "Playback", symbol: "play.rectangle.fill") {
+                    Toggle("Resume movies where I stopped", isOn: $resumePlayback)
+                    Divider()
+                    Picker("Skip interval", selection: $skipSeconds) {
+                        ForEach([10, 15, 30], id: \.self) { Text("\($0) seconds").tag($0) }
+                    }
+                    Picker("Starting speed", selection: $playbackSpeed) {
+                        ForEach([0.75, 1, 1.25, 1.5, 2], id: \.self) { Text(String(format: "%.2g×", $0)).tag($0) }
+                    }
+                    Picker("Subtitle language", selection: $subtitleLanguage) {
+                        ForEach(SubtitleLanguage.offered) { Text($0.name).tag($0.code) }
+                    }
+                    Text("Preferences apply to newly opened VLC players. Sleep timers are available from the clock in the player.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                CineNexPreferenceCard(title: "Streaming", symbol: "antenna.radiowaves.left.and.right") {
+                    NavigationLink { CineNexProviderSettingsView() } label: {
+                        settingsLink("Sources & providers", detail: "Torrentio · MediaFusion · custom add-ons", symbol: "network")
+                    }
+                    Divider()
+                    Picker("Transfer profile", selection: $transferProfile) {
+                        ForEach(TorrentTransferProfile.allCases) { Text($0.title).tag($0.rawValue) }
+                    }
+                    Text((TorrentTransferProfile(rawValue: transferProfile) ?? .balanced).detail)
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Applies to the next torrent session. Actual battery use depends on the release, codec and connection.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                CineNexPreferenceCard(title: "Connections", symbol: "person.crop.circle") {
+                    NavigationLink { TrackingView() } label: {
+                        settingsLink("Accounts & tracking", detail: "Trakt, watch history and imports", symbol: "arrow.triangle.2.circlepath")
                     }
                 }
-                .padding(.vertical, 12)
-            }
-            Section("Playback") {
-                NavigationLink {
-                    CineNexProviderSettingsView()
-                } label: {
-                    Label("Sources & providers", systemImage: "network")
-                }
-                Picker(selection: $subtitleLanguage) {
-                    ForEach(SubtitleLanguage.offered) { language in
-                        Text(language.name).tag(language.code)
+                CineNexPreferenceCard(title: "App care", symbol: "heart.text.square") {
+                    NavigationLink { PlaybackDiagnosticsView() } label: {
+                        settingsLink("Playback report", detail: "Provider responses, timing and native events", symbol: "waveform.path.ecg")
                     }
-                } label: {
-                    Label("Subtitle language", systemImage: "captions.bubble")
+                    Divider()
+                    Button("Clear cached catalog", systemImage: "arrow.clockwise") { showingClearConfirmation = true }
+                    if let maintenanceMessage { Text(maintenanceMessage).font(.caption).foregroundStyle(.secondary) }
+                    Text("CineNex \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") · Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "")")
+                        .font(.caption2.monospaced()).foregroundStyle(.tertiary)
                 }
-            }
-            Section("Personalization") {
-                Button {
-                    showingAppearance = true
-                } label: {
-                    Label("Appearance", systemImage: "paintpalette")
-                }
-                NavigationLink {
-                    TrackingView()
-                } label: {
-                    Label("Accounts & tracking", systemImage: "person.crop.circle")
-                }
-            }
-            Section("Troubleshooting") {
-                NavigationLink {
-                    PlaybackDiagnosticsView()
-                } label: {
-                    Label("Playback diagnostics", systemImage: "stethoscope")
-                }
-            }
-            Section {
-                Text("Subtitle preferences apply when opening a player. Configure Torrentio and MediaFusion in Sources & providers; source availability is shown when you open a title.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+            }.padding(20)
         }
         .scrollContentBackground(.hidden)
         .background(Color.cineNexBackground.ignoresSafeArea())
+        .navigationTitle("Control room").navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingAppearance) { AppearanceSettingsView() }
-        .navigationTitle("Settings")
-        .navigationBarTitleDisplayMode(.large)
+        .confirmationDialog("Clear the cached catalog?", isPresented: $showingClearConfirmation) {
+            Button("Clear cached catalog") { CatalogCacheStore.shared.clear(); maintenanceMessage = "Cache cleared. Pull down on Home to fetch fresh metadata." }
+        } message: { Text("Saved titles, playback progress and account settings are retained.") }
         .tint(Color.cineNexAccent)
+    }
+
+    private func settingsLink(_ title: String, detail: String, symbol: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol).frame(width: 28).foregroundStyle(Color.cineNexAccent)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title).font(.headline).foregroundStyle(.primary)
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+        }
     }
 }
 

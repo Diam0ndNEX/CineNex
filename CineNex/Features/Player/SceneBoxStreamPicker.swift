@@ -1,5 +1,13 @@
 import Foundation
 
+enum SourceReleaseSort: String, CaseIterable, Identifiable {
+    case balanced = "Balanced"
+    case seeders = "Most seeders"
+    case resolution = "Highest quality"
+    case size = "Smallest file"
+    var id: String { rawValue }
+}
+
 enum SceneBoxStreamPicker {
     static func ordered(
         _ streams: [StremioTorrentDescriptor],
@@ -8,8 +16,9 @@ enum SceneBoxStreamPicker {
     ) -> [StremioTorrentDescriptor] {
         let wanted = preferredResolution.lowercased()
         return streams.sorted { lhs, rhs in
-            rank(lhs, wanted: wanted, debridEnabled: debridEnabled)
-                > rank(rhs, wanted: wanted, debridEnabled: debridEnabled)
+            let left = rank(lhs, wanted: wanted, debridEnabled: debridEnabled)
+            let right = rank(rhs, wanted: wanted, debridEnabled: debridEnabled)
+            return left == right ? lhs.id < rhs.id : left > right
         }
     }
 
@@ -38,6 +47,59 @@ enum SceneBoxStreamPicker {
             index += 1
         }
         return result
+    }
+
+    static func filtered(
+        _ streams: [StremioTorrentDescriptor],
+        provider: String? = nil,
+        quality: String? = nil,
+        sort: SourceReleaseSort = .balanced
+    ) -> [StremioTorrentDescriptor] {
+        let matches = streams.filter { stream in
+            (provider == nil || stream.providerName == provider)
+                && (quality == nil || (resolution(for: stream) ?? "Unknown") == quality)
+        }
+        guard sort != .balanced else { return balanced(matches, limit: Int.max) }
+        return matches.sorted { left, right in
+            switch sort {
+            case .balanced: return false
+            case .seeders:
+                let a = seeders(for: left) ?? -1, b = seeders(for: right) ?? -1
+                if a != b { return a > b }
+            case .resolution:
+                let a = resolutionValue(left), b = resolutionValue(right)
+                if a != b { return a > b }
+            case .size:
+                let a = sizeBytes(for: left) ?? .infinity, b = sizeBytes(for: right) ?? .infinity
+                if a != b { return a < b }
+            }
+            return left.id < right.id
+        }
+    }
+
+    static func sizeBytes(for stream: StremioTorrentDescriptor) -> Double? {
+        guard let label = size(for: stream) else { return nil }
+        let parts = label.uppercased().split(whereSeparator: \.isWhitespace)
+        guard parts.count == 2, let value = Double(parts[0]), value.isFinite, value >= 0 else { return nil }
+        let multiplier: Double
+        switch parts[1] {
+        case "TB": multiplier = 1_000_000_000_000
+        case "TIB": multiplier = 1_099_511_627_776
+        case "GB": multiplier = 1_000_000_000
+        case "GIB": multiplier = 1_073_741_824
+        case "MB": multiplier = 1_000_000
+        case "MIB": multiplier = 1_048_576
+        case "KB": multiplier = 1_000
+        case "KIB": multiplier = 1_024
+        case "B": multiplier = 1
+        default: return nil
+        }
+        let bytes = value * multiplier
+        return bytes.isFinite ? bytes : nil
+    }
+
+    private static func resolutionValue(_ stream: StremioTorrentDescriptor) -> Int {
+        Int((resolution(for: stream) ?? "").replacingOccurrences(of: "p", with: "")) ?? 0
     }
 
     static func resolution(for stream: StremioTorrentDescriptor) -> String? {

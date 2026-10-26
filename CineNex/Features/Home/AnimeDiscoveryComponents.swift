@@ -5,72 +5,27 @@ struct AnimeFeaturedBanner: View {
     let onDetails: () -> Void
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            CachedPosterImage(
-                url: anime.coverURL,
-                fallbackSymbol: "sparkles",
-                symbolSize: 94
-            )
-            LinearGradient(
-                stops: [
-                    .init(color: .black.opacity(0.04), location: 0),
-                    .init(color: Color.cineNexBackground.opacity(0.48), location: 0.36),
-                    .init(color: Color.cineNexBackground.opacity(0.99), location: 1)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            LinearGradient(
-                colors: [Color.cineNexAccent.opacity(0.24), .clear],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
-            VStack(alignment: .leading, spacing: 11) {
-                Label("TRENDING ANIME", systemImage: "sparkles")
-                    .font(.caption.weight(.bold))
-                    .tracking(1.2)
+        HStack(alignment: .top, spacing: 20) {
+            CachedPosterImage(url: anime.coverURL, fallbackSymbol: "sparkles", symbolSize: 44)
+                .frame(width: 116, height: 174)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+            VStack(alignment: .leading, spacing: 12) {
+                Text("ANIME SPOTLIGHT").font(.caption2.weight(.bold)).tracking(2)
                     .foregroundStyle(Color.cineNexAccent)
-                Text(anime.title)
-                    .font(.system(size: 31, weight: .heavy, design: .rounded))
-                    .tracking(-0.5)
-                    .lineLimit(2)
-                    .shadow(color: .black.opacity(0.4), radius: 10, y: 2)
-                HStack(spacing: 7) {
-                    if let year = anime.seasonYear {
-                        Text(String(year))
-                        Text("·")
-                    }
-                    Text(anime.format?.replacingOccurrences(of: "_", with: " ") ?? "ANIME")
-                    if let episodes = anime.episodeCount {
-                        Text("·")
-                        Text("\(episodes) ep")
-                    }
-                }
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.white.opacity(0.84))
-                if let rating = anime.averageRating {
-                    Label(String(format: "%.1f / 10", rating), systemImage: "star.fill")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(Color(red: 1.0, green: 0.78, blue: 0.28))
-                }
+                Text(anime.title).font(.title2.bold()).lineLimit(3)
+                Text([anime.seasonYear.map(String.init), anime.format?.replacingOccurrences(of: "_", with: " ")]
+                    .compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary)
                 Button(action: onDetails) {
-                    Label("Anime details", systemImage: "info.circle")
-                        .font(.subheadline.bold())
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 12)
-                        .background(Color.cineNexAccent, in: Capsule())
-                        .foregroundStyle(.white)
-                }
-            }
-            .padding(22)
+                    Label("Explore series", systemImage: "arrow.up.right")
+                        .font(.subheadline.bold()).padding(.vertical, 11).padding(.horizontal, 14)
+                        .foregroundStyle(.white).background(Color.cineNexAccent, in: Capsule())
+                }.buttonStyle(.plain)
+            }.frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(height: 300)
-        .clipShape(RoundedRectangle(cornerRadius: 24))
-        .overlay {
-            RoundedRectangle(cornerRadius: 24)
-                .strokeBorder(.white.opacity(0.07), lineWidth: 1)
-        }
+        .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 26))
+        .overlay { RoundedRectangle(cornerRadius: 26).strokeBorder(.white.opacity(0.07)) }
         .padding(.horizontal, 20)
     }
 }
@@ -79,6 +34,7 @@ struct AnimePosterCard: View {
     let anime: AnimeTitle
     let watchedEpisodes: Int
     let action: () -> Void
+    @AppStorage("cinenex.showRatings") private var showRatings = true
 
     var body: some View {
         Button(action: action) {
@@ -98,7 +54,7 @@ struct AnimePosterCard: View {
                         symbolSize: 38
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 15))
-                    if let rating = anime.averageRating {
+                    if showRatings, let rating = anime.averageRating {
                         Label(String(format: "%.1f", rating), systemImage: "star.fill")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(.white)
@@ -158,7 +114,7 @@ struct AnimePosterShelf: View {
     let onSelect: (AnimeTitle) -> Void
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        ScrollView(.horizontal) {
             LazyHStack(alignment: .top, spacing: 14) {
                 ForEach(items) { anime in
                     AnimePosterCard(
@@ -173,12 +129,15 @@ struct AnimePosterShelf: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 4)
         }
+        .scrollIndicators(.hidden)
         .accessibilityLabel("Trending anime")
     }
 }
 
 struct AnimeDetailView: View {
     @State private var selectedWatchProvider: AnimeWebsiteProvider?
+    @State private var synopsisExpanded = false
+    @State private var confirmingReset = false
     let anime: AnimeTitle
     @ObservedObject var progressStore: AnimeProgressStore
     @Environment(\.dismiss) private var dismiss
@@ -243,10 +202,16 @@ struct AnimeDetailView: View {
                     }
 
                     if !anime.synopsis.isEmpty {
-                        Text(anime.synopsis)
-                            .font(.body)
-                            .foregroundStyle(.white.opacity(0.84))
-                            .fixedSize(horizontal: false, vertical: true)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("The story").font(.title3.bold())
+                            Text(anime.synopsis).font(.body).foregroundStyle(.secondary)
+                                .lineLimit(synopsisExpanded ? nil : 5)
+                            if anime.synopsis.count > 220 {
+                                Button(synopsisExpanded ? "Read less" : "Read full story") { synopsisExpanded.toggle() }
+                                    .font(.caption.bold())
+                            }
+                        }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 24))
                     }
 
                     AnimeWatchProviderSection(anime: anime) { provider in
@@ -254,8 +219,8 @@ struct AnimeDetailView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Episode progress")
-                            .font(.title3.bold())
+                        Label("YOUR EPISODES", systemImage: "checkmark.circle")
+                            .font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(Color.cineNexAccent)
                         Text(progressSummary)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -272,9 +237,14 @@ struct AnimeDetailView: View {
                             ProgressView(value: min(Double(watchedEpisodes) / Double(total), 1))
                                 .tint(Color.cineNexAccent)
                         }
-                        Button("Reset episode progress", role: .destructive) {
-                            progressStore.resetProgress(for: anime.id)
-                        }
+                        Button {
+                            progressStore.setWatchedEpisodeCount(min(watchedEpisodes + 1, episodeRange.upperBound), for: anime)
+                        } label: {
+                            Label("Mark next episode watched", systemImage: "checkmark")
+                                .frame(maxWidth: .infinity).padding(.vertical, 7)
+                        }.buttonStyle(.borderedProminent)
+                            .disabled(watchedEpisodes >= episodeRange.upperBound)
+                        Button("Reset episode progress", role: .destructive) { confirmingReset = true }
                         .disabled(watchedEpisodes == 0)
                     }
                     .padding(16)
@@ -288,13 +258,16 @@ struct AnimeDetailView: View {
                 .padding(20)
             }
             .background(Color.cineNexBackground.ignoresSafeArea())
-            .navigationTitle("Anime")
+            .navigationTitle("Anime studio")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
             }
+            .confirmationDialog("Reset watched episodes?", isPresented: $confirmingReset) {
+                Button("Reset episode progress", role: .destructive) { progressStore.resetProgress(for: anime.id) }
+            } message: { Text("This removes the local episode count for this anime.") }
             .sheet(item: $selectedWatchProvider) { provider in
                 AnimeWebsitePlaybackSheet(anime: anime, provider: provider)
             }

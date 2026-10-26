@@ -2,6 +2,44 @@ import XCTest
 @testable import CineNex
 
 final class SceneBoxStreamPickerTests: XCTestCase {
+    func testProviderAndQualityFiltersKeepOnlyExactMatches() throws {
+        let wanted = try descriptor(1, provider: "MediaFusion Midnight", title: "1080p 👤 8 💾 2 GB")
+        let otherProvider = try descriptor(2, provider: "Torrentio", title: "1080p 👤 40 💾 3 GB")
+        let otherQuality = try descriptor(3, provider: "MediaFusion Midnight", title: "2160p 👤 5 💾 8 GB")
+        let results = SceneBoxStreamPicker.filtered([wanted, otherProvider, otherQuality], provider: "MediaFusion Midnight", quality: "1080p")
+        XCTAssertEqual(results.map(\.id), [wanted.id])
+    }
+
+    func testSeederSortPutsUnknownMetadataLast() throws {
+        let unknown = try descriptor(1, title: "1080p")
+        let zero = try descriptor(2, title: "1080p 👤 0")
+        let active = try descriptor(3, title: "1080p 👤 12")
+        let results = SceneBoxStreamPicker.filtered([unknown, zero, active], sort: .seeders)
+        XCTAssertEqual(results.map(\.id), [active.id, zero.id, unknown.id])
+    }
+
+    func testSizeSortComparesUnitsAndPlacesUnknownLast() throws {
+        let unknown = try descriptor(1, title: "1080p")
+        let smaller = try descriptor(2, title: "720p 💾 800 MB")
+        let larger = try descriptor(3, title: "1080p 💾 1.2 GB")
+        let results = SceneBoxStreamPicker.filtered([unknown, larger, smaller], sort: .size)
+        XCTAssertEqual(results.map(\.id), [smaller.id, larger.id, unknown.id])
+        XCTAssertEqual(SceneBoxStreamPicker.sizeBytes(for: smaller), 800_000_000)
+    }
+
+    func testResolutionSortAndUnknownFilterDoNotInventQuality() throws {
+        let unknown = try descriptor(1, title: "Unlabeled release")
+        let fullHD = try descriptor(2, title: "1080p")
+        let ultraHD = try descriptor(3, title: "4K")
+        let streams = [unknown, fullHD, ultraHD]
+        XCTAssertEqual(SceneBoxStreamPicker.filtered(streams, sort: .resolution).map(\.id), [ultraHD.id, fullHD.id, unknown.id])
+        XCTAssertEqual(SceneBoxStreamPicker.filtered(streams, quality: "Unknown").map(\.id), [unknown.id])
+    }
+
+    private func descriptor(_ number: Int, provider: String = "Torrentio", title: String) throws -> StremioTorrentDescriptor {
+        try XCTUnwrap(StremioTorrentDescriptor(infoHash: String(format: "%040x", number), fileIndex: 0, title: title, providerName: provider))
+    }
+
     func testMediaFusionIsNotHiddenByTorrentioLimit() throws {
         let streams = try (0..<30).map { index in
             try XCTUnwrap(StremioTorrentDescriptor(

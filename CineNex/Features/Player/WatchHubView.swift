@@ -45,6 +45,12 @@ struct WatchHubView: View {
     @State private var torrentPreparationMessage: String?
     @State private var torrentPreparationStartedAt = Date()
     @State private var selectedTorrentProvider = "All providers"
+    @State private var selectedQuality = "Any quality"
+    @State private var releaseSort = SourceReleaseSort.balanced
+    @State private var providerStatuses: [StremioAddonProviderStatus] = []
+    @State private var showsProviderStatus = false
+    @State private var showsAdvancedSettings = false
+    @State private var showsEpisodeSelection = false
     @State private var torrentPreparationTask: Task<Void, Never>?
     @State private var torrentPreparationGeneration = UUID()
     @State private var searchingAddonSources = false
@@ -56,10 +62,7 @@ struct WatchHubView: View {
     @State private var episodeNumber = 1
     @State private var seasons: [TMDBTitleSeason] = []
     @State private var episodes: [TMDBSeasonEpisode] = []
-    @State private var recommendations: [MediaItem] = []
-    @State private var recommendationsLoading = false
     @State private var episodesLoading = false
-    @State private var catalogErrorMessage: String?
     @State private var episodeErrorMessage: String?
 
     private var request: PlaybackSourceRequest {
@@ -80,9 +83,12 @@ struct WatchHubView: View {
 
     private var visibleTorrentSources: [StremioTorrentDescriptor] {
         guard selectedSourceFilter == "All" || selectedSourceFilter == "Torrent" else { return [] }
-        return SceneBoxStreamPicker.balanced(discoveredTorrentDescriptors.filter {
-            selectedTorrentProvider == "All providers" || $0.providerName == selectedTorrentProvider
-        }, limit: Int.max)
+        return SceneBoxStreamPicker.filtered(
+            discoveredTorrentDescriptors,
+            provider: selectedTorrentProvider == "All providers" ? nil : selectedTorrentProvider,
+            quality: selectedQuality == "Any quality" ? nil : selectedQuality,
+            sort: releaseSort
+        )
     }
 
     private var visibleEmbeddedSources: [ResolvedEmbedSource] {
@@ -103,22 +109,37 @@ struct WatchHubView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                LazyVStack(alignment: .leading, spacing: 22) {
                     hero
+                    if item.kind == .series {
+                        DisclosureGroup(isExpanded: $showsEpisodeSelection) {
+                            episodeSelection
+                        } label: {
+                            Label("Season \(seasonNumber) · Episode \(episodeNumber)", systemImage: "rectangle.stack")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .disabled(preparingTorrentDescriptorID != nil)
+                    }
                     quickActions
-                    episodeSelection.disabled(preparingTorrentDescriptorID != nil)
                     providerSection.disabled(preparingTorrentDescriptorID != nil)
-                    recommendationsSection.disabled(preparingTorrentDescriptorID != nil)
                 }
                 .padding(20)
                 .padding(.bottom, 28)
             }
             .background(Color.cineNexBackground.ignoresSafeArea())
-            .navigationTitle("Sources")
+            .navigationTitle("Choose a release")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") { dismiss() }
+                    Button("Close", systemImage: "xmark") { dismiss() }
+                        .labelStyle(.iconOnly)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Refresh sources", systemImage: "arrow.clockwise") {
+                        Task { await searchStremioAddonSources() }
+                    }
+                    .labelStyle(.iconOnly)
+                    .disabled(searchingAddonSources || preparingTorrentDescriptorID != nil)
                 }
             }
             .fullScreenCover(item: $activePlaybackSheet) { playbackSheet in
@@ -228,456 +249,349 @@ struct WatchHubView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var hasNativeSelection: Bool {
+        !visibleTorrentSources.isEmpty || !visibleDirectSources.isEmpty || (showsDirectPlayback && item.streamURL != nil)
+    }
+
     private var quickActions: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Button {
-                if availableProviders.isEmpty && discoveredSources.isEmpty && discoveredTorrentDescriptors.isEmpty && item.streamURL == nil {
-                    Task { await searchStremioAddonSources() }
-                } else if (defaultProviderID == "smart" || defaultProviderID == "direct"), item.streamURL != nil {
-                    onPlayDirect(item)
-                } else if defaultProviderID == "stremio-addons", let source = discoveredSources.first {
-                    PlaybackDiagnostics.record("Opening direct stream")
-                    activePlaybackSheet = .discovered(source)
-                } else if defaultProviderID == "libtorrent", let descriptor = discoveredTorrentDescriptors.first {
-                    startTorrentPlayback(for: descriptor)
-                } else if (defaultProviderID == "smart" || defaultProviderID == "direct"),
-                          let source = discoveredSources.first {
-                    activePlaybackSheet = .discovered(source)
-                } else if (defaultProviderID == "smart" || defaultProviderID == "libtorrent"),
-                          let descriptor = discoveredTorrentDescriptors.first {
-                    startTorrentPlayback(for: descriptor)
-                } else if let preferred = availableProviders.first(where: { $0.provider.id == defaultProviderID }) {
-                    activePlaybackSheet = .embedded(preferred)
-                } else if let first = discoveredSources.first {
-                    activePlaybackSheet = .discovered(first)
-                } else if let descriptor = discoveredTorrentDescriptors.first {
-                    startTorrentPlayback(for: descriptor)
-                } else if let first = availableProviders.first {
-                    activePlaybackSheet = .embedded(first)
-                } else if item.streamURL != nil {
-                    onPlayDirect(item)
-                } else {
-                    Task { await searchStremioAddonSources() }
+            Button(action: playTopRelease) {
+                HStack(spacing: 12) {
+                    Image(systemName: hasNativeSelection ? "play.fill" : "magnifyingglass")
+                    Text(hasNativeSelection ? "Play top release" : (searchingAddonSources ? "Finding releases…" : "Search again"))
+                        .font(.headline)
+                    Spacer()
+                    if searchingAddonSources { ProgressView().tint(.white) }
                 }
-            } label: {
-                let hasSource = item.streamURL != nil || !availableProviders.isEmpty || !discoveredSources.isEmpty || !discoveredTorrentDescriptors.isEmpty
-                Label(
-                    searchingAddonSources ? "Searching sources…" : (item.streamURL != nil ? "Play now" : (hasSource ? "Quick Play" : "Find sources")),
-                    systemImage: searchingAddonSources ? "hourglass" : (hasSource ? "play.fill" : "dot.radiowaves.left.and.right")
-                )
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 15)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
+                .foregroundStyle(.white)
+                .background(Color.cineNexAccent, in: RoundedRectangle(cornerRadius: 18))
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(searchingAddonSources || preparingTorrentDescriptorID != nil)
-            .accessibilityHint("Starts playback when a source is available, or searches the built-in add-ons if none have been found")
-
-            Picker("Default source", selection: $defaultProviderID) {
-                Text("Smart Default").tag("smart")
-                if item.streamURL != nil {
-                    Text("Direct playback").tag("direct")
-                }
-                ForEach(availableProviders) { source in
-                    Text(source.provider.displayName).tag(source.provider.id)
-                }
-                if !discoveredSources.isEmpty {
-                    Text("Stremio add-ons").tag("stremio-addons")
-                }
-                if !discoveredTorrentDescriptors.isEmpty {
-                    Text("Torrent streaming").tag("libtorrent")
-                }
-            }
-            .pickerStyle(.menu)
-            .accessibilityLabel("Default playback source")
+            .buttonStyle(.plain)
+            .disabled(preparingTorrentDescriptorID != nil || (searchingAddonSources && !hasNativeSelection))
+            Text(hasNativeSelection ? "Uses the first release in your current filters." : "Sources are checked independently. You can play as soon as a result arrives.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
     private var providerSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Available sources")
-                        .font(.title3.bold())
-                    Text("Choose a release below. Torrentio and MediaFusion are searched independently.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text("\(discoveredSources.count + (item.streamURL == nil ? 0 : 1)) direct · \(discoveredTorrentDescriptors.count) torrent · \(availableProviders.count) embedded")
-                    .font(.caption2.weight(.semibold))
-                    .multilineTextAlignment(.trailing)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.cineNexSurface, in: Capsule())
+        LazyVStack(alignment: .leading, spacing: 18) {
+            discoveryStatus
+            sourceTypePicker
+            if selectedSourceFilter == "All" || selectedSourceFilter == "Torrent" {
+                releaseControls
             }
-
-            LazyVStack(alignment: .leading, spacing: 10) {
-                Button {
-                    Task { await searchStremioAddonSources() }
-                } label: {
-                    HStack(spacing: 10) {
-                        if searchingAddonSources {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "dot.radiowaves.left.and.right")
-                        }
-                        Text(searchingAddonSources ? "Searching all sources…" : "Find more sources")
-                            .font(.subheadline.weight(.semibold))
-                        Spacer()
-                        Image(systemName: "arrow.clockwise")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
+            HStack(alignment: .firstTextBaseline) {
+                Text(selectedSourceFilter == "Web" ? "Web players" : "Available releases")
+                    .font(.title3.weight(.bold))
+                Spacer()
+                Text(selectedSourceFilter == "Web"
+                     ? "\(visibleEmbeddedSources.count) alternatives"
+                     : "\(visibleTorrentSources.count + visibleDirectSources.count + (showsDirectPlayback && item.streamURL != nil ? 1 : 0)) streams")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            if !visibleTorrentSources.isEmpty {
+                ForEach(visibleTorrentSources) { descriptor in
+                    SourceReleaseCard(
+                        descriptor: descriptor,
+                        isPreparing: preparingTorrentDescriptorID == descriptor.id,
+                        isDisabled: preparingTorrentDescriptorID != nil,
+                        onPlay: { startTorrentPlayback(for: descriptor) }
+                    )
                 }
-                .buttonStyle(.plain)
-                .disabled(searchingAddonSources || preparingTorrentDescriptorID != nil)
-                .accessibilityHint("Queries configured Stremio-compatible add-ons for this title or episode")
-
-                if searchingAddonSources {
-                    ProgressView(value: Double(discoveryCompletedProviders), total: 2)
-                        .progressViewStyle(.linear)
-                    Text(discoveryCompletedProviders == 0 ? "Resolving the title and requesting provider results…" : "First provider group ready. Waiting for remaining results…")
-                        .font(.caption).foregroundStyle(.secondary)
+            }
+            if showsDirectPlayback, item.streamURL != nil {
+                directSourceRow(title: item.title, subtitle: "Supplied media link", quality: nil) {
+                    onPlayDirect(item)
                 }
-                Picker("Source type", selection: $selectedSourceFilter) {
-                    ForEach(["All", "Direct", "Torrent", "Web"], id: \.self) { category in
-                        Text(category).tag(category)
-                    }
+            }
+            ForEach(visibleDirectSources) { source in
+                directSourceRow(title: source.title, subtitle: source.providerName, quality: source.qualityLabel) {
+                    activePlaybackSheet = .discovered(source)
                 }
-                .pickerStyle(.segmented)
-                .accessibilityLabel("Filter playback sources by type")
+            }
+            if selectedSourceFilter == "Web" || selectedSourceFilter == "All" {
+                webPlayers
+            }
+            if !searchingAddonSources,
+               visibleTorrentSources.isEmpty, visibleDirectSources.isEmpty,
+               !(showsDirectPlayback && item.streamURL != nil),
+               selectedSourceFilter != "Web" {
+                emptySourceState
+            } else if selectedSourceFilter == "Web", visibleEmbeddedSources.isEmpty, !searchingAddonSources {
+                ContentUnavailableView("No web alternatives", systemImage: "globe", description: Text("Choose All streams to return to native playback sources."))
+            }
+            providerStatusDetails
+            advancedSettings
+        }
+    }
 
-                Text("Tap a source to test it. Direct links, torrent streams, and experimental web players are shown separately.")
+    private var discoveryStatus: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Group {
+                if searchingAddonSources { ProgressView().tint(Color.cineNexAccent) }
+                else { Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(Color.cineNexAccent) }
+            }
+            .frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(searchingAddonSources ? "Discovering releases" : "Search complete")
+                    .font(.subheadline.weight(.semibold))
+                Text(searchingAddonSources
+                     ? (discoveryCompletedProviders == 0 ? "Contacting Torrentio and MediaFusion…" : "Results are ready to use. Checking remaining providers…")
+                     : "\(discoveredTorrentDescriptors.count) torrent releases · \(discoveredSources.count + (item.streamURL == nil ? 0 : 1)) direct links")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                DisclosureGroup {
-                    HStack(spacing: 14) {
-                        Link("Configure Torrentio", destination: URL(string: "https://torrentio.strem.fun/configure")!)
-                        Link("Configure MediaFusion", destination: URL(string: "https://mediafusion.elfhosted.com/")!)
-                        Spacer(minLength: 0)
-                        Button("Restore defaults") {
-                            stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
-                        }
-                        .font(.caption.weight(.medium))
-                    }
-                    .font(.caption.weight(.medium))
-                    Text("Advanced: one HTTPS manifest URL per line. Custom add-on URLs stay in the iOS Keychain on this device.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    TextEditor(text: $stremioAddonManifestURLs)
-                        .font(.caption.monospaced())
-                        .scrollContentBackground(.hidden)
-                        .frame(minHeight: 76, maxHeight: 120)
-                        .padding(8)
-                        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
-                        .accessibilityLabel("Stremio add-on manifest URLs")
-                        .privacySensitive()
-                        .onAppear {
-                            do {
-                                let storedManifestURLs = try StremioAddonConfigurationStore.load()
-                                let normalizedManifestURLs = storedManifestURLs?
-                                    .split(whereSeparator: \.isNewline)
-                                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                                    .joined(separator: "\n")
-                                if let normalizedManifestURLs,
-                                   !normalizedManifestURLs.isEmpty,
-                                   !Self.legacyDefaultStremioAddonManifestURLTexts.contains(normalizedManifestURLs) {
-                                    stremioAddonManifestURLs = normalizedManifestURLs
-                                } else {
-                                    stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
-                                }
-                                try StremioAddonConfigurationStore.save(stremioAddonManifestURLs)
-                                manifestStorageError = nil
-                            } catch {
-                                manifestStorageError = "Secure storage is unavailable. Your add-on URLs could not be saved to the iOS Keychain."
-                            }
-                        }
-                        .onChange(of: stremioAddonManifestURLs) { _, newValue in
-                            do {
-                                try StremioAddonConfigurationStore.save(newValue)
-                                manifestStorageError = nil
-                            } catch {
-                                manifestStorageError = "Secure storage is unavailable. Your add-on URL changes could not be saved to the iOS Keychain."
-                            }
-                        }
-    
-                } label: {
-                    Label("Advanced provider settings", systemImage: "slider.horizontal.3")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .tint(Color.cineNexAccent)
-                if let manifestStorageError {
-                    Label(manifestStorageError, systemImage: "lock.shield")
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if let addonSearchMessage {
-                    Text(addonSearchMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if !visibleDirectSources.isEmpty {
-                    Label("Direct stream links", systemImage: "play.rectangle")
-                        .font(.subheadline.weight(.semibold))
+                if searchingAddonSources {
+                    ProgressView(value: Double(discoveryCompletedProviders), total: 2)
+                        .tint(Color.cineNexAccent)
                         .padding(.top, 4)
                 }
-                ForEach(visibleDirectSources) { source in
-                    Button {
-                        activePlaybackSheet = .discovered(source)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: source.supportsNativePlayback ? "play.fill" : "play.rectangle.fill")
-                                .font(.title2)
-                                .foregroundStyle(Color.cineNexAccent)
-                                .frame(width: 44, height: 44)
-                                .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(source.title)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                Text([source.providerName, source.qualityLabel].compactMap { $0 }.joined(separator: " · "))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(12)
-                        .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Play source: \(source.title)")
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var sourceTypePicker: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+                sourceTypeButton("All", title: "All streams", symbol: "square.grid.2x2")
+                sourceTypeButton("Torrent", title: "Torrents", symbol: "arrow.down.circle")
+                sourceTypeButton("Direct", title: "Direct", symbol: "play.rectangle")
+                sourceTypeButton("Web", title: "Web players", symbol: "globe")
+            }
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private func sourceTypeButton(_ value: String, title: String, symbol: String) -> some View {
+        Button { selectedSourceFilter = value } label: {
+            Label(title, systemImage: symbol)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 13)
+                .padding(.vertical, 10)
+                .foregroundStyle(selectedSourceFilter == value ? .white : .secondary)
+                .background(selectedSourceFilter == value ? Color.cineNexAccent : Color.cineNexSurface, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selectedSourceFilter == value ? .isSelected : [])
+    }
+
+    private var releaseControls: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { filterMenus }
+            VStack(alignment: .leading, spacing: 8) { filterMenus }
+        }
+    }
+
+    @ViewBuilder
+    private var filterMenus: some View {
+        Menu {
+            Picker("Provider", selection: $selectedTorrentProvider) {
+                Text("All providers").tag("All providers")
+                ForEach(Array(Set(discoveredTorrentDescriptors.map(\.providerName))).sorted(), id: \.self) { provider in
+                    Text("\(provider) (\(discoveredTorrentDescriptors.filter { $0.providerName == provider }.count))").tag(provider)
                 }
-                
-                if !visibleTorrentSources.isEmpty {
-                    let providerNames = Array(Set(visibleTorrentSources.map(\.providerName))).sorted()
-                    Picker("Torrent provider", selection: $selectedTorrentProvider) {
-                        Text("All providers (\(discoveredTorrentDescriptors.count))").tag("All providers")
-                        ForEach(Array(Set(discoveredTorrentDescriptors.map(\.providerName))).sorted(), id: \.self) { provider in
-                            Text("\(provider) (\(discoveredTorrentDescriptors.filter { $0.providerName == provider }.count))").tag(provider)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    Label("Torrent sources · \(providerNames.joined(separator: " · "))", systemImage: "arrow.down.circle")
-                        .font(.subheadline.weight(.semibold))
-                        .padding(.top, 4)
+            }
+        } label: {
+            filterLabel(selectedTorrentProvider == "All providers" ? "Provider" : selectedTorrentProvider, symbol: "network")
+        }
+        Menu {
+            Picker("Quality", selection: $selectedQuality) {
+                Text("Any quality").tag("Any quality")
+                ForEach(["2160p", "1080p", "720p", "480p", "360p", "Unknown"], id: \.self) { quality in
+                    Text(quality == "2160p" ? "4K / 2160p" : quality).tag(quality)
                 }
-                ForEach(visibleTorrentSources) { descriptor in
-                    Button {
-                        startTorrentPlayback(for: descriptor)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "arrow.down.to.line.compact")
-                                .font(.title2)
-                                .foregroundStyle(Color.cineNexAccent)
-                                .frame(width: 44, height: 44)
-                                .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(descriptor.title)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(2)
-                                Text([
-                                    descriptor.providerName,
-                                    SceneBoxStreamPicker.resolution(for: descriptor),
-                                    SceneBoxStreamPicker.seeders(for: descriptor).map { "\($0) seeders" },
-                                    SceneBoxStreamPicker.size(for: descriptor),
-                                    descriptor.fileIndex.map { "File index \($0)" }
-                                ].compactMap { $0 }.joined(separator: " · "))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-                            Spacer()
-                            if preparingTorrentDescriptorID == descriptor.id {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Image(systemName: "play.fill")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(Color.cineNexAccent)
-                            }
-                        }
-                        .padding(12)
-                        .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(preparingTorrentDescriptorID != nil)
-                    .accessibilityLabel("Prepare torrent playback for \(descriptor.infoHash.prefix(12))")
+            }
+        } label: {
+            filterLabel(selectedQuality == "Any quality" ? "Quality" : selectedQuality, symbol: "viewfinder")
+        }
+        Menu {
+            Picker("Sort releases", selection: $releaseSort) {
+                ForEach(SourceReleaseSort.allCases) { order in Text(order.rawValue).tag(order) }
+            }
+        } label: {
+            filterLabel(releaseSort.rawValue, symbol: "arrow.up.arrow.down")
+        }
+    }
+
+    private func filterLabel(_ title: String, symbol: String) -> some View {
+        Label(title, systemImage: symbol)
+            .font(.caption.weight(.medium))
+            .lineLimit(1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func directSourceRow(title: String, subtitle: String, quality: String?, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                Image(systemName: "play.rectangle.fill")
+                    .font(.title2)
+                    .foregroundStyle(Color.cineNexAccent)
+                    .frame(width: 42)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title).font(.subheadline.weight(.semibold)).lineLimit(2)
+                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                    if let quality { SourceMetadataChip(title: quality, symbol: "viewfinder") }
                 }
-                if let torrentPreparationMessage {
-                    Text(torrentPreparationMessage)
+                Spacer(minLength: 4)
+                Image(systemName: "play.fill").font(.caption)
+            }
+            .foregroundStyle(.white)
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
+        }
+        .buttonStyle(.plain)
+        .disabled(preparingTorrentDescriptorID != nil)
+    }
+
+    @ViewBuilder
+    private var webPlayers: some View {
+        if !visibleEmbeddedSources.isEmpty {
+            DisclosureGroup {
+                VStack(spacing: 10) {
+                    Text("These open third-party websites. Their availability is not checked by the source search.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-            }
-
-            if showsDirectPlayback && item.streamURL != nil {
-                Button {
-                    onPlayDirect(item)
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "play.fill")
-                            .font(.title2)
-                            .foregroundStyle(Color.cineNexAccent)
-                            .frame(width: 44, height: 44)
-                            .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Direct playback")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                            Text("Play the supplied media URL with CineNex's VLC player")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    ForEach(visibleEmbeddedSources) { source in
+                        directSourceRow(title: source.provider.displayName, subtitle: "External web player", quality: nil) {
+                            activePlaybackSheet = .embedded(source)
                         }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.tertiary)
                     }
-                    .padding(12)
-                    .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Play directly: \(item.title)")
-                .accessibilityHint("Plays the supplied media URL in CineNex's VLC player")
-            }
-
-            if !hasVisibleSources && !searchingAddonSources {
-                ContentUnavailableView(
-                    "No compatible sources found",
-                    systemImage: "dot.radiowaves.left.and.right",
-                    description: Text(request.tmdbID == nil
-                        ? "No verified direct source is attached. Configure a compatible Stremio add-on or provide a direct media URL."
-                        : "No direct source was found. Check your Stremio add-ons or try another provider.")
-                )
-                .padding(.vertical, 8)
-            }
-
-            if !visibleEmbeddedSources.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Label("Embedded websites", systemImage: "globe")
-                        .font(.subheadline.weight(.semibold))
-                    Text("These are fallback web players, not verified direct streams. If one fails, return here and try another.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.top, 4)
-
-                ForEach(visibleEmbeddedSources) { source in
-                    Button {
-                        activePlaybackSheet = .embedded(source)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "play.rectangle.fill")
-                                .font(.title2)
-                                .foregroundStyle(Color.cineNexAccent)
-                                .frame(width: 44, height: 44)
-                                .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack(spacing: 7) {
-                                    Text(source.provider.displayName)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(.primary)
-                                    if source.provider.id == defaultProviderID || (defaultProviderID == "smart" && item.streamURL == nil && source.id == availableProviders.first?.id) {
-                                        Text("DEFAULT")
-                                            .font(.system(size: 9, weight: .bold))
-                                            .foregroundStyle(Color.cineNexAccent)
-                                    }
-                                }
-                                Text("Experimental candidate · not checked live")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(12)
-                        .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Try \(source.provider.displayName) playback source")
-                    .accessibilityHint("Opens an experimental source candidate that has not been checked for live availability")
-                }
+                .padding(.top, 10)
+            } label: {
+                Label("Web alternatives (\(visibleEmbeddedSources.count))", systemImage: "globe")
+                    .font(.subheadline.weight(.semibold))
             }
         }
     }
 
-    private var recommendationsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("You might also like")
-                    .font(.title3.bold())
-                Spacer()
-                if recommendationsLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                }
+    private var emptySourceState: some View {
+        ContentUnavailableView {
+            Label("No matching releases", systemImage: "line.3.horizontal.decrease.circle")
+        } description: {
+            Text(discoveredTorrentDescriptors.isEmpty && discoveredSources.isEmpty
+                 ? "The providers returned no playable releases for this title. You can retry or review provider status below."
+                 : "Try a different provider or quality, or reset your filters.")
+        } actions: {
+            Button("Reset filters") {
+                selectedSourceFilter = "All"
+                selectedTorrentProvider = "All providers"
+                selectedQuality = "Any quality"
             }
+            Button("Search again") { Task { await searchStremioAddonSources() } }
+        }
+        .padding(.vertical, 12)
+    }
 
-            if let catalogErrorMessage, recommendations.isEmpty {
-                Text(catalogErrorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if recommendations.isEmpty && !recommendationsLoading {
-                Text("Recommendations appear when TMDB metadata is available for this title.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 12) {
-                        ForEach(recommendations) { recommendation in
-                            Button {
-                                onSelectItem(recommendation)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 7) {
-                                    CachedPosterImage(
-                                        url: recommendation.posterURL,
-                                        fallbackSymbol: recommendation.symbol,
-                                        symbolSize: 28
-                                    )
-                                    .frame(width: 124, height: 178)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                                    Text(recommendation.title)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(2)
-                                        .frame(width: 124, alignment: .leading)
-
-                                    if let rating = recommendation.rating, rating > 0 {
-                                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                .frame(width: 124, alignment: .leading)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel("Watch \(recommendation.title)")
-                            .accessibilityHint("Opens the Watch Hub for this recommendation")
-                        }
+    private var providerStatusDetails: some View {
+        DisclosureGroup(isExpanded: $showsProviderStatus) {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(providerStatuses) { status in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(status.name).font(.caption.weight(.semibold))
+                        Text(status.outcome.summary).font(.caption2).foregroundStyle(.secondary)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if providerStatuses.isEmpty {
+                    Text(searchingAddonSources ? "Provider results will appear here." : "No provider result has been recorded.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let addonSearchMessage {
+                    Text(addonSearchMessage).font(.caption2).foregroundStyle(.secondary)
                 }
             }
+            .padding(.top, 10)
+        } label: {
+            Label("Provider status", systemImage: "waveform.path.ecg")
+                .font(.subheadline.weight(.semibold))
         }
         .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
+        .background(Color.cineNexSurface.opacity(0.6), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var advancedSettings: some View {
+        DisclosureGroup(isExpanded: $showsAdvancedSettings) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("One HTTPS manifest URL per line. Private configuration stays in Keychain on this device.")
+                    .font(.caption).foregroundStyle(.secondary)
+                TextEditor(text: $stremioAddonManifestURLs)
+                    .font(.system(.caption2, design: .monospaced))
+                    .scrollContentBackground(.hidden)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .frame(minHeight: 110)
+                    .padding(8)
+                    .background(Color.cineNexBackground, in: RoundedRectangle(cornerRadius: 10))
+                    .privacySensitive()
+                    .accessibilityLabel("Provider manifest URLs")
+                Button("Save and refresh sources", action: saveProviderConfiguration)
+                    .buttonStyle(.borderedProminent)
+                Button("Restore bundled providers") {
+                    stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
+                    saveProviderConfiguration()
+                }
+                HStack {
+                    Link("Torrentio setup", destination: URL(string: "https://torrentio.strem.fun/configure")!)
+                    Link("MediaFusion setup", destination: URL(string: "https://mediafusion.elfhosted.com/")!)
+                }
+                .font(.caption)
+                if let manifestStorageError {
+                    Label(manifestStorageError, systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+            }
+            .padding(.top, 12)
+        } label: {
+            Label("Provider settings", systemImage: "slider.horizontal.3")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.top, 8)
+    }
+
+    private func playTopRelease() {
+        guard preparingTorrentDescriptorID == nil else { return }
+        if let descriptor = visibleTorrentSources.first {
+            startTorrentPlayback(for: descriptor)
+        } else if let source = visibleDirectSources.first {
+            activePlaybackSheet = .discovered(source)
+        } else if showsDirectPlayback, item.streamURL != nil {
+            onPlayDirect(item)
+        } else if !searchingAddonSources {
+            Task { await searchStremioAddonSources() }
+        }
+    }
+
+    private func saveProviderConfiguration() {
+        let lines = stremioAddonManifestURLs.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard lines.allSatisfy({ line in
+            guard let url = URL(string: line) else { return false }
+            return StremioAddonClient.isSafeHTTPSURL(url) && url.path.hasSuffix("/manifest.json")
+        }) else {
+            manifestStorageError = "Every provider must be an HTTPS URL ending in /manifest.json."
+            return
+        }
+        var seen = Set<String>()
+        stremioAddonManifestURLs = lines.filter { seen.insert($0).inserted }.joined(separator: "\n")
+        do {
+            try StremioAddonConfigurationStore.save(stremioAddonManifestURLs)
+            manifestStorageError = nil
+            Task { await searchStremioAddonSources() }
+        } catch {
+            manifestStorageError = "The provider configuration could not be saved in Keychain."
+        }
     }
 
     private var episodeSelection: some View {
@@ -744,30 +658,24 @@ struct WatchHubView: View {
 
     @MainActor
     private func loadCatalogDetails() async {
+        guard item.kind == .series else { return }
         guard item.metadataProvider == "tmdb",
               let token = TMDBTokenStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines),
               !token.isEmpty else {
-            catalogErrorMessage = item.metadataProvider == "tmdb"
-                ? "Add your TMDB Read Access Token in Tracking to load recommendations and episode details."
-                : "Live recommendations and episode details require a TMDB catalog item."
+            episodeErrorMessage = item.metadataProvider == "tmdb"
+                ? "Connect TMDB in Settings to load episode details. You can also choose an episode manually."
+                : "Episode details are unavailable for this title. Choose the season and episode manually."
             return
         }
 
-        recommendationsLoading = true
-        catalogErrorMessage = nil
-        defer { recommendationsLoading = false }
+        episodeErrorMessage = nil
 
         do {
             let provider = TMDBCatalogProvider(readAccessToken: token)
             guard let details = try await provider.fetchDetails(for: item) else {
-                catalogErrorMessage = "TMDB details are unavailable for this title."
+                episodeErrorMessage = "TMDB details are unavailable for this title."
                 return
             }
-            recommendations = details.recommendedItems(for: item.kind)
-                .filter { $0.id != item.id }
-                .prefix(12)
-                .map { $0 }
-
             if item.kind == .series {
                 seasons = details.seasonSummaries
                 if !seasons.contains(where: { $0.seasonNumber == seasonNumber }), let firstSeason = seasons.first {
@@ -778,7 +686,7 @@ struct WatchHubView: View {
         } catch is CancellationError {
             return
         } catch {
-            catalogErrorMessage = error.localizedDescription
+            episodeErrorMessage = error.localizedDescription
         }
     }
 
@@ -787,7 +695,7 @@ struct WatchHubView: View {
         guard item.kind == .series else { return }
         guard let token = existingToken ?? TMDBTokenStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines),
               !token.isEmpty else {
-            episodeErrorMessage = "Add your TMDB Read Access Token in Tracking to load episodes."
+            episodeErrorMessage = "Connect TMDB in Settings to load episode details."
             episodes = []
             return
         }
@@ -863,6 +771,7 @@ struct WatchHubView: View {
         guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
         searchingAddonSources = true
         discoveryCompletedProviders = 0
+        providerStatuses = []
         addonSearchMessage = nil
         torrentPreparationMessage = nil
         discoveredSources = []
@@ -897,6 +806,7 @@ struct WatchHubView: View {
                 guard !Task.isCancelled, sourceSearchGeneration == generation else { group.cancelAll(); break }
                 batches.append(batch)
                 discoveryCompletedProviders = batches.count
+                providerStatuses = batches.flatMap(\.providerStatuses)
                 var seen = Set<String>()
                 discoveredSources = batches.flatMap(\.sources).filter { seen.insert($0.id).inserted }
                 discoveredTorrentDescriptors = SceneBoxStreamPicker.balanced(batches.flatMap(\.torrentDescriptors), limit: Int.max)
@@ -908,6 +818,7 @@ struct WatchHubView: View {
         selectedTorrentProvider = "All providers"
         PlaybackDiagnostics.record("discovery.received", details: ["torrent_count": String(discoveredTorrentDescriptors.count)])
         let statuses = batches.flatMap(\.providerStatuses)
+        providerStatuses = statuses
         if !discoveredSources.isEmpty, !discoveredTorrentDescriptors.isEmpty {
             addonSearchMessage = "Found \(discoveredSources.count) direct source(s) and \(discoveredTorrentDescriptors.count) torrent option(s). Torrent transfers start only when you select one."
         } else if !discoveredSources.isEmpty {

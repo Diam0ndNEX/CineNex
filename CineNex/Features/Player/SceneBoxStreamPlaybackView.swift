@@ -41,6 +41,9 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
     @State private var isSettingsPresented = false
     @State private var positionSeconds = 0.0
     @State private var durationSeconds = 0.0
+    @AppStorage("cinenex.resumePlayback") private var resumePlayback = true
+    @AppStorage("cinenex.defaultPlaybackSpeed") private var defaultPlaybackSpeed = 1.0
+    @State private var sleepDeadline: Date?
     @State private var failure: String?
     @State private var playbackTask: Task<Void, Never>?
     @State private var monitorTask: Task<Void, Never>?
@@ -84,10 +87,10 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
                     .accessibilityLabel("Close player")
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(source.title)
+                        Text(item.title)
                             .font(.headline.weight(.semibold))
                             .lineLimit(1)
-                        Text(source.providerName)
+                        Text(item.kind == .series ? "S\(seasonNumber) · E\(episodeNumber)  /  \(source.providerName)" : source.providerName)
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.72))
                             .lineLimit(1)
@@ -95,6 +98,15 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
 
                     Spacer(minLength: 8)
 
+                    Menu {
+                        ForEach([15, 30, 60], id: \.self) { minutes in
+                            Button("Pause in \(minutes) minutes") { sleepDeadline = Date().addingTimeInterval(Double(minutes * 60)) }
+                        }
+                        if sleepDeadline != nil { Button("Cancel sleep timer", role: .cancel) { sleepDeadline = nil } }
+                    } label: {
+                        Image(systemName: sleepDeadline == nil ? "moon.zzz" : "moon.zzz.fill")
+                            .frame(width: 44, height: 44).background(.ultraThinMaterial, in: Circle())
+                    }.accessibilityLabel("Sleep timer")
                     Button {
                         isSettingsPresented = true
                     } label: {
@@ -110,6 +122,11 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
                 .opacity(chrome.isVisible || failure != nil ? 1 : 0)
                 .allowsHitTesting(chrome.isVisible || failure != nil)
 
+                if let sleepDeadline {
+                    Text("Sleep timer · pauses at \(sleepDeadline.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption).foregroundStyle(.white.opacity(0.7)).padding(.top, 10)
+                        .opacity(chrome.isVisible ? 1 : 0)
+                }
                 Spacer()
 
                 if let failure {
@@ -184,6 +201,14 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
             subtitles.syncEmbedded(on: player)
         }
         .task(id: chrome.autoHideID) { await chrome.autoHide() }
+        .task(id: sleepDeadline) {
+            guard let deadline = sleepDeadline else { return }
+            do { try await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow))) } catch { return }
+            guard !Task.isCancelled else { return }
+            player.pause()
+            sleepDeadline = nil
+            chrome.reveal(autoHide: false)
+        }
         .onChange(of: isSettingsPresented) { _, open in
             if open {
                 chrome.holdVisible()
@@ -245,7 +270,7 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
         durationSeconds = 0
         isStalled = false
         didSeekToStart = false
-        resumePosition = item.kind == .movie
+        resumePosition = resumePlayback && item.kind == .movie
             ? PlaybackProgressStore.shared.progress(for: item.id)?.position ?? 0 : 0
         subtitles = SubtitlesController()
         chrome.reveal(autoHide: false)
@@ -263,6 +288,7 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
                 }
                 PlaybackDiagnostics.record("Starting VLC media")
                 try player.play(media)
+                try? player.setPlaybackRate(PlaybackRate(PlaybackPreferences.speed(defaultPlaybackSpeed)))
                 loadSubtitlesIfAvailable()
                 let controller = SceneBoxNowPlayingController(player: player, title: item.title)
                 controller.begin(artworkURL: item.posterURL)
@@ -380,6 +406,8 @@ private struct SceneBoxTransportControls: View {
     let onEditingChanged: (Bool) -> Void
     let onInteraction: () -> Void
     @State private var scrubPosition: Double?
+    @AppStorage("cinenex.skipSeconds") private var storedSkipSeconds = 10
+    private var skipSeconds: Int { PlaybackPreferences.skipSeconds(storedSkipSeconds) }
 
     private var sliderPosition: Double {
         min(max(scrubPosition ?? positionSeconds, 0), max(durationSeconds, 1))
@@ -389,15 +417,15 @@ private struct SceneBoxTransportControls: View {
         VStack(spacing: 14) {
             HStack(spacing: 42) {
                 Button {
-                    try? player.seek(by: .seconds(-10), fast: true)
+                    try? player.seek(by: .seconds(-Double(skipSeconds)), fast: true)
                     onInteraction()
                 } label: {
-                    Image(systemName: "gobackward.10")
+                    Image(systemName: "gobackward.\(skipSeconds)")
                         .font(.system(size: 27, weight: .medium))
                         .frame(width: 48, height: 48)
                 }
                 .disabled(!player.isSeekable)
-                .accessibilityLabel("Back 10 seconds")
+                .accessibilityLabel("Back \(skipSeconds) seconds")
 
                 Button {
                     player.togglePlayPause()
@@ -406,20 +434,20 @@ private struct SceneBoxTransportControls: View {
                     Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 28, weight: .semibold))
                         .frame(width: 62, height: 62)
-                        .background(.ultraThinMaterial, in: Circle())
+                        .background(Color.cineNexAccent, in: Circle())
                 }
                 .accessibilityLabel(player.isPlaying ? "Pause playback" : "Resume playback")
 
                 Button {
-                    try? player.seek(by: .seconds(10), fast: true)
+                    try? player.seek(by: .seconds(Double(skipSeconds)), fast: true)
                     onInteraction()
                 } label: {
-                    Image(systemName: "goforward.10")
+                    Image(systemName: "goforward.\(skipSeconds)")
                         .font(.system(size: 27, weight: .medium))
                         .frame(width: 48, height: 48)
                 }
                 .disabled(!player.isSeekable)
-                .accessibilityLabel("Forward 10 seconds")
+                .accessibilityLabel("Forward \(skipSeconds) seconds")
             }
             .buttonStyle(.plain)
 
@@ -442,11 +470,11 @@ private struct SceneBoxTransportControls: View {
                         scrubPosition = nil
                     }
                 )
-                .tint(.white)
+                .tint(Color.cineNexAccent)
                 .disabled(!player.isSeekable || durationSeconds <= 0)
                 .accessibilityLabel("Playback position")
 
-                Text(timecode(durationSeconds))
+                Text("−" + timecode(max(0, durationSeconds - (scrubPosition ?? positionSeconds))))
                     .font(.caption.monospacedDigit())
                     .frame(minWidth: 42, alignment: .trailing)
             }

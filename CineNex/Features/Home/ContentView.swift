@@ -3,6 +3,16 @@ import SwiftUI
 struct ContentView: View {
     @State private var selectedTab = AppTab.home
     @AppStorage("cinenex.accentPreset") private var accentPreset = "violet"
+    @AppStorage("cinenex.canvasStyle") private var canvasStyle = "midnight"
+    @AppStorage("cinenex.posterDensity") private var posterDensity = "comfortable"
+    @AppStorage("cinenex.showRatings") private var showRatings = true
+    @AppStorage("cinenex.reduceMotion") private var reduceMotion = false
+    @AppStorage("cinenex.recentSearches.v1") private var recentSearchesStorage = "[]"
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @State private var homeLane = HomeDiscoveryLane.all
+    @State private var libraryKind = SearchKind.all
+    @State private var librarySort = SearchSort.title
+    @State private var shuffleOffset = 0
     @State private var searchText = ""
     @AppStorage("cinenex.favoriteIDs") private var favoriteIDsStorage = ""
     @State private var favoriteSnapshots = FavoriteLibraryStore.shared.load()
@@ -191,6 +201,7 @@ struct ContentView: View {
 
     private var currentAccent: Color {
         _ = accentPreset
+        _ = canvasStyle
         return Color.cineNexAccent
     }
 
@@ -204,13 +215,38 @@ struct ContentView: View {
     }
 
     private var experiencePicker: some View {
-        Picker("Browse", selection: $selectedHomeExperience) {
-            Text("Movies & series").tag("moviesAndSeries")
-            Text("Anime").tag("anime")
+        HStack(spacing: 4) {
+            experienceButton("Cinema", subtitle: "Movies & series", symbol: "film.stack", value: "moviesAndSeries")
+            experienceButton("Anime", subtitle: "A different universe", symbol: "sparkles.tv", value: "anime")
         }
-        .pickerStyle(.segmented)
+        .padding(5)
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 20))
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
+    }
+
+    private func experienceButton(_ title: String, subtitle: String, symbol: String, value: String) -> some View {
+        let selected = selectedHomeExperience == value
+        return Button {
+            if reduceMotion || systemReduceMotion { selectedHomeExperience = value }
+            else { withAnimation(.easeInOut(duration: 0.2)) { selectedHomeExperience = value } }
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: symbol).font(.headline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.subheadline.bold())
+                    Text(subtitle).font(.system(size: 9, weight: .medium)).lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .foregroundStyle(selected ? Color.white : Color.secondary)
+            .background(selected ? Color.cineNexAccent : Color.clear, in: RoundedRectangle(cornerRadius: 16))
+            .contentShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(value == "anime" ? "Browse anime" : "Browse movies and series")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("browse.\(value)")
     }
 
     private var homeScreen: some View {
@@ -272,22 +308,20 @@ struct ContentView: View {
                 if !continueWatchingItems.isEmpty {
                     continueWatchingSection
                 }
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("Featured").font(.title.bold())
-                            Text("Movies and series to explore").font(.subheadline).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                    }.padding(.horizontal, 20)
+                homeEditorialHeader
+                homeLanePicker
+                if homeLaneItems.isEmpty {
+                    ContentUnavailableView("No titles in this lane", systemImage: "film.stack",
+                                           description: Text(homeLane == .saved ? "Add titles to your watchlist to see them here." : "Try another lane or refresh the catalog."))
+                } else {
                     ScrollView(.horizontal) {
-                        LazyHStack(alignment: .top, spacing: 14) {
-                            ForEach(Array(catalog.prefix(5))) { item in
+                        LazyHStack(alignment: .top, spacing: 16) {
+                            ForEach(featuredLaneItems) { item in
                                 CatalogFeatureCard(item: item, saved: favorites.contains(item.id),
                                                    onDetails: { selectedItem = item },
                                                    onPlay: { watchHubItem = item },
                                                    onSave: { toggleFavorite(item) })
-                                    .containerRelativeFrame(.horizontal) { width, _ in min(width - 40, 480) }
+                                    .containerRelativeFrame(.horizontal) { width, _ in min(width - 40, 500) }
                             }
                         }
                         .scrollTargetLayout()
@@ -295,6 +329,9 @@ struct ContentView: View {
                     }
                     .scrollTargetBehavior(.viewAligned)
                     .scrollIndicators(.hidden)
+                    if homeLane != .all {
+                        mediaSection(title: homeLane.rawValue, subtitle: "\(homeLaneItems.count) titles to explore", items: homeLaneItems)
+                    }
                 }
                 browseDestinations
                 if let catalogError {
@@ -303,6 +340,7 @@ struct ContentView: View {
                         .foregroundStyle(.orange)
                         .padding(.horizontal, 20)
                 }
+                if homeLane == .all {
                 let unwatched = favoriteItems.filter { playbackProgressStore.progress(for: $0.id) == nil }
                 if !unwatched.isEmpty {
                     mediaSection(title: "Your watchlist", subtitle: "Saved for a night like this", items: unwatched)
@@ -314,8 +352,82 @@ struct ContentView: View {
                 let series = catalog.filter { $0.kind == .series }
                 if !series.isEmpty { mediaSection(title: "One more episode", subtitle: "Series to spend time with", items: series) }
                 genreDestinations
+                }
             }
         }
+    }
+
+    private var homeLaneItems: [MediaItem] {
+        switch homeLane {
+        case .all: return catalog
+        case .movies: return catalog.filter { $0.kind == .movie }
+        case .series: return catalog.filter { $0.kind == .series }
+        case .rated: return catalog.filter { ($0.rating ?? 0) >= 7 }.sorted { ($0.rating ?? 0) > ($1.rating ?? 0) }
+        case .recent: return catalog.sorted { $0.year == $1.year ? $0.title < $1.title : $0.year > $1.year }
+        case .saved: return favoriteItems
+        }
+    }
+
+    private var featuredLaneItems: [MediaItem] {
+        let items = homeLaneItems
+        guard !items.isEmpty else { return [] }
+        let offset = shuffleOffset % items.count
+        return Array((Array(items[offset...]) + Array(items[..<offset])).prefix(5))
+    }
+
+    private var homeEditorialHeader: some View {
+        HStack(alignment: .bottom, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("THE CINENEX EDIT").font(.system(size: 10, weight: .heavy)).tracking(2.4)
+                    .foregroundStyle(Color.cineNexAccent)
+                Text(homeLane == .all ? "Make tonight\na good watch." : homeLane.rawValue)
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .tracking(-1.2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(catalog.count) titles in your discovery catalog")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button {
+                guard let item = homeLaneItems.randomElement() else { return }
+                selectedItem = item
+            } label: {
+                VStack(spacing: 6) {
+                    Image(systemName: "shuffle").font(.title2)
+                    Text("Surprise me").font(.system(size: 9, weight: .bold))
+                }
+                .frame(width: 82, height: 82)
+                .background(Color.cineNexAccent.opacity(0.13), in: RoundedRectangle(cornerRadius: 24))
+                .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(Color.cineNexAccent.opacity(0.3), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(homeLaneItems.isEmpty)
+        }.padding(.horizontal, 20)
+    }
+
+    private var homeLanePicker: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 9) {
+                ForEach(HomeDiscoveryLane.allCases) { lane in
+                    Button {
+                        homeLane = lane
+                        shuffleOffset = 0
+                    } label: {
+                        Text(lane.rawValue).font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 16).padding(.vertical, 11)
+                            .foregroundStyle(homeLane == lane ? Color.cineNexBackground : Color.primary)
+                            .background(homeLane == lane ? Color.primary : Color.cineNexSurface, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(homeLane == lane ? .isSelected : [])
+                    .accessibilityIdentifier("home.lane.\(lane.id)")
+                }
+                Button { shuffleOffset += 1 } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath").frame(width: 42, height: 42)
+                        .background(Color.cineNexSurface, in: Circle())
+                }.buttonStyle(.plain).accessibilityLabel("Rotate featured picks")
+            }.padding(.horizontal, 20)
+        }.scrollIndicators(.hidden)
     }
 
     private var browseDestinations: some View {
@@ -468,7 +580,8 @@ struct ContentView: View {
             }.padding(.bottom, 30)
         }
         .background(Color.cineNexBackground.ignoresSafeArea())
-        .searchable(text: searchBinding, prompt: "Titles, movies, series, anime")
+        .searchable(text: searchBinding, prompt: "Find a title, a world, a new favorite")
+        .onSubmit(of: .search) { rememberSearch(searchBinding.wrappedValue) }
         .task(id: "\(selectedHomeExperience)|\(searchBinding.wrappedValue)") {
             guard selectedTab == .search else { return }
             let query = searchBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -482,9 +595,11 @@ struct ContentView: View {
     private var searchPrompt: some View {
         VStack(alignment: .leading, spacing: 24) {
             if selectedHomeExperience == "anime" {
+                recentSearchSection
                 ContentUnavailableView("Find your next anime", systemImage: "sparkles.tv",
                                        description: Text("Search titles from AniList above."))
             } else {
+                recentSearchSection
                 genreDestinations
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Popular titles").font(.title2.bold())
@@ -496,23 +611,66 @@ struct ContentView: View {
         }
     }
 
+    private var recentSearches: [String] {
+        guard let data = recentSearchesStorage.data(using: .utf8),
+              let values = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        var seen = Set<String>()
+        return Array(values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }.prefix(8))
+    }
+
+    private func rememberSearch(_ value: String) {
+        let query = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.count >= 2 else { return }
+        let values = [query] + recentSearches.filter { $0.caseInsensitiveCompare(query) != .orderedSame }
+        if let data = try? JSONEncoder().encode(Array(values.prefix(8))), let json = String(data: data, encoding: .utf8) {
+            recentSearchesStorage = json
+        }
+    }
+
+    @ViewBuilder
+    private var recentSearchSection: some View {
+        if !recentSearches.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("Pick up a search").font(.title2.bold())
+                    Spacer()
+                    Button("Clear") { recentSearchesStorage = "[]" }.font(.caption.weight(.semibold))
+                }
+                ForEach(recentSearches, id: \.self) { query in
+                    Button {
+                        searchBinding.wrappedValue = query
+                        rememberSearch(query)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "clock.arrow.circlepath").foregroundStyle(Color.cineNexAccent)
+                            Text(query).foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "arrow.up.left").foregroundStyle(.secondary)
+                        }.font(.subheadline).padding(.vertical, 8)
+                    }.buttonStyle(.plain)
+                }
+            }.padding(.horizontal, 20)
+        }
+    }
+
     private var libraryScreen: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
                 experiencePicker
+                libraryOverview
                 Button { showingDownloads = true } label: {
-                    HStack(spacing: 14) {
-                        Image(systemName: "arrow.down.circle.fill").font(.title)
-                            .foregroundStyle(Color.cineNexAccent)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Downloads").font(.headline)
-                            Text("Available without a connection").font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        Image(systemName: "arrow.down.circle.fill").font(.title2).foregroundStyle(Color.cineNexAccent)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Your offline collection").font(.headline)
+                            Text("Open downloads").font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                        Image(systemName: "arrow.up.right").font(.subheadline.weight(.semibold))
                     }
                     .padding(18)
-                    .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
+                    .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 20))
                 }.buttonStyle(.plain).padding(.horizontal, 20)
                 if selectedHomeExperience == "anime" {
                     let saved = animeProgressStore.trackedAnime.filter { libraryQuery.isEmpty || $0.title.localizedCaseInsensitiveContains(libraryQuery) }
@@ -530,12 +688,27 @@ struct ContentView: View {
                         Text("Watchlist").tag(false)
                         Text("Continue watching").tag(true)
                     }.pickerStyle(.segmented).padding(.horizontal, 20)
-                    let sourceItems = libraryShowsProgress ? continueWatchingItems : favoriteItems.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
-                    let items = sourceItems.filter { libraryQuery.isEmpty || $0.title.localizedCaseInsensitiveContains(libraryQuery) }
+                    HStack {
+                        Text(libraryShowsProgress ? "IN PROGRESS" : "SAVED FOR LATER")
+                            .font(.system(size: 10, weight: .heavy)).tracking(1.6).foregroundStyle(.secondary)
+                        Spacer()
+                        Menu {
+                            Picker("Type", selection: $libraryKind) {
+                                ForEach(SearchKind.allCases) { Text($0.title).tag($0) }
+                            }
+                            Picker("Sort", selection: $librarySort) {
+                                ForEach(SearchSort.allCases) { Text($0.title).tag($0) }
+                            }
+                        } label: {
+                            Label("Filter", systemImage: "line.3.horizontal.decrease").font(.caption.weight(.semibold))
+                        }
+                    }.padding(.horizontal, 20)
+                    let items = libraryItems
                     if items.isEmpty {
-                        if !libraryQuery.isEmpty {
-                            ContentUnavailableView.search(text: libraryQuery)
-                            Button("Clear search") { libraryQuery = "" }
+                        if !libraryQuery.isEmpty || libraryKind != .all {
+                            ContentUnavailableView("No matching titles", systemImage: "line.3.horizontal.decrease",
+                                                   description: Text("Try another search or clear the type filter."))
+                            Button("Clear filters") { libraryQuery = ""; libraryKind = .all }
                                 .buttonStyle(.bordered).frame(maxWidth: .infinity)
                         } else {
                             ContentUnavailableView(libraryShowsProgress ? "Nothing in progress" : "Your watchlist is empty",
@@ -574,7 +747,49 @@ struct ContentView: View {
         .searchable(text: $libraryQuery, prompt: "Search your library")
     }
 
-    private var posterColumns: [GridItem] { [GridItem(.adaptive(minimum: 140), spacing: 16, alignment: .top)] }
+    private var libraryItems: [MediaItem] {
+        let source = libraryShowsProgress ? continueWatchingItems : favoriteItems
+        let filtered = source.filter { item in
+            let matchesKind = libraryKind == .all || (libraryKind == .movies && item.kind == .movie) || (libraryKind == .series && item.kind == .series)
+            return matchesKind && (libraryQuery.isEmpty || item.title.localizedCaseInsensitiveContains(libraryQuery))
+        }
+        switch librarySort {
+        case .relevance: return filtered
+        case .title: return filtered.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        case .newest: return filtered.sorted { $0.year == $1.year ? $0.title < $1.title : $0.year > $1.year }
+        case .highestRated: return filtered.sorted { ($0.rating ?? 0) == ($1.rating ?? 0) ? $0.title < $1.title : ($0.rating ?? 0) > ($1.rating ?? 0) }
+        }
+    }
+
+    private var libraryOverview: some View {
+        HStack(spacing: 12) {
+            Button { libraryShowsProgress = false } label: {
+                libraryMetric(title: "Watchlist", value: favoriteItems.count, symbol: "bookmark.fill", selected: !libraryShowsProgress)
+            }
+            Button { libraryShowsProgress = true } label: {
+                libraryMetric(title: "In progress", value: continueWatchingItems.count, symbol: "play.circle.fill", selected: libraryShowsProgress)
+            }
+        }.buttonStyle(.plain).padding(.horizontal, 20)
+    }
+
+    private func libraryMetric(title: String, value: Int, symbol: String, selected: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: symbol).foregroundStyle(Color.cineNexAccent)
+                Spacer()
+                Image(systemName: selected ? "checkmark.circle.fill" : "arrow.up.right").font(.caption)
+                    .foregroundStyle(selected ? Color.cineNexAccent : Color.secondary)
+            }
+            Text(String(value)).font(.system(size: 34, weight: .bold, design: .rounded))
+            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(selected ? Color.cineNexAccent.opacity(0.12) : Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(selected ? Color.cineNexAccent.opacity(0.35) : Color.clear, lineWidth: 1))
+    }
+
+    private var posterColumns: [GridItem] { [GridItem(.adaptive(minimum: posterDensity == "compact" ? 104 : 140), spacing: 16, alignment: .top)] }
 
     private func posterGrid(_ items: [MediaItem]) -> some View {
         LazyVGrid(columns: posterColumns, alignment: .leading, spacing: 24) {
@@ -892,26 +1107,6 @@ private enum SearchSort: String, CaseIterable, Identifiable {
     }
 }
 
-extension Color {
-    static let cineNexBackground = Color(red: 0.035, green: 0.043, blue: 0.065)
-    static let cineNexSurface = Color(red: 0.09, green: 0.105, blue: 0.145)
-
-    static var cineNexAccent: Color {
-        switch UserDefaults.standard.string(forKey: "cinenex.accentPreset") ?? "violet" {
-        case "blue":
-            return Color(red: 0.24, green: 0.52, blue: 1.0)
-        case "rose":
-            return Color(red: 0.95, green: 0.32, blue: 0.58)
-        case "teal":
-            return Color(red: 0.12, green: 0.72, blue: 0.68)
-        case "amber":
-            return Color(red: 1.0, green: 0.62, blue: 0.22)
-        default:
-            return Color(red: 0.58, green: 0.36, blue: 0.98)
-        }
-    }
-}
-
 private struct MediaPosterCard: View {
     let item: MediaItem
     let action: () -> Void
@@ -938,32 +1133,14 @@ private struct MediaDetailView: View {
     @State private var detailsError: String?
     @State private var selectedSeason: TMDBTitleSeason?
     @State private var synopsisExpanded = false
+    @AppStorage("cinenex.showRatings") private var showRatings = true
+    @AppStorage("cinenex.reduceMotion") private var reduceMotion = false
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                HStack(alignment: .top, spacing: 20) {
-                    CachedPosterImage(url: item.posterURL, fallbackSymbol: item.symbol, symbolSize: 42)
-                        .frame(width: 132, height: 198)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .shadow(color: .black.opacity(0.35), radius: 14, y: 7)
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(item.kind.rawValue.uppercased()).font(.caption2.weight(.bold)).tracking(1.7)
-                            .foregroundStyle(Color.cineNexAccent)
-                        Text(item.title).font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
-                            .accessibilityAddTraits(.isHeader)
-                        Text([item.yearLabel, item.runtime.isEmpty ? nil : item.runtime].compactMap { $0 }.joined(separator: " · "))
-                            .font(.subheadline).foregroundStyle(.secondary)
-                        if let rating = item.rating, rating > 0 {
-                            Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                                .font(.subheadline.weight(.semibold)).foregroundStyle(.yellow)
-                        }
-                        Text(item.genre).font(.caption).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.vertical, 12)
+                CatalogDetailHero(item: item)
 
                 VStack(alignment: .leading, spacing: 12) {
                     if let tagline = extendedDetails?.tagline,
@@ -982,9 +1159,8 @@ private struct MediaDetailView: View {
                             .fixedSize(horizontal: false, vertical: true)
                         if item.synopsis.count > 180 {
                             Button {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    synopsisExpanded.toggle()
-                                }
+                                if reduceMotion || systemReduceMotion { synopsisExpanded.toggle() }
+                                else { withAnimation(.easeInOut(duration: 0.2)) { synopsisExpanded.toggle() } }
                             } label: {
                                 Label(synopsisExpanded ? "Show less" : "Read full synopsis",
                                       systemImage: synopsisExpanded ? "chevron.up" : "chevron.down")
@@ -1009,7 +1185,7 @@ private struct MediaDetailView: View {
 
                 if let details = extendedDetails {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Details")
+                        Text("At a glance")
                             .font(.title3.bold())
                         if let runtime = details.runtimeLabel {
                             detailRow("Runtime", value: runtime, symbol: "clock")
@@ -1041,78 +1217,57 @@ private struct MediaDetailView: View {
 
                 if let details = extendedDetails {
                     if item.kind == .series, !details.seasonSummaries.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Seasons")
-                                .font(.title3.bold())
-                            ForEach(details.seasonSummaries) { season in
-                                Button {
-                                    selectedSeason = season
-                                } label: {
-                                    HStack(alignment: .top, spacing: 12) {
-                                    CachedPosterImage(
-                                        url: season.posterURL,
-                                        fallbackSymbol: "tv",
-                                        symbolSize: 22
-                                    )
-                                    .frame(width: 68, height: 96)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text(season.displayName)
-                                            .font(.subheadline.weight(.semibold))
-                                        HStack(spacing: 8) {
-                                            if let episodeCount = season.episodeCount, episodeCount > 0 {
-                                                Text("\(episodeCount) episodes")
-                                            }
-                                            if let airYear = season.airYear {
-                                                Text(String(airYear))
-                                            }
-                                        }
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-
-                                        if let overview = season.overview?.trimmingCharacters(in: .whitespacesAndNewlines),
-                                           !overview.isEmpty {
-                                            Text(overview)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(3)
-                                        }
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                    .padding(.vertical, 5)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityElement(children: .combine)
-                                .accessibilityHint("Shows episodes in \(season.displayName)")
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack {
+                                Text("Seasons & episodes").font(.title3.bold())
+                                Spacer()
+                                Text("\(details.seasonSummaries.count) seasons").font(.caption).foregroundStyle(.secondary)
                             }
+                            ScrollView(.horizontal) {
+                                LazyHStack(alignment: .top, spacing: 14) {
+                                    ForEach(details.seasonSummaries) { season in
+                                        Button { selectedSeason = season } label: {
+                                            VStack(alignment: .leading, spacing: 9) {
+                                                ZStack(alignment: .bottomTrailing) {
+                                                    CachedPosterImage(url: season.posterURL, fallbackSymbol: "tv", symbolSize: 30)
+                                                        .frame(width: 134, height: 186)
+                                                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                                                    Image(systemName: "play.circle.fill").font(.title)
+                                                        .foregroundStyle(.white).shadow(radius: 5).padding(9)
+                                                }
+                                                Text(season.displayName).font(.subheadline.bold()).lineLimit(1)
+                                                if let count = season.episodeCount, count > 0 {
+                                                    Text("\(count) episodes").font(.caption).foregroundStyle(.secondary)
+                                                }
+                                            }.frame(width: 134, alignment: .leading)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityHint("Browse and play episodes in \(season.displayName)")
+                                    }
+                                }
+                            }.scrollIndicators(.hidden)
                         }
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
                     }
 
                     if !details.castMembers.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Cast")
-                                .font(.title3.bold())
-                            ForEach(Array(details.castMembers.enumerated()), id: \.offset) { _, member in
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(member.name ?? "Unknown performer")
-                                        .font(.subheadline.weight(.semibold))
-                                    if let character = member.character?.trimmingCharacters(in: .whitespacesAndNewlines),
-                                       !character.isEmpty {
-                                        Text(character)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("Cast").font(.title3.bold())
+                            ScrollView(.horizontal) {
+                                LazyHStack(alignment: .top, spacing: 12) {
+                                    ForEach(castPresentations(details.castMembers)) { member in
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Image(systemName: "person.crop.circle.fill").font(.system(size: 30))
+                                                .foregroundStyle(Color.cineNexAccent.opacity(0.7))
+                                            Text(member.name).font(.subheadline.weight(.semibold)).lineLimit(2)
+                                            Text(member.character).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                        }
+                                        .frame(width: 132, alignment: .leading)
+                                        .padding(14)
+                                        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
                                     }
                                 }
-                            }
+                            }.scrollIndicators(.hidden)
                         }
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
                     }
 
                     if !details.directorNames.isEmpty || !details.creatorNames.isEmpty {
@@ -1215,6 +1370,18 @@ private struct MediaDetailView: View {
         }
     }
 
+    private func castPresentations(_ cast: [TMDBTitleCastMember]) -> [DetailCastPresentation] {
+        var seen = Set<String>()
+        return cast.compactMap { member in
+            let name = member.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !name.isEmpty else { return nil }
+            let character = member.character?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let id = "\(member.id.map(String.init) ?? name)|\(character)"
+            guard seen.insert(id).inserted else { return nil }
+            return DetailCastPresentation(id: id, name: name, character: character)
+        }
+    }
+
     private var detailActions: some View {
         HStack(spacing: 12) {
             Button(action: onPlay) {
@@ -1283,4 +1450,20 @@ private struct MediaDetailView: View {
 
 #Preview {
     ContentView()
+}
+
+private enum HomeDiscoveryLane: String, CaseIterable, Identifiable {
+    case all = "For you"
+    case movies = "Movies"
+    case series = "Series"
+    case rated = "Top rated"
+    case recent = "Newest"
+    case saved = "Watchlist"
+    var id: String { rawValue }
+}
+
+private struct DetailCastPresentation: Identifiable {
+    let id: String
+    let name: String
+    let character: String
 }

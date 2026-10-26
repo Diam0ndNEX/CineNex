@@ -231,6 +231,9 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
 
         let settings = Session.Settings()
         settings.agentName = "CineNex"
+        let profile = TorrentTransferProfile(rawValue: UserDefaults.standard.string(forKey: "cinenex.transferProfile") ?? "balanced") ?? .balanced
+        settings.maxDownloadSpeed = numericCast(profile.downloadBytesPerSecond)
+        settings.maxUploadSpeed = numericCast(profile.uploadBytesPerSecond)
         settings.outgoingInterfaces = ""
         settings.listenInterfaces = "0.0.0.0:0,[::]:0"
         settings.maxActiveTorrents = 1
