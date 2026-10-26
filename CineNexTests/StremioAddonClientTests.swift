@@ -192,7 +192,21 @@ final class StremioAddonClientTests: XCTestCase {
 }
 
 private final class StremioStubURLProtocol: URLProtocol {
-    static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    private static let handlerLock = NSLock()
+    nonisolated(unsafe) private static var storedHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))? {
+        get {
+            handlerLock.lock()
+            defer { handlerLock.unlock() }
+            return storedHandler
+        }
+        set {
+            handlerLock.lock()
+            defer { handlerLock.unlock() }
+            storedHandler = newValue
+        }
+    }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -216,7 +230,21 @@ private final class StremioStubURLProtocol: URLProtocol {
 }
 
 private final class StremioCancellationURLProtocol: URLProtocol {
-    static var requestCount = 0
+    private static let requestCountLock = NSLock()
+    nonisolated(unsafe) private static var storedRequestCount = 0
+
+    static var requestCount: Int {
+        get {
+            requestCountLock.lock()
+            defer { requestCountLock.unlock() }
+            return storedRequestCount
+        }
+        set {
+            requestCountLock.lock()
+            defer { requestCountLock.unlock() }
+            storedRequestCount = newValue
+        }
+    }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
 
