@@ -1,6 +1,6 @@
 # CineNex account login build configuration
 
-Consumer screens no longer request a Trakt API Client ID. They use the system authentication browser. AniList and MyAnimeList account cards authenticate and read profiles/anime lists; these lists are read-only and are not silently merged into local episode progress. MAL currently loads the first 100 entries. These capabilities are not advertised as full two-way sync.
+Consumer screens no longer request a Trakt API Client ID. Trakt uses device authorization; AniList and MyAnimeList use the system authentication browser. AniList and MyAnimeList account cards authenticate and read profiles/anime lists; these lists are read-only and are not silently merged into local episode progress. MAL currently loads the first 100 entries. These capabilities are not advertised as full two-way sync.
 
 ## Required developer registration
 
@@ -11,7 +11,7 @@ Consumer screens no longer request a Trakt API Client ID. They use the system au
 
 Supply these public values as Xcode build settings in validation and IPA builds. They map into Info.plist; the cinenex scheme is registered for AniList/MAL. Missing configuration shows an explicit unavailable-build message rather than asking consumers to enter API keys. Registered client IDs are not configured by this source change; they must be verified before login can be advertised as enabled. Consumer Trakt sign-in uses device authorization and does not require an HTTPS callback or associated-domain entitlement. Re-signing the IPA with a different team may invalidate its associated-domain relationship.
 
-## Trakt uses direct native PKCE; no token broker or client secret
+## Trakt device login and optional native PKCE; no token broker or client secret
 
 Consumer sign-in uses Trakt's documented device flow: request a code from `auth.trakt.tv/oauth/device/code`, display the code and validated Trakt activation link, and poll `auth.trakt.tv/oauth/device/token` at the server interval. No client secret, callback server, Universal Link, Apple team ID or domain entitlement is needed for this flow. The user opens Trakt, enters the short one-time code, approves, and returns to CineNex. No API credential entry is shown. This avoids relying on entitlements preserved by KSign, Flarestore, AltStore, SideStore or other IPA signers; those combinations still need device testing.
 
@@ -43,6 +43,10 @@ The MyAnimeList documentation endpoint was unavailable during editing; native PK
 
 Public IDs live in Config/AccountApplications.json or repository Actions variables with the same CINENEX_* names. Both validation and Fast IPA workflows run Scripts/configure_account_logins.py, then use Generated/OAuth.xcconfig for every app build/test. No secret is put in the app. The script validates IDs and HTTPS redirects, generates the associated-domain entitlement, and can produce an apple-app-site-association template when CINENEX_APP_TEAM_ID is provided. Publish that file at /.well-known/apple-app-site-association on the registered callback host, without redirects, and sign CineNex with the matching team and associated-domain entitlement. The callback website needs no token-exchange server.
 
-Provider app registration and acceptance of each provider's developer terms remain account-owner actions. Trakt's GitHub connection is verified as @Diam0ndNEX. Registration is prepared as a Production app so sign-in is not restricted to explicitly added testers. The Production form still requires an HTTPS redirect even for device-only usage. Registration remains blocked until a dedicated callback endpoint exists; automatic review rejected using the GitHub repository page as an unused redirect. No substitute URL is registered or bundled. A future authorization-code flow must register and deploy a real associated HTTPS callback first. The final Create App step accepts Trakt API requirements and is awaiting the owner's approval. No registered Client ID exists yet. Signing/associated-domain capability must survive external IPA re-signing. A generated template does not prove that the domain is deployed or associated with a signed app.
+Trakt Production application 247225 (CineNex) is registered under @Diam0ndNEX. The owner explicitly approved the repository URL solely as the required unused registration redirect and accepted Trakt API requirements. Its public Client ID is bundled in Config/AccountApplications.json. CINENEX_TRAKT_REDIRECT_URI stays empty: consumer device authorization does not navigate to the repository, and callback-based browser login stays unavailable. A future authorization-code flow must register and deploy a real associated HTTPS callback first.
+
+AniList and MyAnimeList native login code remains implemented but unconfigured. AniList developer settings returned a Cloudflare hard access block in this browser; browser site-safety policy blocked MyAnimeList. No account registration, issued Client ID, or successful login is claimed for either service. Provider registration/terms steps still need completing through an allowed authenticated route.
+
+Fresh iOS Build run 536 passed on db5c07b0360db7e8ad83b97910e34cd03859f106 before this configuration update. The public-ID update has local configuration validation; its own CI and all live account-login/device behavior still need verification.
 
 Device authorization regression coverage: empty pending responses, HTTP429 slowdown, denial/expiry/invalid/used outcomes, strict activation-host validation, client-ID-only configuration with no Associated Domains entitlement, and cancellation while waiting for approval. Swift tests are committed for CI; Linux checks do not execute them.
