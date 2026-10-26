@@ -281,13 +281,72 @@ struct ContentView: View {
     }
 
     private var experiencePicker: some View {
-        Picker("Content experience", selection: $selectedHomeExperience) {
-            Text("Movies & Series").tag("moviesAndSeries")
-            Text("Anime").tag("anime")
+        HStack(spacing: 8) {
+            experienceButton(
+                title: "Movies",
+                symbol: "film",
+                isSelected: selectedHomeExperience != "anime" && selectedHomeCategory == .movies
+            ) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    selectedHomeExperience = "moviesAndSeries"
+                    selectedHomeCategory = .movies
+                }
+            }
+
+            experienceButton(
+                title: "Series",
+                symbol: "tv",
+                isSelected: selectedHomeExperience != "anime" && selectedHomeCategory == .series
+            ) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    selectedHomeExperience = "moviesAndSeries"
+                    selectedHomeCategory = .series
+                }
+            }
+
+            experienceButton(
+                title: "Anime",
+                symbol: "sparkles.tv",
+                isSelected: selectedHomeExperience == "anime"
+            ) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    selectedHomeExperience = "anime"
+                }
+            }
         }
-        .pickerStyle(.segmented)
         .padding(.horizontal, 20)
-        .accessibilityLabel("Choose Movies and Series or Anime")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Content type")
+    }
+
+    private func experienceButton(
+        title: String,
+        symbol: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .foregroundStyle(isSelected ? .white : .secondary)
+                .background(
+                    isSelected ? Color.cineNexAccent : Color.cineNexSurface,
+                    in: Capsule()
+                )
+                .overlay {
+                    Capsule()
+                        .strokeBorder(
+                            isSelected ? Color.clear : Color.white.opacity(0.08),
+                            lineWidth: 1
+                        )
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var moviesAndSeriesHomeContent: some View {
