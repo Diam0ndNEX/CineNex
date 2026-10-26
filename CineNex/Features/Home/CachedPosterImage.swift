@@ -10,21 +10,23 @@ struct CachedPosterImage: View {
     @StateObject private var loader = PosterImageLoader()
 
     var body: some View {
-        Group {
-            if let image = loader.image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                Image(systemName: fallbackSymbol)
-                    .font(.system(size: symbolSize, weight: .light))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        GeometryReader { geometry in
+            Group {
+                if let image = loader.image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: fallbackSymbol)
+                        .font(.system(size: symbolSize, weight: .light))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
             }
+            .frame(width: max(0, geometry.size.width), height: max(0, geometry.size.height))
+            .clipped()
         }
-        .clipped()
         .allowsHitTesting(false)
+        .accessibilityHidden(true)
         .task(id: url) {
             await loader.load(from: url)
         }
@@ -67,18 +69,10 @@ private final class PosterImageLoader: ObservableObject {
             guard let httpResponse = response as? HTTPURLResponse,
                   (200..<300).contains(httpResponse.statusCode),
                   data.count <= 20_000_000,
-                  let source = CGImageSourceCreateWithData(data as CFData, nil),
-                  let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 1_000,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceShouldCacheImmediately: true
-                  ] as CFDictionary) else {
-                return
-            }
-
-            let decodedImage = UIImage(cgImage: thumbnail)
-            Self.cache.setObject(decodedImage, forKey: url as NSURL, cost: thumbnail.bytesPerRow * thumbnail.height)
+                  let decoded = await PosterThumbnailDecoder.shared.decode(data) else { return }
+            try Task.checkCancellation()
+            let decodedImage = UIImage(cgImage: decoded.image)
+            Self.cache.setObject(decodedImage, forKey: url as NSURL, cost: decoded.cost)
             image = decodedImage
         } catch is CancellationError {
             return
@@ -86,5 +80,27 @@ private final class PosterImageLoader: ObservableObject {
             guard !Task.isCancelled else { return }
             image = nil
         }
+    }
+}
+
+/// CGImage is immutable after construction and is safe to hand to the main actor.
+private struct DecodedPosterThumbnail: @unchecked Sendable {
+    let image: CGImage
+    var cost: Int { image.bytesPerRow * image.height }
+}
+
+/// Serial decoding avoids decoding an entire poster shelf concurrently on startup.
+private actor PosterThumbnailDecoder {
+    static let shared = PosterThumbnailDecoder()
+
+    func decode(_ data: Data) -> DecodedPosterThumbnail? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceThumbnailMaxPixelSize: 800,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true
+              ] as CFDictionary) else { return nil }
+        return DecodedPosterThumbnail(image: image)
     }
 }

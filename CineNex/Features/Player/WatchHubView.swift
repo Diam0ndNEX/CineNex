@@ -48,6 +48,8 @@ struct WatchHubView: View {
     @State private var torrentPreparationTask: Task<Void, Never>?
     @State private var torrentPreparationGeneration = UUID()
     @State private var searchingAddonSources = false
+    @State private var discoveryCompletedProviders = 0
+    @State private var cancellingPreparation = false
     @State private var addonSearchMessage: String?
     @State private var availableProviders: [ResolvedEmbedSource] = []
     @State private var seasonNumber = 1
@@ -183,10 +185,15 @@ struct WatchHubView: View {
                 .font(.subheadline).foregroundStyle(.secondary)
             Button("Cancel and choose another release", role: .cancel) {
                 PlaybackDiagnostics.record("playback.preparation.cancel", details: ["reason": "user_selected_cancel"])
+                cancellingPreparation = true
                 torrentPreparationTask?.cancel()
                 torrentPreparationMessage = "Cancelling the current connection…"
             }
             .buttonStyle(.bordered).frame(maxWidth: .infinity)
+            .disabled(cancellingPreparation)
+            ProgressView().progressViewStyle(.linear)
+            Text("Finding peers → fetching metadata → preparing video")
+                .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(20)
         .background(.regularMaterial)
@@ -330,6 +337,12 @@ struct WatchHubView: View {
                 .disabled(searchingAddonSources || preparingTorrentDescriptorID != nil)
                 .accessibilityHint("Queries configured Stremio-compatible add-ons for this title or episode")
 
+                if searchingAddonSources {
+                    ProgressView(value: Double(discoveryCompletedProviders), total: 2)
+                        .progressViewStyle(.linear)
+                    Text(discoveryCompletedProviders == 0 ? "Resolving the title and requesting provider results…" : "First provider group ready. Waiting for remaining results…")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Picker("Source type", selection: $selectedSourceFilter) {
                     ForEach(["All", "Direct", "Torrent", "Web"], id: \.self) { category in
                         Text(category).tag(category)
@@ -849,6 +862,7 @@ struct WatchHubView: View {
         await TorrentPlaybackSessionRegistry.shared.stopAll()
         guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
         searchingAddonSources = true
+        discoveryCompletedProviders = 0
         addonSearchMessage = nil
         torrentPreparationMessage = nil
         discoveredSources = []
@@ -870,32 +884,30 @@ struct WatchHubView: View {
             "season": request.seasonNumber.map(String.init) ?? "none",
             "episode": request.episodeNumber.map(String.init) ?? "none"
         ])
-        async let torrentioResult = SceneBoxTorrentSearch(sourceBases: manifestURLs.filter {
+        let searchRequest = request
+        let torrentioSearch = SceneBoxTorrentSearch(sourceBases: manifestURLs.filter {
             $0.host?.lowercased().contains("torrentio") ?? false
-        }.map { $0.deletingLastPathComponent().absoluteString } + ["https://torrentio.strem.fun"]).discover(
-            for: request,
-            externalIDResolver: resolver
-        )
-        async let addonResult = Self.discoverAddonSources(
-            manifestURLs: addonManifestURLs,
-            request: request,
-            resolver: resolver
-        )
-        let (torrentioDiscovery, addonDiscovery) = await (torrentioResult, addonResult)
-        guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
-
-        var seenSourceIDs = Set<String>()
-        discoveredSources = (torrentioDiscovery.sources + addonDiscovery.sources).filter {
-            seenSourceIDs.insert($0.id).inserted
+        }.map { $0.deletingLastPathComponent().absoluteString } + ["https://torrentio.strem.fun"])
+        let addonURLs = addonManifestURLs
+        let batches = await withTaskGroup(of: StremioAddonDiscovery.self, returning: [StremioAddonDiscovery].self) { group in
+            group.addTask { await torrentioSearch.discover(for: searchRequest, externalIDResolver: resolver) }
+            group.addTask { await Self.discoverAddonSources(manifestURLs: addonURLs, request: searchRequest, resolver: resolver) }
+            var batches: [StremioAddonDiscovery] = []
+            for await batch in group {
+                guard !Task.isCancelled, sourceSearchGeneration == generation else { group.cancelAll(); break }
+                batches.append(batch)
+                discoveryCompletedProviders = batches.count
+                var seen = Set<String>()
+                discoveredSources = batches.flatMap(\.sources).filter { seen.insert($0.id).inserted }
+                discoveredTorrentDescriptors = SceneBoxStreamPicker.balanced(batches.flatMap(\.torrentDescriptors), limit: Int.max)
+                addonSearchMessage = "Received \(discoveredTorrentDescriptors.count) torrent releases. Remaining providers are still being checked."
+            }
+            return batches
         }
-        let returnedTorrents = torrentioDiscovery.torrentDescriptors + addonDiscovery.torrentDescriptors
-        discoveredTorrentDescriptors = SceneBoxStreamPicker.balanced(returnedTorrents, limit: Int.max)
+        guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
         selectedTorrentProvider = "All providers"
-        PlaybackDiagnostics.record("discovery.received", details: [
-            "torrents_by_provider": Dictionary(grouping: returnedTorrents, by: \.providerName)
-                .map { "\($0.key)=\($0.value.count)" }.sorted().joined(separator: ",")
-        ])
-        let statuses = torrentioDiscovery.providerStatuses + addonDiscovery.providerStatuses
+        PlaybackDiagnostics.record("discovery.received", details: ["torrent_count": String(discoveredTorrentDescriptors.count)])
+        let statuses = batches.flatMap(\.providerStatuses)
         if !discoveredSources.isEmpty, !discoveredTorrentDescriptors.isEmpty {
             addonSearchMessage = "Found \(discoveredSources.count) direct source(s) and \(discoveredTorrentDescriptors.count) torrent option(s). Torrent transfers start only when you select one."
         } else if !discoveredSources.isEmpty {
@@ -965,6 +977,7 @@ struct WatchHubView: View {
         }
         PlaybackDiagnostics.beginAttempt(provider: descriptor.providerName, fileIndex: descriptor.fileIndex)
         preparingTorrentDescriptorID = descriptor.id
+        cancellingPreparation = false
         torrentPreparationStartedAt = Date()
         torrentPreparationMessage = "Preparing torrent stream. Torrent metadata may take a moment to load."
         let preparationID = UUID()

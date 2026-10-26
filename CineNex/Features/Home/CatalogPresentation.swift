@@ -205,3 +205,31 @@ private enum CatalogCollectionSort: String, CaseIterable, Identifiable {
     case title = "Title A–Z"
     var id: String { rawValue }
 }
+
+/// Checkpoints represent completed stages, not an estimated download percentage.
+struct CatalogLoadingStatus: View {
+    let title: String
+    let stage: Int
+    let stages: [String]
+
+    private var clampedStage: Int { min(max(stage, 0), max(stages.count - 1, 0)) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title).font(.subheadline.weight(.semibold))
+                Spacer()
+                ProgressView().controlSize(.small)
+            }
+            ProgressView(value: Double(clampedStage), total: Double(max(stages.count - 1, 1)))
+                .tint(Color.cineNexAccent)
+            if !stages.isEmpty {
+                Text(stages[clampedStage]).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .combine)
+    }
+}

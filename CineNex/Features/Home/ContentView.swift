@@ -28,6 +28,8 @@ struct ContentView: View {
 
     @State private var catalog = CatalogCacheStore.shared.load()?.items ?? []
     @State private var catalogLoading = false
+    @State private var catalogLoadStage = 0
+    @State private var animeLoadStage = 0
     @State private var catalogError: String?
     @State private var remoteSearchResults: [MediaItem] = []
     @State private var remoteSearchQuery = ""
@@ -212,29 +214,51 @@ struct ContentView: View {
     }
 
     private var homeScreen: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 28) {
-                experiencePicker
-                if selectedHomeExperience == "anime" {
-                    animeHomeContent
-                } else {
-                    moviesAndSeriesHomeContent
+        VStack(spacing: 0) {
+            experiencePicker
+                .background(Color.cineNexBackground)
+                .zIndex(1)
+            Divider().opacity(0.25)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 28) {
+                    if selectedHomeExperience == "anime" {
+                        if animeLoading && !animeCatalog.isEmpty { animeLoadingStatus }
+                        animeHomeContent
+                    } else {
+                        if catalogLoading && !catalog.isEmpty { catalogLoadingStatus }
+                        moviesAndSeriesHomeContent
+                    }
                 }
+                .padding(.top, 20)
+                .padding(.bottom, 30)
             }
-            .padding(.bottom, 30)
+            .refreshable {
+                if selectedHomeExperience == "anime" { await loadAnimeCatalog(force: true) }
+                else { await loadCatalog(force: true) }
+            }
         }
         .background(Color.cineNexBackground.ignoresSafeArea())
-        .refreshable {
-            if selectedHomeExperience == "anime" { await loadAnimeCatalog(force: true) }
-            else { await loadCatalog(force: true) }
-        }
+    }
+
+    private var catalogLoadingStatus: some View {
+        CatalogLoadingStatus(title: catalog.isEmpty ? "Loading movies & series" : "Refreshing movies & series",
+                             stage: catalogLoadStage,
+                             stages: ["Preparing catalog request", "Waiting for catalog metadata", "Saving catalog", "Catalog ready"])
+            .padding(.horizontal, 20)
+    }
+
+    private var animeLoadingStatus: some View {
+        CatalogLoadingStatus(title: animeCatalog.isEmpty ? "Loading anime" : "Refreshing anime",
+                             stage: animeLoadStage,
+                             stages: ["Preparing AniList request", "Waiting for anime metadata", "Preparing anime catalog", "Anime ready"])
+            .padding(.horizontal, 20)
     }
 
     private var moviesAndSeriesHomeContent: some View {
         Group {
             if catalogLoading && catalog.isEmpty {
-                ProgressView("Loading your next watch…")
-                    .frame(maxWidth: .infinity, minHeight: 280)
+                catalogLoadingStatus
+                    .padding(.vertical, 32)
             } else if catalog.isEmpty {
                 ContentUnavailableView {
                     Label("Discover is unavailable", systemImage: "wifi.exclamationmark")
@@ -373,7 +397,7 @@ struct ContentView: View {
                     .font(.footnote).foregroundStyle(.orange).padding(.horizontal, 20)
             }
             if animeLoading && animeCatalog.isEmpty {
-                ProgressView("Loading anime…").frame(maxWidth: .infinity, minHeight: 240)
+                animeLoadingStatus.padding(.vertical, 32)
             } else if animeCatalog.isEmpty {
                 ContentUnavailableView("No anime available", systemImage: "sparkles.tv", description: Text("Pull down to try again."))
             } else {
@@ -655,13 +679,17 @@ struct ContentView: View {
         guard force || animeCatalog.isEmpty else { return }
 
         animeLoading = true
+        animeLoadStage = 0
         animeError = nil
         defer { animeLoading = false }
 
         do {
+            animeLoadStage = 1
             let results = try await AniListCatalogProvider().fetchTrending()
             guard !Task.isCancelled else { return }
+            animeLoadStage = 2
             animeCatalog = results
+            animeLoadStage = 3
             if results.isEmpty {
                 animeError = "AniList did not return trending anime. Pull down to try again."
             }
@@ -677,12 +705,14 @@ struct ContentView: View {
     private func loadCatalog(force: Bool = false) async {
         let token = TMDBTokenStore.load()?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard force || !catalogLoading else { return }
+        guard !catalogLoading else { return }
 
         catalogLoading = true
+        catalogLoadStage = 0
         defer { catalogLoading = false }
         do {
             let liveCatalog: [MediaItem]
+            catalogLoadStage = 1
             if token.isEmpty {
                 liveCatalog = try await CinemetaCatalogProvider().fetchCatalog()
             } else {
@@ -693,8 +723,10 @@ struct ContentView: View {
                 catalogError = "No titles were returned. Showing the last saved catalog."
                 return
             }
+            catalogLoadStage = 2
             catalog = liveCatalog
             CatalogCacheStore.shared.save(liveCatalog)
+            catalogLoadStage = 3
             catalogError = nil
         } catch is CancellationError {
             return

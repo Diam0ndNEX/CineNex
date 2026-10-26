@@ -180,6 +180,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
     private var deadlinePieces = Set<Int64>()
     private var lifecycleGeneration: UInt64 = 0
     private var isStopping = false
+    private var lastSnapshotRefresh = -Double.infinity
     private var stopWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(descriptor: StremioTorrentDescriptor, onPreparationUpdate: @escaping @Sendable (String) -> Void = { _ in }) {
@@ -318,9 +319,9 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
                 at: otherFileIndexes.map { NSNumber(value: $0) }
             )
         }
-        handle.setFilePriority(FileEntry.Priority.lowPriority, at: selectedFileIndex)
+        handle.setFilePriority(FileEntry.Priority.dontDownload, at: selectedFileIndex)
 
-        handle.updateSnapshot()
+        refreshSnapshot(handle)
         guard let pieceStates = handle.snapshot.pieces,
               let startupPlan = TorrentStartupPiecePriorityPlan.make(
                 fileStartOffset: Int64(selectedFile.fileOffset),
@@ -376,7 +377,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         guard let handle else { throw TorrentStreamingError.engineUnavailable }
         guard !pieces.isEmpty else { return }
 
-        handle.updateSnapshot()
+        refreshSnapshot(handle)
         guard let pieceStates = handle.snapshot.pieces else {
             throw TorrentStreamingError.invalidTorrentLayout
         }
@@ -400,6 +401,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         }
         let requestedDeadlinePieces = Set(deadlinePlan.deadlinesMilliseconds.keys)
 
+        if requestedPieces == prioritizedPieces, requestedDeadlinePieces == deadlinePieces { return }
         for piece in deadlinePieces.subtracting(requestedDeadlinePieces).sorted() {
             try Task.checkCancellation()
             guard handle.clearPieceDeadline(at: Int(piece)) else {
@@ -416,7 +418,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         let priorityWindow = TorrentPiecePriorityWindow(current: prioritizedPieces, requested: requestedPieces)
         for piece in priorityWindow.piecesToDemote {
             try Task.checkCancellation()
-            let fallbackPriority = startupPiecePriorities[piece] ?? 1
+            let fallbackPriority = startupPiecePriorities[piece] ?? 0
             guard handle.setPiecePriority(fallbackPriority, at: Int(piece)) else {
                 throw TorrentStreamingError.invalidTorrentLayout
             }
@@ -436,7 +438,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         try ensureCurrentLifecycle(generation)
         guard let handle else { throw TorrentStreamingError.engineUnavailable }
         guard !pieces.isEmpty else { return }
-        handle.updateSnapshot()
+        refreshSnapshot(handle)
         guard let initialPieceStates = handle.snapshot.pieces,
               pieces.allSatisfy({ $0 >= 0 && $0 < Int64(initialPieceStates.count) }) else {
             throw TorrentStreamingError.invalidTorrentLayout
@@ -444,7 +446,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         for tick in 0..<360 {
             try Task.checkCancellation()
             try ensureCurrentLifecycle(generation)
-            handle.updateSnapshot()
+            refreshSnapshot(handle)
             let availablePieces = handle.snapshot.pieces ?? []
             if pieces.allSatisfy({ index in
                 index >= 0 &&
@@ -494,8 +496,17 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         self.startupPiecePriorities.removeAll()
         self.deadlinePieces.removeAll()
         self.handle = nil
+        lastSnapshotRefresh = -Double.infinity
         self.session = nil
         self.downloadRoot = nil
+    }
+
+    /// VLC makes many small byte reads. Reuse one snapshot per polling interval.
+    private func refreshSnapshot(_ handle: TorrentHandle) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastSnapshotRefresh >= 0.25 else { return }
+        handle.updateSnapshot()
+        lastSnapshotRefresh = ProcessInfo.processInfo.systemUptime
     }
 
     private func waitForStopCompletion() async {
@@ -522,7 +533,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             try ensureCurrentLifecycle(generation)
             let snapshotStarted = ProcessInfo.processInfo.systemUptime
             PlaybackDiagnostics.sample("torrent.metadata.snapshot.begin", details: [:])
-            handle.updateSnapshot()
+            refreshSnapshot(handle)
             let snapshot = handle.snapshot
             let now = ProcessInfo.processInfo.systemUptime
             let snapshotDuration = now - snapshotStarted
@@ -545,7 +556,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             if snapshot.hasMetadata, !snapshot.files.isEmpty {
                 return snapshot
             }
-            try await Task.sleep(for: .milliseconds(250))
+            try await Task.sleep(for: .seconds(1))
         }
         PlaybackDiagnostics.record("torrent.metadata.timeout")
         throw TorrentStreamingError.metadataTimeout
