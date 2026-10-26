@@ -1,0 +1,82 @@
+name: Fast IPA Build
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: cinenex-fast-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install native build tools
+        run: brew install cmake boost xcodegen
+
+      - name: Apply native wrapper bridge
+        run: python3 Scripts/patch_xitrix_piece_priority.py Thirdparty/LibTorrent-Swift
+
+      - name: Build native iOS frameworks
+        run: |
+          export BOOST_ROOT="$(brew --prefix boost)"
+          export BOOST_INCLUDEDIR="$BOOST_ROOT/include"
+          test -f "$BOOST_INCLUDEDIR/boost/version.hpp"
+          bash Thirdparty/LibTorrent-Swift/make.sh
+          xcodebuild \
+            -project Thirdparty/LibTorrent-Swift/LibTorrent.xcodeproj \
+            -scheme LibTorrent \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath Thirdparty/LibTorrent-Swift/DerivedData \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          mkdir -p Thirdparty/LibTorrent-Swift/Build
+          xcodebuild -create-xcframework \
+            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphoneos/LibTorrent.framework \
+            -output Thirdparty/LibTorrent-Swift/Build/LibTorrent.xcframework
+          xcodebuild -create-xcframework \
+            -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphoneos/OpenSSL.framework \
+            -output Thirdparty/LibTorrent-Swift/Build/OpenSSL.xcframework
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build unsigned iOS app
+        run: |
+          xcodebuild \
+            -project CineNex.xcodeproj \
+            -scheme CineNex \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath DerivedDataDevice \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          rm -rf Payload CineNex-unsigned.ipa
+          mkdir -p Payload
+          cp -R DerivedDataDevice/Build/Products/Debug-iphoneos/CineNex.app Payload/CineNex.app
+          ditto -c -k --sequesterRsrc --keepParent Payload CineNex-unsigned.ipa
+          rm -rf Payload
+
+      - name: Upload unsigned IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CineNex-fast-unsigned-ipa
+          path: CineNex-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
