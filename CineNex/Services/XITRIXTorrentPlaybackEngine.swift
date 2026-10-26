@@ -166,24 +166,37 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
     private var prioritizedPieces = Set<Int64>()
     private var startupPiecePriorities: [Int64: Int] = [:]
     private var deadlinePieces = Set<Int64>()
+    private var lifecycleGeneration: UInt64 = 0
+    private var isStopping = false
+    private var stopWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(descriptor: StremioTorrentDescriptor) {
         self.descriptor = descriptor
     }
 
     func prepareFiles(for request: PlaybackSourceRequest) async throws -> [TorrentPreparedFile] {
+        await waitForStopCompletion()
         guard request.isValid else { throw TorrentStreamingError.invalidRequest }
         if let preparedFile { return [preparedFile] }
 
+        let generation = lifecycleGeneration
         do {
-            return try await prepareFilesInternal(for: request)
+            let files = try await prepareFilesInternal(for: request, generation: generation)
+            try ensureCurrentLifecycle(generation)
+            return files
         } catch {
-            await stop()
+            if lifecycleGeneration == generation {
+                await stop()
+            }
             throw error
         }
     }
 
-    private func prepareFilesInternal(for request: PlaybackSourceRequest) async throws -> [TorrentPreparedFile] {
+    private func prepareFilesInternal(
+        for request: PlaybackSourceRequest,
+        generation: UInt64
+    ) async throws -> [TorrentPreparedFile] {
+        try ensureCurrentLifecycle(generation)
 
         guard let cacheDirectory = FileManager.default.urls(
             for: .cachesDirectory,
@@ -233,7 +246,8 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         session.resume()
         handle.resume()
 
-        let snapshot = try await waitForMetadata(on: handle)
+        let snapshot = try await waitForMetadata(on: handle, generation: generation)
+        try ensureCurrentLifecycle(generation)
         let selectedFile: FileEntry
         if let requestedIndex = descriptor.fileIndex {
             guard let indexedFile = snapshot.files.first(where: { Int($0.index) == requestedIndex }),
@@ -294,7 +308,8 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         }
         startupPiecePriorities = startupPlan.priorities
 
-        try await waitForFile(at: fileURL, expectedLength: Int64(selectedFile.size))
+        try await waitForFile(at: fileURL, expectedLength: Int64(selectedFile.size), generation: generation)
+        try ensureCurrentLifecycle(generation)
         guard let verifiedFileURL = XITRIXTorrentFileSupport.safeFileURL(
             root: root,
             relativePath: selectedFile.path
@@ -386,6 +401,8 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
     }
 
     func waitUntilAvailable(pieces: Range<Int64>) async throws {
+        let generation = lifecycleGeneration
+        try ensureCurrentLifecycle(generation)
         guard let handle else { throw TorrentStreamingError.engineUnavailable }
         guard !pieces.isEmpty else { return }
         handle.updateSnapshot()
@@ -395,6 +412,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         }
         for _ in 0..<360 {
             try Task.checkCancellation()
+            try ensureCurrentLifecycle(generation)
             handle.updateSnapshot()
             let availablePieces = handle.snapshot.pieces ?? []
             if pieces.allSatisfy({ index in
@@ -410,6 +428,18 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
     }
 
     func stop() async {
+        if isStopping {
+            await waitForStopCompletion()
+            return
+        }
+        isStopping = true
+        lifecycleGeneration &+= 1
+        defer {
+            isStopping = false
+            let waiters = stopWaiters
+            stopWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+        }
         if let reader {
             try? await reader.close()
         }
@@ -431,9 +461,26 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         self.downloadRoot = nil
     }
 
-    private func waitForMetadata(on handle: TorrentHandle) async throws -> TorrentHandle.Snapshot {
+    private func waitForStopCompletion() async {
+        guard isStopping else { return }
+        await withCheckedContinuation { continuation in
+            stopWaiters.append(continuation)
+        }
+    }
+
+    private func ensureCurrentLifecycle(_ expectedGeneration: UInt64) throws {
+        try Task.checkCancellation()
+        guard lifecycleGeneration == expectedGeneration else {
+            throw CancellationError()
+        }
+    }
+
+    private func waitForMetadata(
+        on handle: TorrentHandle,
+        generation: UInt64
+    ) async throws -> TorrentHandle.Snapshot {
         for _ in 0..<240 {
-            try Task.checkCancellation()
+            try ensureCurrentLifecycle(generation)
             handle.updateSnapshot()
             let snapshot = handle.snapshot
             if snapshot.hasMetadata, !snapshot.files.isEmpty {
@@ -444,9 +491,13 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         throw TorrentStreamingError.metadataTimeout
     }
 
-    private func waitForFile(at url: URL, expectedLength: Int64) async throws {
+    private func waitForFile(
+        at url: URL,
+        expectedLength: Int64,
+        generation: UInt64
+    ) async throws {
         for _ in 0..<120 {
-            try Task.checkCancellation()
+            try ensureCurrentLifecycle(generation)
             if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
                let size = attributes[.size] as? NSNumber,
                size.int64Value > 0,
