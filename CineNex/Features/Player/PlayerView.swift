@@ -1,13 +1,17 @@
 import AVKit
 import SwiftUI
+import SwiftVLC
 
 struct PlayerView: View {
     let item: MediaItem
     @ObservedObject var progressStore: PlaybackProgressStore
     @Environment(\.dismiss) private var dismiss
     @State private var player = AVPlayer()
+    @State private var vlcPlayer = SwiftVLC.Player()
+    @State private var isUsingVLC = true
     @State private var playbackError: String?
     @State private var timeObserver: Any?
+    @State private var progressTask: Task<Void, Never>?
     @State private var audioGroup: AVMediaSelectionGroup?
     @State private var subtitleGroup: AVMediaSelectionGroup?
     @State private var audioOptions: [AVMediaSelectionOption] = []
@@ -17,9 +21,16 @@ struct PlayerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if item.streamURL != nil {
-                NativePlaybackView(player: player)
-                    .ignoresSafeArea()
-                    .accessibilityLabel("Video player for \(item.title)")
+                Group {
+                    if isUsingVLC {
+                        VideoView(vlcPlayer)
+                            .accessibilityLabel("VLC video player for \(item.title)")
+                    } else {
+                        NativePlaybackView(player: player)
+                            .accessibilityLabel("Native video player for \(item.title)")
+                    }
+                }
+                .ignoresSafeArea()
             } else {
                 ContentUnavailableView(
                     "No playable source",
@@ -33,6 +44,7 @@ struct PlayerView: View {
                     Button {
                         saveCurrentProgress()
                         player.pause()
+                        vlcPlayer.pause()
                         dismiss()
                     } label: {
                         Image(systemName: "xmark")
@@ -49,7 +61,27 @@ struct PlayerView: View {
                         .lineLimit(1)
                         .frame(maxWidth: .infinity)
 
-                    if audioOptions.count > 1, let audioGroup {
+                    Menu {
+                        Button {
+                            switchToVLC()
+                        } label: {
+                            Label("VLC player", systemImage: isUsingVLC ? "checkmark.circle.fill" : "play.rectangle")
+                        }
+                        Button {
+                            switchToNative()
+                        } label: {
+                            Label("Apple native player", systemImage: !isUsingVLC ? "checkmark.circle.fill" : "play.rectangle")
+                        }
+                    } label: {
+                        Image(systemName: "switch.2")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(.black.opacity(0.55), in: Circle())
+                    }
+                    .accessibilityLabel("Choose playback engine")
+
+                    if !isUsingVLC, audioOptions.count > 1, let audioGroup {
                         Menu {
                             ForEach(Array(audioOptions.enumerated()), id: \.offset) { entry in
                                 Button(entry.element.displayName) {
@@ -66,7 +98,7 @@ struct PlayerView: View {
                         .accessibilityLabel("Select audio track")
                     }
 
-                    if !subtitleOptions.isEmpty, let subtitleGroup {
+                    if !isUsingVLC, !subtitleOptions.isEmpty, let subtitleGroup {
                         Menu {
                             Button("Off") {
                                 selectSubtitle(nil, in: subtitleGroup)
@@ -95,8 +127,8 @@ struct PlayerView: View {
         .onAppear(perform: startPlayback)
         .onDisappear {
             saveCurrentProgress()
-            let position = player.currentTime().seconds
-            let duration = player.currentItem?.duration.seconds ?? 0
+            let position = currentPositionSeconds
+            let duration = currentDurationSeconds
             Task {
                 await TraktIntegration.shared.scrobbleStop(
                     for: item,
@@ -104,7 +136,10 @@ struct PlayerView: View {
                     duration: duration.isFinite ? duration : 0
                 )
             }
+            progressTask?.cancel()
+            progressTask = nil
             player.pause()
+            vlcPlayer.stop()
             if let timeObserver {
                 player.removeTimeObserver(timeObserver)
                 self.timeObserver = nil
@@ -131,12 +166,79 @@ struct PlayerView: View {
         }
     }
 
+    private var currentPositionSeconds: Double {
+        isUsingVLC ? seconds(vlcPlayer.currentTime) : player.currentTime().seconds
+    }
+
+    private var currentDurationSeconds: Double {
+        if isUsingVLC {
+            return vlcPlayer.duration.map(seconds) ?? 0
+        }
+        return player.currentItem?.duration.seconds ?? 0
+    }
+
+    private func seconds(_ duration: Duration) -> Double {
+        let components = duration.components
+        return Double(components.seconds) + Double(components.attoseconds) / 1_000_000_000_000_000_000
+    }
+
     private func startPlayback() {
         guard let url = item.streamURL else { return }
+        playbackError = nil
+        progressTask?.cancel()
+        progressTask = nil
         if let timeObserver {
             player.removeTimeObserver(timeObserver)
             self.timeObserver = nil
         }
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        vlcPlayer.stop()
+        audioGroup = nil
+        subtitleGroup = nil
+        audioOptions = []
+        subtitleOptions = []
+
+        do {
+            try vlcPlayer.play(url: url)
+            isUsingVLC = true
+            startVLCProgressTracking()
+            Task { @MainActor in
+                for _ in 0..<40 {
+                    guard isUsingVLC, !Task.isCancelled else { return }
+                    if vlcPlayer.duration != nil {
+                        let position = progressStore.progress(for: item.id)?.position ?? 0
+                        if position > 5 {
+                            try? vlcPlayer.seek(to: .milliseconds(Int64(position * 1_000)))
+                        }
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+            }
+            Task { await TraktIntegration.shared.scrobbleStart(for: item) }
+        } catch {
+            isUsingVLC = false
+            startNativePlayback(url: url)
+        }
+    }
+
+    private func startVLCProgressTracking() {
+        progressTask?.cancel()
+        progressTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled else { return }
+                guard isUsingVLC else { continue }
+                saveCurrentProgress()
+            }
+        }
+    }
+
+    private func startNativePlayback(url: URL) {
+        isUsingVLC = false
+        progressTask?.cancel()
+        progressTask = nil
         player.pause()
         player.replaceCurrentItem(with: nil)
         audioGroup = nil
@@ -194,6 +296,42 @@ struct PlayerView: View {
         }
     }
 
+    private func switchToVLC() {
+        guard let url = item.streamURL else { return }
+        saveCurrentProgress()
+        if let timeObserver {
+            player.removeTimeObserver(timeObserver)
+            self.timeObserver = nil
+        }
+        player.pause()
+        do {
+            try vlcPlayer.play(url: url)
+            isUsingVLC = true
+            startVLCProgressTracking()
+            let position = progressStore.progress(for: item.id)?.position ?? 0
+            if position > 5 {
+                Task { @MainActor in
+                    for _ in 0..<40 {
+                        if vlcPlayer.duration != nil {
+                            try? vlcPlayer.seek(to: .milliseconds(Int64(position * 1_000)))
+                            return
+                        }
+                        try? await Task.sleep(for: .milliseconds(250))
+                    }
+                }
+            }
+        } catch {
+            playbackError = "VLC could not start this source: \(error.localizedDescription)"
+        }
+    }
+
+    private func switchToNative() {
+        guard let url = item.streamURL else { return }
+        saveCurrentProgress()
+        vlcPlayer.pause()
+        startNativePlayback(url: url)
+    }
+
     private func retryPlayback() {
         playbackError = nil
         startPlayback()
@@ -223,8 +361,8 @@ struct PlayerView: View {
     }
 
     private func saveCurrentProgress() {
-        let position = player.currentTime().seconds
-        let duration = player.currentItem?.duration.seconds ?? 0
+        let position = currentPositionSeconds
+        let duration = currentDurationSeconds
         guard position.isFinite else { return }
         progressStore.record(
             itemID: item.id,
