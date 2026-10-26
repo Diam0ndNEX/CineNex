@@ -515,7 +515,7 @@ struct WatchHubView: View {
                             Text("Direct playback")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.primary)
-                            Text("Play the supplied media URL with CineNex's native player")
+                            Text("Play the supplied media URL with CineNex's VLC player")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -529,7 +529,7 @@ struct WatchHubView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Play directly: \(item.title)")
-                .accessibilityHint("Plays the supplied media URL in CineNex's native player")
+                .accessibilityHint("Plays the supplied media URL in CineNex's VLC player")
             }
 
             if !hasVisibleSources && !searchingAddonSources {
@@ -944,7 +944,7 @@ struct WatchHubView: View {
             return
         }
         preparingTorrentDescriptorID = descriptor.id
-        torrentPreparationMessage = "Preparing native playback. Torrent metadata may take a moment to load."
+        torrentPreparationMessage = "Preparing torrent stream. Torrent metadata may take a moment to load."
         let preparationID = UUID()
         torrentPreparationGeneration = preparationID
         torrentPreparationTask = Task {
@@ -978,7 +978,7 @@ struct WatchHubView: View {
                 return
             }
             activePlaybackSheet = .discovered(source)
-            torrentPreparationMessage = "Torrent source is ready. Opening the native player."
+            torrentPreparationMessage = "Torrent source is ready. Opening the VLC player."
         } catch is CancellationError {
             await provider.stop()
             if torrentPreparationGeneration == preparationID {
