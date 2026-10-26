@@ -1,6 +1,7 @@
 import AVKit
 import SwiftUI
 import SwiftVLC
+import UIKit
 
 @MainActor
 struct SceneBoxStreamPlaybackView: View {
@@ -11,6 +12,11 @@ struct SceneBoxStreamPlaybackView: View {
     let onClose: () -> Void
 
     @AppStorage("cinenex.preferredSubtitleLanguage") private var preferredSubtitleLanguage = SubtitleLanguage.deviceDefault.code
+    @State private var chrome = SceneBoxChromeVisibility()
+    @State private var isStalled = false
+    @State private var didSeekToStart = false
+    @State private var resumePosition = 0.0
+    @State private var previousIdleTimerDisabled = false
     @State private var player = SwiftVLC.Player()
     @State private var subtitles = SubtitlesController()
     @State private var nowPlayingController: SceneBoxNowPlayingController?
@@ -30,6 +36,16 @@ struct SceneBoxStreamPlaybackView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
 
+            Button {
+                guard failure == nil else { return }
+                chrome.screenTapped(shouldAutoHide: player.isPlaying && !isBuffering)
+            } label: {
+                Color.clear.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .ignoresSafeArea()
+            .accessibilityLabel(chrome.isVisible ? "Hide playback controls" : "Show playback controls")
+
             LinearGradient(
                 colors: [.black.opacity(0.78), .clear, .clear, .black.opacity(0.82)],
                 startPoint: .top,
@@ -37,6 +53,7 @@ struct SceneBoxStreamPlaybackView: View {
             )
             .ignoresSafeArea()
             .allowsHitTesting(false)
+            .opacity(chrome.isVisible ? 1 : 0)
 
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
@@ -72,6 +89,8 @@ struct SceneBoxStreamPlaybackView: View {
                 }
                 .padding(.horizontal, 18)
                 .padding(.top, 12)
+                .opacity(chrome.isVisible || failure != nil ? 1 : 0)
+                .allowsHitTesting(chrome.isVisible || failure != nil)
 
                 Spacer()
 
@@ -104,11 +123,27 @@ struct SceneBoxStreamPlaybackView: View {
                     SceneBoxTransportControls(
                         player: player,
                         positionSeconds: $positionSeconds,
-                        durationSeconds: $durationSeconds
+                        durationSeconds: $durationSeconds,
+                        onEditingChanged: { editing in
+                            if editing {
+                                chrome.holdVisible()
+                            } else {
+                                chrome.releaseHold(autoHide: player.isPlaying && !isBuffering)
+                            }
+                        },
+                        onInteraction: { chrome.interacted(autoHide: player.isPlaying && !isBuffering) }
                     )
                     .padding(.horizontal, 18)
                     .padding(.bottom, 26)
+                    .opacity(chrome.isVisible ? 1 : 0)
+                    .allowsHitTesting(chrome.isVisible)
                 }
+            }
+            if isBuffering {
+                ProgressView("Buffering…")
+                    .padding(20)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .allowsHitTesting(false)
             }
         }
         .foregroundStyle(.white)
@@ -126,11 +161,37 @@ struct SceneBoxStreamPlaybackView: View {
         .onChange(of: player.selectedSubtitleTrack?.id) { _, _ in
             subtitles.syncEmbedded(on: player)
         }
-        .onAppear(perform: startPlayback)
+        .task(id: chrome.autoHideID) { await chrome.autoHide() }
+        .onChange(of: isSettingsPresented) { _, open in
+            if open {
+                chrome.holdVisible()
+            } else {
+                chrome.releaseHold(autoHide: player.isPlaying && !isBuffering)
+            }
+        }
+        .onChange(of: player.isPlaying) { _, playing in
+            UIApplication.shared.isIdleTimerDisabled = playing || previousIdleTimerDisabled
+            guard failure == nil, !isBuffering else { return }
+            if playing { chrome.playbackStarted() }
+            else { chrome.reveal(autoHide: false) }
+        }
+        .onChange(of: isBuffering) { _, buffering in
+            if buffering { chrome.reveal(autoHide: false) }
+            else if player.isPlaying { chrome.playbackStarted() }
+        }
+        .onChange(of: player.isSeekable) { _, _ in restoreProgressIfReady() }
+        .onChange(of: player.duration) { _, _ in restoreProgressIfReady() }
+        .onAppear {
+            previousIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
+            startPlayback()
+        }
         .onDisappear {
             playbackTask?.cancel()
             monitorTask?.cancel()
             progressTask?.cancel()
+            saveProgress()
+            chrome.viewDisappeared()
+            UIApplication.shared.isIdleTimerDisabled = previousIdleTimerDisabled
             player.stop()
             nowPlayingController?.end()
             nowPlayingController = nil
@@ -151,14 +212,31 @@ struct SceneBoxStreamPlaybackView: View {
         playbackTask?.cancel()
         monitorTask?.cancel()
         progressTask?.cancel()
+        saveProgress()
+        nowPlayingController?.end()
+        nowPlayingController = nil
         player.stop()
+        positionSeconds = 0
+        durationSeconds = 0
+        isStalled = false
+        didSeekToStart = false
+        resumePosition = item.kind == .movie
+            ? PlaybackProgressStore.shared.progress(for: item.id)?.position ?? 0 : 0
+        subtitles = SubtitlesController()
+        chrome.reveal(autoHide: false)
         failure = nil
 
         playbackTask = Task { @MainActor in
             do {
                 try await PlaybackAudioSession.activate()
                 try Task.checkCancellation()
-                try player.play(url: source.url)
+                let media = try Media(url: source.url)
+                if !source.url.isFileURL {
+                    let isTorrent = source.url.host == "127.0.0.1" || source.url.host == "localhost"
+                    media.addOption(":network-caching=\(isTorrent ? 8000 : 1500)")
+                    if !isTorrent { media.addOption(":http-reconnect") }
+                }
+                try player.play(media)
                 loadSubtitlesIfAvailable()
                 let controller = SceneBoxNowPlayingController(player: player, title: item.title)
                 controller.begin(artworkURL: item.posterURL)
@@ -182,6 +260,7 @@ struct SceneBoxStreamPlaybackView: View {
                 guard !Task.isCancelled else { return }
                 if state == .error {
                     failure = "The source could not be decoded or stopped responding. Retry or select another source."
+                    chrome.reveal(autoHide: false)
                     player.pause()
                     return
                 }
@@ -192,14 +271,56 @@ struct SceneBoxStreamPlaybackView: View {
     private func trackProgress() {
         progressTask?.cancel()
         progressTask = Task { @MainActor in
+            var lastSeen = player.currentTime
+            var frozenTicks = 0
+            var lastSave = Date()
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(400))
+                try? await Task.sleep(for: .milliseconds(500))
                 guard !Task.isCancelled else { return }
                 positionSeconds = seconds(player.currentTime)
                 durationSeconds = player.duration.map(seconds) ?? 0
+                if player.isPlaying, player.currentTime == lastSeen {
+                    frozenTicks += 1
+                } else {
+                    frozenTicks = 0
+                }
+                lastSeen = player.currentTime
+                isStalled = frozenTicks >= 3
+                if Date().timeIntervalSince(lastSave) >= 5 {
+                    saveProgress()
+                    lastSave = Date()
+                }
                 nowPlayingController?.refresh()
             }
         }
+    }
+
+    private var isBuffering: Bool {
+        guard failure == nil else { return false }
+        switch player.state {
+        case .opening, .buffering: return true
+        case .playing: return player.currentTime == .zero || isStalled
+        default: return false
+        }
+    }
+
+    private func restoreProgressIfReady() {
+        guard !didSeekToStart, player.isSeekable,
+              let duration = player.duration, duration > .zero else { return }
+        didSeekToStart = true
+        guard resumePosition.isFinite, resumePosition > 5,
+              resumePosition < seconds(duration) - 30 else { return }
+        try? player.seek(to: .seconds(resumePosition))
+    }
+
+    private func saveProgress() {
+        guard item.kind == .movie, failure == nil, player.currentTime > .zero else { return }
+        PlaybackProgressStore.shared.record(
+            itemID: item.id,
+            position: seconds(player.currentTime),
+            duration: player.duration.map(seconds) ?? durationSeconds,
+            item: item
+        )
     }
 
     private func loadSubtitlesIfAvailable() {
@@ -229,6 +350,8 @@ private struct SceneBoxTransportControls: View {
     let player: SwiftVLC.Player
     @Binding var positionSeconds: Double
     @Binding var durationSeconds: Double
+    let onEditingChanged: (Bool) -> Void
+    let onInteraction: () -> Void
     @State private var scrubPosition: Double?
 
     private var sliderPosition: Double {
@@ -240,6 +363,7 @@ private struct SceneBoxTransportControls: View {
             HStack(spacing: 42) {
                 Button {
                     try? player.seek(by: .seconds(-10), fast: true)
+                    onInteraction()
                 } label: {
                     Image(systemName: "gobackward.10")
                         .font(.system(size: 27, weight: .medium))
@@ -250,6 +374,7 @@ private struct SceneBoxTransportControls: View {
 
                 Button {
                     player.togglePlayPause()
+                    onInteraction()
                 } label: {
                     Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 28, weight: .semibold))
@@ -260,6 +385,7 @@ private struct SceneBoxTransportControls: View {
 
                 Button {
                     try? player.seek(by: .seconds(10), fast: true)
+                    onInteraction()
                 } label: {
                     Image(systemName: "goforward.10")
                         .font(.system(size: 27, weight: .medium))
@@ -282,6 +408,7 @@ private struct SceneBoxTransportControls: View {
                     ),
                     in: 0...max(durationSeconds, 1),
                     onEditingChanged: { editing in
+                        onEditingChanged(editing)
                         guard !editing, let target = scrubPosition else { return }
                         try? player.seek(to: .seconds(target))
                         positionSeconds = target

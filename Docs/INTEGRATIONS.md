@@ -37,3 +37,11 @@ Trakt scrobbling includes a TMDB identifier only when the selected movie was ret
 CineNex's embedded WebKit player includes an on-device Playback Cleaner. When enabled, it compiles a small native WebKit content-blocking rule set for selected third-party advertising domains, rejects top-level navigation to those domains, and refuses to create pop-up web views. It does not inspect or rewrite video streams, remove ads mixed into video, inject page scripts, or promise to eliminate every ad. Filtering can be disabled globally or for an individual provider when a player stops working. Only HTTPS navigation is allowed, and the filter is deliberately conservative to reduce compatibility risk.
 
 The initial domain list is bundled with the app; no browsing history or URLs are uploaded to a filtering service. Domain coverage is intentionally limited and should be expanded only with evidence that the additional rules do not break supported players.
+
+## SceneBox playback port
+
+The Watch Hub VLC player ports SceneBox's `ChromeVisibility`, `PlaybackFormatting.trackLabel`, and the network-cache, stall-monitoring, and progress concepts from `PlaybackScreen` (source: `Diam0ndNEX/scenebox`, under `WatchBox/Features/Player`). The controls hide after four seconds of active playback, remain visible while paused or buffering, and defer hiding while settings or seeking are in use. The video surface toggles the controls.
+
+VLC uses an eight-second cache for local torrent HTTP streams and a 1.5-second cache with HTTP reconnect for remote streams. Frozen playback shows a buffering indicator after three half-second samples. Retry ends the previous lock-screen controller before registering new commands and resets subtitle discovery.
+
+Movie progress is saved every five seconds and on close using CineNex's existing local progress store; resume waits for a seekable stream with a known duration. Series playback deliberately does not store episode positions under the series-level movie-progress key. Episode-aware resume and next-episode autoplay need a separate episode progress contract before being ported. These changes require simulator CI and real-device playback verification; static inspection is not evidence of working provider playback.
