@@ -11,32 +11,50 @@ struct SeasonEpisodesView: View {
     @State private var episodes: [TMDBSeasonEpisode] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var searchText = ""
+    @State private var selectedEpisode: Int?
 
     var body: some View {
         NavigationStack {
-            Group {
-                if isLoading && episodes.isEmpty {
-                    ProgressView("Loading episodes…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let errorMessage, episodes.isEmpty {
-                    ContentUnavailableView {
-                        Label("Episodes unavailable", systemImage: "wifi.exclamationmark")
-                    } description: {
-                        Text(errorMessage)
-                    } actions: {
-                        Button("Try Again") {
-                            Task { await loadEpisodes() }
-                        }
-                        .buttonStyle(.borderedProminent)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 20) {
+                    seasonHeader
+                    episodeStatus
+
+                    if !episodes.isEmpty {
+                        episodeControls
                     }
-                } else if episodes.isEmpty {
-                    ContentUnavailableView(
-                        "No episodes listed",
-                        systemImage: "rectangle.stack",
-                        description: Text("TMDB has not provided episode details for this season.")
-                    )
-                } else {
-                    List(episodes) { episode in
+
+                    if let errorMessage {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("Episode details unavailable", systemImage: "wifi.exclamationmark")
+                                .font(.headline)
+                            Text(errorMessage).font(.subheadline).foregroundStyle(.secondary)
+                            Button("Try again") { Task { await loadEpisodes() } }
+                                .buttonStyle(.borderedProminent)
+                        }
+                        .padding(18)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 18))
+                    }
+
+                    if !isLoading && errorMessage == nil && episodes.isEmpty {
+                        ContentUnavailableView(
+                            "No episodes listed",
+                            systemImage: "rectangle.stack",
+                            description: Text("TMDB has not provided episode details for this season.")
+                        )
+                    } else if !episodes.isEmpty && visibleEpisodes.isEmpty {
+                        ContentUnavailableView {
+                            Label("No matching episodes", systemImage: "magnifyingglass")
+                        } description: {
+                            Text("Search by episode title or number, or reset your selection.")
+                        } actions: {
+                            Button("Show all episodes") { searchText = ""; selectedEpisode = nil }
+                        }
+                    }
+
+                    ForEach(visibleEpisodes) { episode in
                         Button {
                             watchRequest = EpisodeWatchRequest(item: item, seasonNumber: season.seasonNumber, episodeNumber: episode.episodeNumber)
                         } label: {
@@ -44,19 +62,11 @@ struct SeasonEpisodesView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityHint("Choose a source for this episode")
-                            .listRowBackground(Color.cineNexSurface)
-                    }
-                    .listStyle(.plain)
-                    .overlay(alignment: .top) {
-                        if isLoading {
-                            ProgressView()
-                                .padding(8)
-                                .background(.regularMaterial, in: Capsule())
-                                .padding(.top, 8)
-                        }
                     }
                 }
+                .padding(20)
             }
+            .refreshable { await loadEpisodes() }
             .background(Color.cineNexBackground)
             .navigationTitle(season.displayName)
             .navigationBarTitleDisplayMode(.inline)
@@ -94,63 +104,180 @@ struct SeasonEpisodesView: View {
         }
     }
 
-    private func episodeRow(_ episode: TMDBSeasonEpisode) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            CachedPosterImage(
-                url: episode.stillURL,
-                fallbackSymbol: "play.rectangle",
-                symbolSize: 24
-            )
-            .frame(width: 112, height: 70)
-            .overlay {
-                Image(systemName: "play.circle.fill")
-                    .font(.title)
-                    .foregroundStyle(.white)
-                    .shadow(radius: 4)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+    private var visibleEpisodes: [TMDBSeasonEpisode] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return episodes.filter { episode in
+            (selectedEpisode == nil || episode.episodeNumber == selectedEpisode)
+                && (query.isEmpty || episode.displayName.localizedCaseInsensitiveContains(query)
+                    || String(episode.episodeNumber) == query)
+        }
+    }
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text("E\(episode.episodeNumber) · \(episode.displayName)")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
+    private var summaryCount: Int {
+        episodes.filter { !($0.overview?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) }.count
+    }
 
-                HStack(spacing: 8) {
-                    if let airDate = episode.airDate, !airDate.isEmpty {
-                        Text(airDate)
-                    }
-                    if let runtime = episode.runtimeLabel {
-                        Text(runtime)
-                    }
-                    if let rating = episode.voteAverage, rating > 0 {
-                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
+    private var seasonHeader: some View {
+        HStack(alignment: .top, spacing: 18) {
+            CachedPosterImage(url: season.posterURL ?? item.posterURL, fallbackSymbol: "tv", symbolSize: 32)
+                .frame(width: 94, height: 140)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+            VStack(alignment: .leading, spacing: 9) {
+                Text(item.title.uppercased())
+                    .font(.caption.weight(.bold))
+                    .tracking(1.5)
+                    .foregroundStyle(Color.cineNexAccent)
+                Text(season.displayName)
+                    .font(.title.weight(.bold))
+                HStack(spacing: 12) {
+                    if let year = season.airYear { Text(String(year)) }
+                    if let count = season.episodeCount, count > 0 {
+                        Text("\(count) episodes")
                     }
                 }
-                .font(.caption2)
+                .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
-
-                if let overview = episode.overview?.trimmingCharacters(in: .whitespacesAndNewlines),
-                   !overview.isEmpty {
+                if let overview = season.overview?.trimmingCharacters(in: .whitespacesAndNewlines), !overview.isEmpty {
                     Text(overview)
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(4)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text("No episode summary available.")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .lineLimit(5)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
+    }
+
+    private var episodeStatus: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(isLoading ? "Fetching episode details" : "Episode guide", systemImage: "rectangle.stack.fill")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if isLoading { ProgressView().controlSize(.small) }
+                else { Text("\(episodes.count) loaded").font(.caption).foregroundStyle(.secondary) }
+            }
+            if !episodes.isEmpty {
+                ProgressView(value: Double(summaryCount), total: Double(episodes.count))
+                    .tint(Color.cineNexAccent)
+                    .accessibilityLabel("Episode summary availability")
+                    .accessibilityValue("\(summaryCount) of \(episodes.count) episodes have summaries")
+                Text("Summaries available for \(summaryCount) of \(episodes.count) episodes · TMDB")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if isLoading {
+                Text("Loading titles, stills and air dates from TMDB…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var episodeControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Find an episode by title or number", text: $searchText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .accessibilityLabel("Search episodes")
+                if !searchText.isEmpty {
+                    Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        .accessibilityLabel("Clear episode search")
+                }
+            }
+            .padding(13)
+            .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14))
+            HStack {
+                Text("\(visibleEpisodes.count) episodes")
+                    .font(.headline)
+                Spacer()
+                Menu {
+                    Button("All episodes") { selectedEpisode = nil }
+                    ForEach(episodes) { episode in
+                        Button("E\(episode.episodeNumber) · \(episode.displayName)") {
+                            selectedEpisode = episode.episodeNumber
+                        }
+                    }
+                } label: {
+                    Label(selectedEpisode.map { "Episode \($0)" } ?? "All episodes", systemImage: "line.3.horizontal.decrease")
+                        .font(.subheadline.weight(.medium))
+                }
+            }
+        }
+    }
+
+    private func episodeRow(_ episode: TMDBSeasonEpisode) -> some View {
+        let overview = episode.overview?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return VStack(alignment: .leading, spacing: 0) {
+            CachedPosterImage(url: episode.stillURL, fallbackSymbol: "play.rectangle", symbolSize: 38)
+                .frame(maxWidth: .infinity)
+                .frame(height: 170)
+                .clipped()
+                .overlay(alignment: .bottomLeading) {
+                    Text("EPISODE \(episode.episodeNumber)")
+                        .font(.caption.weight(.bold))
+                        .tracking(1)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(12)
+                }
+            VStack(alignment: .leading, spacing: 10) {
+                Text(episode.displayName)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                ViewThatFits(in: .horizontal) {
+                    episodeMetadata(episode)
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let date = episode.airDate, !date.isEmpty { Text(date) }
+                        if let runtime = episode.runtimeLabel { Text(runtime) }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                Text(overview.isEmpty ? "No episode summary available." : overview)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Label("Choose source", systemImage: "play.fill")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                }
+                .foregroundStyle(Color.cineNexAccent)
+                .padding(.top, 4)
+            }
+            .padding(16)
+        }
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 20))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .overlay { RoundedRectangle(cornerRadius: 20).strokeBorder(.white.opacity(0.06)) }
+        .contentShape(RoundedRectangle(cornerRadius: 20))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func episodeMetadata(_ episode: TMDBSeasonEpisode) -> some View {
+        HStack(spacing: 12) {
+            if let date = episode.airDate, !date.isEmpty { Text(date) }
+            if let runtime = episode.runtimeLabel { Text(runtime) }
+            if let rating = episode.voteAverage, rating > 0 {
+                Label(String(format: "%.1f", rating), systemImage: "star.fill")
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 
     @MainActor
     private func loadEpisodes() async {
+        guard !isLoading else { return }
         guard let token = TMDBTokenStore.load()?
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !token.isEmpty else {

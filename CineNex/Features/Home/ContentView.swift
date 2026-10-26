@@ -32,6 +32,7 @@ struct ContentView: View {
     @State private var animeSearchText = ""
     @State private var animeSearchResults: [AnimeTitle] = []
     @State private var animeSearchLoading = false
+    @State private var animeSearchGeneration = UUID()
     @State private var animeSearchError: String?
     @State private var hasSearchedAnime = false
     @StateObject private var animeProgressStore = AnimeProgressStore.shared
@@ -39,6 +40,14 @@ struct ContentView: View {
     @State private var catalog = CatalogCacheStore.shared.load()?.items ?? []
     @State private var catalogLoading = false
     @State private var catalogLoadStage = 0
+    @State private var catalogPage = 0
+    @State private var catalogTotalPages = 0
+    @State private var catalogLoadingMore = false
+    @State private var catalogMoreError: String?
+    @State private var catalogGeneration = UUID()
+    @State private var catalogPagingToken: String?
+    @State private var catalogPaginationTask: Task<Void, Never>?
+    @State private var latestCatalogPageItems: [MediaItem] = []
     @State private var animeLoadStage = 0
     @State private var catalogError: String?
     @State private var remoteSearchResults: [MediaItem] = []
@@ -46,6 +55,7 @@ struct ContentView: View {
     @State private var remoteSearchPage = 0
     @State private var remoteSearchTotalPages = 0
     @State private var remoteSearchLoading = false
+    @State private var remoteSearchGeneration = UUID()
     @State private var remoteSearchLoadingMore = false
     @State private var remoteSearchError: String?
     @State private var selectedSearchKind = SearchKind.all
@@ -353,8 +363,55 @@ struct ContentView: View {
                 if !series.isEmpty { mediaSection(title: "One more episode", subtitle: "Series to spend time with", items: series) }
                 genreDestinations
                 }
+                let laneIDs = Set(homeLaneItems.map(\.id))
+                let newlyLoaded = latestCatalogPageItems.filter { laneIDs.contains($0.id) }
+                if !newlyLoaded.isEmpty {
+                    mediaSection(title: "More discoveries", subtitle: "From the page you just loaded", items: newlyLoaded)
+                }
+                catalogPaginationFooter
             }
         }
+    }
+
+    private var catalogPaginationFooter: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Explore more titles").font(.title3.bold())
+                Spacer()
+                Text("\(catalog.count) loaded").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            if let catalogMoreError {
+                Label(catalogMoreError, systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            if catalogPage > 0 && catalogPage < catalogTotalPages {
+                Button {
+                    guard !catalogLoading, !catalogLoadingMore else { return }
+                    catalogPaginationTask = Task { await loadMoreCatalog() }
+                } label: {
+                    HStack(spacing: 10) {
+                        if catalogLoadingMore { ProgressView().controlSize(.small) }
+                        Text(catalogLoadingMore ? "Loading more titles…" : catalogMoreError == nil ? "Load more titles" : "Retry loading more")
+                        Spacer()
+                        Image(systemName: "plus.circle")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .padding(16)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.cineNexAccent.opacity(0.13), in: RoundedRectangle(cornerRadius: 14))
+                }
+                .buttonStyle(.plain)
+                .disabled(catalogLoading || catalogLoadingMore)
+                Text("Loads the next catalog page only when you tap. Pull down to refresh from the start.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            } else {
+                Button("Search the full catalog", systemImage: "magnifyingglass") { selectedTab = .search }
+                    .font(.subheadline.weight(.semibold))
+            }
+        }
+        .padding(18)
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 20))
+        .padding(.horizontal, 20)
     }
 
     private var homeLaneItems: [MediaItem] {
@@ -582,7 +639,7 @@ struct ContentView: View {
         .background(Color.cineNexBackground.ignoresSafeArea())
         .searchable(text: searchBinding, prompt: "Find a title, a world, a new favorite")
         .onSubmit(of: .search) { rememberSearch(searchBinding.wrappedValue) }
-        .task(id: "\(selectedHomeExperience)|\(searchBinding.wrappedValue)") {
+        .task(id: "\(selectedTab == .search)|\(selectedHomeExperience)|\(searchBinding.wrappedValue)") {
             guard selectedTab == .search else { return }
             let query = searchBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !query.isEmpty else { return }
@@ -869,12 +926,12 @@ struct ContentView: View {
             hasSearchedAnime = false
             return
         }
-        guard !animeSearchLoading else { return }
-
+        let generation = UUID()
+        animeSearchGeneration = generation
         animeSearchLoading = true
         animeSearchError = nil
         hasSearchedAnime = true
-        defer { animeSearchLoading = false }
+        defer { if animeSearchGeneration == generation { animeSearchLoading = false } }
 
         do {
             let results = try await AniListCatalogProvider().searchAnime(query: query)
@@ -918,38 +975,104 @@ struct ContentView: View {
 
     @MainActor
     private func loadCatalog(force: Bool = false) async {
-        let token = TMDBTokenStore.load()?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !catalogLoading else { return }
-
+        if catalogLoadingMore && !force { return }
+        catalogPaginationTask?.cancel()
+        catalogPaginationTask = nil
+        let generation = UUID()
+        catalogGeneration = generation
+        catalogLoadingMore = false
+        catalogMoreError = nil
+        let token = TMDBTokenStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         catalogLoading = true
         catalogLoadStage = 0
-        defer { catalogLoading = false }
+        defer {
+            if catalogGeneration == generation { catalogLoading = false }
+        }
         do {
             let liveCatalog: [MediaItem]
+            let pageNumber: Int
+            let totalPages: Int
             catalogLoadStage = 1
             if token.isEmpty {
                 liveCatalog = try await CinemetaCatalogProvider().fetchCatalog()
+                pageNumber = 0
+                totalPages = 0
             } else {
-                liveCatalog = try await TMDBCatalogProvider(readAccessToken: token).fetchCatalog()
+                let page = try await TMDBCatalogProvider(readAccessToken: token).catalogPage(page: 1)
+                liveCatalog = page.items
+                pageNumber = page.page
+                totalPages = page.totalPages
             }
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, catalogGeneration == generation else { return }
             guard !liveCatalog.isEmpty else {
                 catalogError = "No titles were returned. Showing the last saved catalog."
                 return
             }
             catalogLoadStage = 2
-            catalog = liveCatalog
-            CatalogCacheStore.shared.save(liveCatalog)
+            var seenIDs = Set<String>()
+            let uniqueCatalog = liveCatalog.filter { seenIDs.insert($0.id).inserted }
+            catalog = uniqueCatalog
+            latestCatalogPageItems = []
+            catalogPage = pageNumber
+            catalogTotalPages = totalPages
+            catalogPagingToken = token.isEmpty ? nil : token
+            // Cache only the refreshed first page, not an ever-growing browsing session.
+            CatalogCacheStore.shared.save(uniqueCatalog)
             catalogLoadStage = 3
             catalogError = nil
         } catch is CancellationError {
             return
         } catch {
+            guard !Task.isCancelled, catalogGeneration == generation else { return }
             catalogError = error.localizedDescription
-            if catalog.isEmpty {
-                catalog = CatalogCacheStore.shared.load()?.items ?? []
+            if catalog.isEmpty { catalog = CatalogCacheStore.shared.load()?.items ?? [] }
+        }
+    }
+
+    @MainActor
+    private func loadMoreCatalog() async {
+        guard !catalogLoading, !catalogLoadingMore, catalogPage > 0,
+              catalogPage < catalogTotalPages, let token = catalogPagingToken else { return }
+        guard TMDBTokenStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines) == token else {
+            catalogMoreError = "Your catalog connection changed. Pull down to refresh before loading more."
+            return
+        }
+        let generation = catalogGeneration
+        let nextPage = catalogPage + 1
+        catalogLoadingMore = true
+        catalogMoreError = nil
+        defer {
+            if catalogGeneration == generation {
+                catalogLoadingMore = false
+                catalogPaginationTask = nil
             }
+        }
+        do {
+            let page = try await TMDBCatalogProvider(readAccessToken: token).catalogPage(page: nextPage)
+            guard !Task.isCancelled, catalogGeneration == generation, !catalogLoading else { return }
+            guard TMDBTokenStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines) == token else {
+                catalogMoreError = "Your catalog connection changed. Pull down to refresh."
+                return
+            }
+            guard page.page == nextPage else {
+                catalogMoreError = "The catalog returned an unexpected page. Pull down to refresh."
+                return
+            }
+            var seenIDs = Set(catalog.map(\.id))
+            let additions = page.items.filter { seenIDs.insert($0.id).inserted }
+            catalog.append(contentsOf: additions)
+            latestCatalogPageItems = additions
+            catalogPage = page.page
+            catalogTotalPages = page.totalPages
+            if additions.isEmpty && page.hasMorePages {
+                catalogMoreError = "No new titles on this page. You can load the next page to continue."
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled, catalogGeneration == generation else { return }
+            catalogMoreError = error.localizedDescription
         }
     }
 
@@ -959,9 +1082,11 @@ struct ContentView: View {
         guard !query.isEmpty else { return }
         let token = TMDBTokenStore.load()?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let generation = UUID()
+        remoteSearchGeneration = generation
         remoteSearchLoading = true
         remoteSearchError = nil
-        defer { remoteSearchLoading = false }
+        defer { if remoteSearchGeneration == generation { remoteSearchLoading = false } }
         do {
             let results: [MediaItem]
             let pageNumber: Int
@@ -988,6 +1113,7 @@ struct ContentView: View {
         } catch is CancellationError {
             return
         } catch {
+            guard !Task.isCancelled, remoteSearchGeneration == generation else { return }
             remoteSearchError = error.localizedDescription
             remoteSearchResults = []
             remoteSearchQuery = ""

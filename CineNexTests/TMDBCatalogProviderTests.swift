@@ -2,6 +2,15 @@ import XCTest
 @testable import CineNex
 
 final class TMDBCatalogProviderTests: XCTestCase {
+    func testDiscoveryMappingAppliesEndpointMediaKindAndBoundsInvalidInput() throws {
+        let data = Data(#"{"page":1,"total_pages":5,"results":[{"id":9,"name":"Series"}]}"#.utf8)
+        let page = try TMDBCatalogProvider.mapDiscoveryPage(data, mediaType: "tv", requestedPage: 1)
+        XCTAssertEqual(page.items.first?.kind, .series)
+        XCTAssertEqual(page.items.first?.id, "tmdb-tv-9")
+        XCTAssertThrowsError(try TMDBCatalogProvider.mapDiscoveryPage(data, mediaType: "person", requestedPage: 1))
+        XCTAssertThrowsError(try TMDBCatalogProvider.mapDiscoveryPage(Data("{}".utf8), mediaType: "movie", requestedPage: 1))
+    }
+
     func testMapResponseRejectsMalformedJSON() {
         XCTAssertThrowsError(try TMDBCatalogProvider.mapResponse(Data("{ invalid".utf8))) { error in
             guard case TMDBCatalogError.invalidData = error else {

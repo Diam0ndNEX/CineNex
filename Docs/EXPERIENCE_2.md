@@ -23,3 +23,10 @@ The Linux editing environment cannot execute SwiftUI. Existing Python CI/patcher
 Device acceptance: visit every tab; switch Cinema/Anime on Home and Search; change every Studio preference; open a title from a lane, search and Library; play an episode from its season; filter/sort sources; cancel preparation; verify both Torrentio and MediaFusion playback; seek with each skip interval; enable/cancel a sleep timer; confirm saved titles and accounts survive restart; check large Dynamic Type and Reduce Motion. Inspect warmth and transfers under the same release/workload before comparing efficiency.
 
 Native visual QA and measured energy improvement remain unverified until device replay. This work does not replace the torrent wrapper or introduce background animation loops.
+
+
+## Completion pass before merging
+
+The original redesign commit passed iOS CI. Review still found that Home was constrained to one initial catalog response, and the season episode screen retained its older list. Follow-up work adds manual paginated movie/TV discovery for configured TMDB connections (documented discover endpoints), duplicate suppression, first-page-only caching, explicit refresh cancellation and stale-response guards. Token-free Cinemeta discovery stays unchanged; collection screens show the loaded catalog snapshot until reopened. Search re-entry and rapid anime query replacement are also handled.
+
+The episode picker now uses real episode/season metadata in the new layout. No fabricated viewing completion or transfer percentage is shown. Follow-up Swift validation and device layout checks remain required; the PR stays unmerged.
