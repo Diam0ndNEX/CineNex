@@ -13,6 +13,8 @@ struct PlayerView: View {
     @State private var playbackError: String?
     @State private var timeObserver: Any?
     @State private var progressTask: Task<Void, Never>?
+    @State private var vlcPositionSeconds: Double = 0
+    @State private var vlcDurationSeconds: Double = 0
     @State private var audioGroup: AVMediaSelectionGroup?
     @State private var subtitleGroup: AVMediaSelectionGroup?
     @State private var audioOptions: [AVMediaSelectionOption] = []
@@ -124,6 +126,15 @@ struct PlayerView: View {
                 Spacer()
             }
         }
+        .overlay(alignment: .bottom) {
+            if isUsingVLC {
+                VLCTransportControls(
+                    player: vlcPlayer,
+                    positionSeconds: $vlcPositionSeconds,
+                    durationSeconds: $vlcDurationSeconds
+                )
+            }
+        }
         .statusBarHidden()
         .onAppear(perform: startPlayback)
         .onDisappear {
@@ -203,6 +214,8 @@ struct PlayerView: View {
         do {
             try vlcPlayer.play(url: url)
             isUsingVLC = true
+            vlcPositionSeconds = seconds(vlcPlayer.currentTime)
+            vlcDurationSeconds = vlcPlayer.duration.map(seconds) ?? 0
             startVLCProgressTracking()
             Task { @MainActor in
                 for _ in 0..<40 {
@@ -227,11 +240,16 @@ struct PlayerView: View {
     private func startVLCProgressTracking() {
         progressTask?.cancel()
         progressTask = Task { @MainActor in
+            var lastProgressSave = Date()
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(10))
-                guard !Task.isCancelled else { return }
-                guard isUsingVLC else { continue }
-                saveCurrentProgress()
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled, isUsingVLC else { return }
+                vlcPositionSeconds = seconds(vlcPlayer.currentTime)
+                vlcDurationSeconds = vlcPlayer.duration.map(seconds) ?? 0
+                if Date().timeIntervalSince(lastProgressSave) >= 10 {
+                    saveCurrentProgress()
+                    lastProgressSave = Date()
+                }
             }
         }
     }
@@ -240,6 +258,8 @@ struct PlayerView: View {
         isUsingVLC = false
         progressTask?.cancel()
         progressTask = nil
+        vlcPositionSeconds = 0
+        vlcDurationSeconds = 0
         player.pause()
         player.replaceCurrentItem(with: nil)
         audioGroup = nil
@@ -371,5 +391,104 @@ struct PlayerView: View {
             duration: duration.isFinite ? duration : 0,
             item: item
         )
+    }
+}
+
+
+private struct VLCTransportControls: View {
+    let player: SwiftVLC.Player
+    @Binding var positionSeconds: Double
+    @Binding var durationSeconds: Double
+    @State private var scrubPosition: Double?
+
+    private var sliderPosition: Double {
+        min(max(scrubPosition ?? positionSeconds, 0), max(durationSeconds, 1))
+    }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 42) {
+                Button {
+                    try? player.seek(by: .seconds(-10), fast: true)
+                } label: {
+                    Image(systemName: "gobackward.10")
+                        .font(.system(size: 27, weight: .medium))
+                        .frame(width: 48, height: 48)
+                }
+                .disabled(!player.isSeekable)
+                .accessibilityLabel("Back 10 seconds")
+
+                Button {
+                    player.togglePlayPause()
+                } label: {
+                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 28, weight: .semibold))
+                        .frame(width: 62, height: 62)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .accessibilityLabel(player.isPlaying ? "Pause playback" : "Resume playback")
+
+                Button {
+                    try? player.seek(by: .seconds(10), fast: true)
+                } label: {
+                    Image(systemName: "goforward.10")
+                        .font(.system(size: 27, weight: .medium))
+                        .frame(width: 48, height: 48)
+                }
+                .disabled(!player.isSeekable)
+                .accessibilityLabel("Forward 10 seconds")
+            }
+            .buttonStyle(.plain)
+
+            HStack(spacing: 10) {
+                Text(timecode(scrubPosition ?? positionSeconds))
+                    .font(.caption.monospacedDigit())
+                    .frame(minWidth: 42, alignment: .leading)
+
+                Slider(
+                    value: Binding(
+                        get: { sliderPosition },
+                        set: { scrubPosition = $0 }
+                    ),
+                    in: 0...max(durationSeconds, 1),
+                    onEditingChanged: { editing in
+                        guard !editing, let target = scrubPosition else { return }
+                        try? player.seek(to: .seconds(target))
+                        positionSeconds = target
+                        scrubPosition = nil
+                    }
+                )
+                .tint(.white)
+                .disabled(!player.isSeekable || durationSeconds <= 0)
+                .accessibilityLabel("Playback position")
+
+                Text(timecode(durationSeconds))
+                    .font(.caption.monospacedDigit())
+                    .frame(minWidth: 42, alignment: .trailing)
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 18)
+        .padding(.top, 24)
+        .padding(.bottom, 18)
+        .background(
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.78)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+    }
+
+    private func timecode(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        let total = Int(seconds.rounded(.down))
+        let hours = total / 3_600
+        let minutes = (total % 3_600) / 60
+        let remaining = total % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, remaining)
+        }
+        return String(format: "%d:%02d", minutes, remaining)
     }
 }
