@@ -2,6 +2,24 @@ import XCTest
 @testable import CineNex
 
 final class SceneBoxStreamPickerTests: XCTestCase {
+    func testMediaFusionIsNotHiddenByTorrentioLimit() throws {
+        let streams = try (0..<30).map { index in
+            try XCTUnwrap(StremioTorrentDescriptor(
+                infoHash: String(format: "%040x", index + 1), fileIndex: 0,
+                title: "1080p 👤 20", providerName: "Torrentio"
+            ))
+        }
+        let mediaFusion = try XCTUnwrap(StremioTorrentDescriptor(
+            infoHash: String(repeating: "f", count: 40), fileIndex: 0,
+            title: "1080p", providerName: "MediaFusion Midnight"
+        ))
+        let limited = SceneBoxStreamPicker.balanced(streams + [mediaFusion], limit: 12)
+        XCTAssertEqual(limited.count, 12)
+        XCTAssertTrue(limited.contains { $0.id == mediaFusion.id })
+        XCTAssertEqual(limited[1].providerName, "MediaFusion Midnight")
+        XCTAssertTrue(SceneBoxStreamPicker.balanced(streams, limit: 0).isEmpty)
+    }
+
     func testPrefersRequestedResolutionWhenSeedersMeetSceneBoxThreshold() throws {
         let lowSeedHighResolution = try XCTUnwrap(
             StremioTorrentDescriptor(

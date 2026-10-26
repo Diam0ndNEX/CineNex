@@ -7,8 +7,21 @@ struct PlayerView: View {
     let item: MediaItem
     @ObservedObject var progressStore: PlaybackProgressStore
     @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VLCPlayerHost(onClose: { dismiss() }) { player in
+            LoadedPlayerView(item: item, progressStore: progressStore, vlcPlayer: player)
+        }
+    }
+}
+
+@MainActor
+private struct LoadedPlayerView: View {
+    let item: MediaItem
+    @ObservedObject var progressStore: PlaybackProgressStore
+    @Environment(\.dismiss) private var dismiss
     @State private var player = AVPlayer()
-    @State private var vlcPlayer = SwiftVLC.Player()
+    let vlcPlayer: SwiftVLC.Player
     @State private var vlcNowPlayingController: SceneBoxNowPlayingController?
     @State private var nowPlayingController: NowPlayingController?
     @State private var isUsingVLC = true

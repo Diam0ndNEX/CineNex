@@ -236,6 +236,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         settings.preallocateStorage = false
         settings.validateHttpsTrackers = true
 
+        PlaybackDiagnostics.record("Creating libtorrent session")
         let session = Session(
             root,
             torrentsPath: torrentsDirectory,
@@ -243,12 +244,14 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             settings: settings,
             storages: [:]
         )
+        PlaybackDiagnostics.record("Libtorrent session created")
         self.downloadRoot = root
         self.session = session
 
         guard let magnet = MagnetURI(with: descriptor.magnetURL) else {
             throw TorrentStreamingError.invalidRequest
         }
+        PlaybackDiagnostics.record("Adding magnet to libtorrent")
         guard let handle = session.addTorrent(magnet) else {
             throw TorrentStreamingError.engineUnavailable
         }
@@ -257,6 +260,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         session.resume()
         handle.resume()
 
+        PlaybackDiagnostics.record("Waiting for torrent metadata")
         let snapshot = try await waitForMetadata(on: handle, generation: generation)
         try ensureCurrentLifecycle(generation)
         let selectedFile: FileEntry

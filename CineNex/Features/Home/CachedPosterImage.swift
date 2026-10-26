@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import ImageIO
 
 struct CachedPosterImage: View {
     let url: URL?
@@ -22,6 +23,8 @@ struct CachedPosterImage: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .clipped()
+        .allowsHitTesting(false)
         .task(id: url) {
             await loader.load(from: url)
         }
@@ -63,15 +66,24 @@ private final class PosterImageLoader: ObservableObject {
             try Task.checkCancellation()
             guard let httpResponse = response as? HTTPURLResponse,
                   (200..<300).contains(httpResponse.statusCode),
-                  let decodedImage = UIImage(data: data) else {
+                  data.count <= 20_000_000,
+                  let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 1_000,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true
+                  ] as CFDictionary) else {
                 return
             }
 
-            Self.cache.setObject(decodedImage, forKey: url as NSURL, cost: data.count)
+            let decodedImage = UIImage(cgImage: thumbnail)
+            Self.cache.setObject(decodedImage, forKey: url as NSURL, cost: thumbnail.bytesPerRow * thumbnail.height)
             image = decodedImage
         } catch is CancellationError {
             return
         } catch {
+            guard !Task.isCancelled else { return }
             image = nil
         }
     }

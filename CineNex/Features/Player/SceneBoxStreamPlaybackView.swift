@@ -11,13 +11,31 @@ struct SceneBoxStreamPlaybackView: View {
     let episodeNumber: Int
     let onClose: () -> Void
 
+    var body: some View {
+        VLCPlayerHost(onClose: onClose) { player in
+            LoadedSceneBoxStreamPlaybackView(
+                source: source, item: item, seasonNumber: seasonNumber,
+                episodeNumber: episodeNumber, onClose: onClose, player: player
+            )
+        }
+    }
+}
+
+@MainActor
+private struct LoadedSceneBoxStreamPlaybackView: View {
+    let source: PlaybackSource
+    let item: MediaItem
+    let seasonNumber: Int
+    let episodeNumber: Int
+    let onClose: () -> Void
+
     @AppStorage("cinenex.preferredSubtitleLanguage") private var preferredSubtitleLanguage = SubtitleLanguage.deviceDefault.code
     @State private var chrome = SceneBoxChromeVisibility()
     @State private var isStalled = false
     @State private var didSeekToStart = false
     @State private var resumePosition = 0.0
     @State private var previousIdleTimerDisabled = false
-    @State private var player = SwiftVLC.Player()
+    let player: SwiftVLC.Player
     @State private var subtitles = SubtitlesController()
     @State private var nowPlayingController: SceneBoxNowPlayingController?
     @State private var isSettingsPresented = false
@@ -192,10 +210,13 @@ struct SceneBoxStreamPlaybackView: View {
             saveProgress()
             chrome.viewDisappeared()
             UIApplication.shared.isIdleTimerDisabled = previousIdleTimerDisabled
-            player.stop()
+            let stoppingPlayer = player
+            Task {
+                await stoppingPlayer.stopAndWait()
+                PlaybackAudioSession.deactivate()
+            }
             nowPlayingController?.end()
             nowPlayingController = nil
-            PlaybackAudioSession.deactivate()
             let position = positionSeconds
             let duration = durationSeconds
             Task {
@@ -236,6 +257,7 @@ struct SceneBoxStreamPlaybackView: View {
                     media.addOption(":network-caching=\(isTorrent ? 8000 : 1500)")
                     if !isTorrent { media.addOption(":http-reconnect") }
                 }
+                PlaybackDiagnostics.record("Starting VLC media")
                 try player.play(media)
                 loadSubtitlesIfAvailable()
                 let controller = SceneBoxNowPlayingController(player: player, title: item.title)

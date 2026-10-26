@@ -13,6 +13,33 @@ enum SceneBoxStreamPicker {
         }
     }
 
+    /// Interleave providers before applying a limit so a prolific provider cannot hide another.
+    static func balanced(_ streams: [StremioTorrentDescriptor], limit: Int = 48) -> [StremioTorrentDescriptor] {
+        guard limit > 0 else { return [] }
+        var providers: [String] = []
+        var groups: [String: [StremioTorrentDescriptor]] = [:]
+        var seen = Set<String>()
+        for stream in streams where seen.insert(stream.id).inserted {
+            if groups[stream.providerName] == nil { providers.append(stream.providerName) }
+            groups[stream.providerName, default: []].append(stream)
+        }
+        for provider in providers { groups[provider] = ordered(groups[provider] ?? []) }
+        var result: [StremioTorrentDescriptor] = []
+        var index = 0
+        while result.count < limit {
+            var added = false
+            for provider in providers {
+                guard let values = groups[provider], index < values.count else { continue }
+                result.append(values[index])
+                added = true
+                if result.count == limit { return result }
+            }
+            guard added else { break }
+            index += 1
+        }
+        return result
+    }
+
     static func resolution(for stream: StremioTorrentDescriptor) -> String? {
         let text = stream.title.lowercased()
         if text.contains("2160p") || text.contains("4k") || text.contains("uhd") { return "2160p" }
