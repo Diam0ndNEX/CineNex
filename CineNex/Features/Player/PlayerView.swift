@@ -16,6 +16,9 @@ struct PlayerView: View {
     @State private var vlcStateTask: Task<Void, Never>?
     @State private var vlcPositionSeconds: Double = 0
     @State private var vlcDurationSeconds: Double = 0
+    @State private var subtitlesController = SubtitlesController()
+    @AppStorage("cinenex.preferredSubtitleLanguage") private var preferredSubtitleLanguage = SubtitleLanguage.deviceDefault.code
+    @State private var isVLCSettingsPresented = false
     @State private var audioGroup: AVMediaSelectionGroup?
     @State private var subtitleGroup: AVMediaSelectionGroup?
     @State private var audioOptions: [AVMediaSelectionOption] = []
@@ -85,6 +88,19 @@ struct PlayerView: View {
                     }
                     .accessibilityLabel("Choose playback engine")
 
+                    if isUsingVLC {
+                        Button {
+                            isVLCSettingsPresented = true
+                        } label: {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(.black.opacity(0.55), in: Circle())
+                        }
+                        .accessibilityLabel("VLC playback settings")
+                    }
+
                     if !isUsingVLC, audioOptions.count > 1, let audioGroup {
                         Menu {
                             ForEach(Array(audioOptions.enumerated()), id: \.offset) { entry in
@@ -137,6 +153,18 @@ struct PlayerView: View {
             }
         }
         .statusBarHidden()
+        .sheet(isPresented: $isVLCSettingsPresented) {
+            SceneBoxPlaybackSettingsPanel(player: vlcPlayer, subs: subtitlesController) {
+                isVLCSettingsPresented = false
+            }
+            .presentationBackground(.clear)
+        }
+        .onChange(of: vlcPlayer.subtitleTracks.count) { _, _ in
+            subtitlesController.syncEmbedded(on: vlcPlayer)
+        }
+        .onChange(of: vlcPlayer.selectedSubtitleTrack?.id) { _, _ in
+            subtitlesController.syncEmbedded(on: vlcPlayer)
+        }
         .onAppear(perform: startPlayback)
         .onDisappear {
             saveCurrentProgress()
@@ -218,6 +246,7 @@ struct PlayerView: View {
 
         do {
             try vlcPlayer.play(url: url)
+            loadSubtitlesIfAvailable()
             isUsingVLC = true
             vlcPositionSeconds = seconds(vlcPlayer.currentTime)
             vlcDurationSeconds = vlcPlayer.duration.map(seconds) ?? 0
@@ -353,6 +382,7 @@ struct PlayerView: View {
         player.replaceCurrentItem(with: nil)
         do {
             try vlcPlayer.play(url: url)
+            loadSubtitlesIfAvailable()
             isUsingVLC = true
             startVLCProgressTracking()
             monitorVLCPlayback(for: url)
@@ -384,6 +414,23 @@ struct PlayerView: View {
     private func retryPlayback() {
         playbackError = nil
         startPlayback()
+    }
+
+    private func loadSubtitlesIfAvailable() {
+        guard let imdbID = item.externalIMDbID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              imdbID.range(of: "^tt[0-9]{5,12}$", options: .regularExpression) != nil else {
+            return
+        }
+        subtitlesController.load(
+            context: SubtitleContext(
+                imdbID: imdbID,
+                type: item.kind == .movie ? .movie : .series,
+                season: nil,
+                episode: nil
+            ),
+            preferred: preferredSubtitleLanguage,
+            player: vlcPlayer
+        )
     }
 
     @MainActor
