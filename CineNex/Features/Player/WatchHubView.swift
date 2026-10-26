@@ -1090,6 +1090,7 @@ private struct DiscoveredSourcePlaybackView: View {
     @AppStorage(PlaybackCleanerPolicy.enabledStorageKey) private var cleanerGloballyEnabled = true
     @AppStorage(PlaybackCleanerPolicy.disabledProvidersStorageKey) private var disabledProviderStorage = ""
     @State private var player: AVPlayer
+    @State private var videoGravity: AVLayerVideoGravity = .resizeAspect
 
     private var cleanerEnabled: Bool {
         PlaybackCleanerPolicy.isEnabled(
@@ -1109,7 +1110,7 @@ private struct DiscoveredSourcePlaybackView: View {
         NavigationStack {
             Group {
                 if source.supportsNativePlayback {
-                    NativePlaybackView(player: player)
+                    NativePlaybackView(player: player, videoGravity: $videoGravity)
                         .onAppear { player.play() }
                         .onDisappear {
                             player.pause()

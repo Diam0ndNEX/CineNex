@@ -13,12 +13,15 @@ struct PlayerView: View {
     @State private var audioOptions: [AVMediaSelectionOption] = []
     @State private var subtitleOptions: [AVMediaSelectionOption] = []
     @State private var nowPlayingController: NowPlayingController?
+    @State private var isSettingsPresented = false
+    @State private var videoGravity: AVLayerVideoGravity = .resizeAspect
+    @State private var playbackRate: Float = 1
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if item.streamURL != nil {
-                NativePlaybackView(player: player)
+                NativePlaybackView(player: player, videoGravity: $videoGravity)
                     .ignoresSafeArea()
                     .accessibilityLabel("Video player for \(item.title)")
             } else {
@@ -49,6 +52,17 @@ struct PlayerView: View {
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity)
+
+                    Button {
+                        isSettingsPresented = true
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(.black.opacity(0.55), in: Circle())
+                    }
+                    .accessibilityLabel("Playback settings")
 
                     if audioOptions.count > 1, let audioGroup {
                         Menu {
@@ -94,6 +108,20 @@ struct PlayerView: View {
         }
         .statusBarHidden()
         .onAppear(perform: startPlayback)
+        .sheet(isPresented: $isSettingsPresented) {
+            PlaybackSettingsPanel(
+                player: player,
+                audioOptions: audioOptions,
+                subtitleOptions: subtitleOptions,
+                audioGroup: audioGroup,
+                subtitleGroup: subtitleGroup,
+                videoGravity: $videoGravity,
+                playbackRate: $playbackRate,
+                onClose: { isSettingsPresented = false }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         .onDisappear {
             saveCurrentProgress()
             let position = player.currentTime().seconds
@@ -106,6 +134,7 @@ struct PlayerView: View {
                 )
             }
             player.pause()
+            PlaybackAudioSession.deactivate()
             nowPlayingController?.end()
             nowPlayingController = nil
             if let timeObserver {
@@ -178,7 +207,17 @@ struct PlayerView: View {
                     if position > 5 {
                         await player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
                     }
-                    player.play()
+                    do {
+                        try await PlaybackAudioSession.activate()
+                    } catch {
+                        playbackError = "Audio playback could not be initialized: \\(error.localizedDescription)"
+                        return
+                    }
+                    guard player.currentItem === playerItem else {
+                        PlaybackAudioSession.deactivate()
+                        return
+                    }
+                    player.playImmediately(atRate: playbackRate)
                     if nowPlayingController == nil {
                         let controller = NowPlayingController()
                         controller.begin(player: player, title: item.title, artworkURL: item.posterURL)
