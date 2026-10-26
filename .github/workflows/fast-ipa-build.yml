@@ -2,6 +2,8 @@ name: Fast IPA Build
 
 on:
   workflow_dispatch:
+  push:
+    branches: [build/ipa]
 
 concurrency:
   group: cinenex-fast-ipa-${{ github.ref }}
