@@ -9,6 +9,7 @@ struct PlaybackSettingsPanel: View {
     let audioGroup: AVMediaSelectionGroup?
     let subtitleGroup: AVMediaSelectionGroup?
     @Binding var videoGravity: AVLayerVideoGravity
+    @Binding var playbackRate: Float
     let onClose: () -> Void
 
     private let playbackRates: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 2]
@@ -19,13 +20,16 @@ struct PlaybackSettingsPanel: View {
                 Section("Playback speed") {
                     ForEach(playbackRates, id: \.self) { rate in
                         Button {
-                            player.rate = rate
+                            playbackRate = rate
+                            if player.rate != 0 {
+                                player.rate = rate
+                            }
                         } label: {
                             HStack {
                                 Text(rate.formatted(.number.precision(.fractionLength(0...2))) + "×")
                                     .foregroundStyle(.primary)
                                 Spacer()
-                                if abs(player.rate - rate) < 0.01 {
+                                if abs(playbackRate - rate) < 0.01 {
                                     Image(systemName: "checkmark")
                                         .foregroundStyle(.tint)
                                 }
