@@ -104,9 +104,9 @@ struct WatchHubView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     hero
                     quickActions
-                    episodeSelection
-                    providerSection
-                    recommendationsSection
+                    episodeSelection.disabled(preparingTorrentDescriptorID != nil)
+                    providerSection.disabled(preparingTorrentDescriptorID != nil)
+                    recommendationsSection.disabled(preparingTorrentDescriptorID != nil)
                 }
                 .padding(20)
                 .padding(.bottom, 28)
