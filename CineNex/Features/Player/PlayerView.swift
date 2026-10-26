@@ -20,6 +20,9 @@ struct PlayerView: View {
     @State private var subtitleGroup: AVMediaSelectionGroup?
     @State private var audioOptions: [AVMediaSelectionOption] = []
     @State private var subtitleOptions: [AVMediaSelectionOption] = []
+    @State private var subtitlesController = SubtitlesController()
+    @State private var isVLCSettingsPresented = false
+    @AppStorage("cinenex.preferredSubtitleLanguage") private var preferredSubtitleLanguage = SubtitleLanguage.deviceDefault.code
 
     var body: some View {
         ZStack {
@@ -85,6 +88,19 @@ struct PlayerView: View {
                     }
                     .accessibilityLabel("Choose playback engine")
 
+                    if isUsingVLC {
+                        Button {
+                            isVLCSettingsPresented = true
+                        } label: {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(.black.opacity(0.55), in: Circle())
+                        }
+                        .accessibilityLabel("Playback settings")
+                    }
+
                     if !isUsingVLC, audioOptions.count > 1, let audioGroup {
                         Menu {
                             ForEach(Array(audioOptions.enumerated()), id: \.offset) { entry in
@@ -138,6 +154,15 @@ struct PlayerView: View {
         }
         .statusBarHidden()
         .onAppear(perform: startPlayback)
+        .sheet(isPresented: $isVLCSettingsPresented) {
+            VLCPlaybackSettingsPanel(
+                player: vlcPlayer,
+                subtitles: subtitlesController,
+                onClose: { isVLCSettingsPresented = false }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         .onDisappear {
             saveCurrentProgress()
             let position = currentPositionSeconds
@@ -219,6 +244,7 @@ struct PlayerView: View {
         do {
             try vlcPlayer.play(url: url)
             isUsingVLC = true
+            loadVLCSubtitles()
             vlcPositionSeconds = seconds(vlcPlayer.currentTime)
             vlcDurationSeconds = vlcPlayer.duration.map(seconds) ?? 0
             startVLCProgressTracking()
@@ -241,6 +267,24 @@ struct PlayerView: View {
             isUsingVLC = false
             startNativePlayback(url: url)
         }
+    }
+
+    private func loadVLCSubtitles() {
+        guard let imdbID = item.externalIMDbID,
+              imdbID.range(of: #"^tt[0-9]+$"#, options: .regularExpression) != nil else {
+            return
+        }
+        let context = SubtitleContext(
+            imdbID: imdbID,
+            type: item.kind == .series ? "series" : "movie",
+            season: nil,
+            episode: nil
+        )
+        subtitlesController.load(
+            context: context,
+            preferred: preferredSubtitleLanguage,
+            player: vlcPlayer
+        )
     }
 
     private func monitorVLCPlayback(for url: URL) {
@@ -354,6 +398,7 @@ struct PlayerView: View {
         do {
             try vlcPlayer.play(url: url)
             isUsingVLC = true
+            loadVLCSubtitles()
             startVLCProgressTracking()
             monitorVLCPlayback(for: url)
             let position = progressStore.progress(for: item.id)?.position ?? 0
