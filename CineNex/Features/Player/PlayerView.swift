@@ -14,6 +14,7 @@ struct PlayerView: View {
     @State private var subtitleOptions: [AVMediaSelectionOption] = []
     @State private var isSettingsPresented = false
     @State private var videoGravity: AVLayerVideoGravity = .resizeAspect
+    @State private var playbackRate: Float = 1
 
     var body: some View {
         ZStack {
@@ -114,6 +115,7 @@ struct PlayerView: View {
                 audioGroup: audioGroup,
                 subtitleGroup: subtitleGroup,
                 videoGravity: $videoGravity,
+                playbackRate: $playbackRate,
                 onClose: { isSettingsPresented = false }
             )
             .presentationDetents([.medium, .large])
@@ -211,7 +213,7 @@ struct PlayerView: View {
                         PlaybackAudioSession.deactivate()
                         return
                     }
-                    player.play()
+                    player.playImmediately(atRate: playbackRate)
                     Task { await TraktIntegration.shared.scrobbleStart(for: item) }
                     return
                 case .failed:
