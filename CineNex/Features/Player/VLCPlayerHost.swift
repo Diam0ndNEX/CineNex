@@ -1,6 +1,19 @@
 import SwiftUI
 import SwiftVLC
 
+@MainActor
+enum VLCPlaybackRuntime {
+    static func makePlayer() async throws -> SwiftVLC.Player {
+        PlaybackDiagnostics.record("Initializing VLC instance")
+        let instance = try await Task.detached(priority: .userInitiated) {
+            try VLCInstance(arguments: VLCInstance.defaultArguments, applicationName: "CineNex")
+        }.value
+        try Task.checkCancellation()
+        PlaybackDiagnostics.record("Creating VLC player")
+        return SwiftVLC.Player(instance: instance)
+    }
+}
+
 /// Owns initialization so a missing or unusable VLC instance becomes a visible error.
 @MainActor
 struct VLCPlayerHost<Content: View>: View {
@@ -36,13 +49,7 @@ struct VLCPlayerHost<Content: View>: View {
         .task(id: attempt) {
             failure = nil
             do {
-                PlaybackDiagnostics.record("Initializing VLC instance")
-                let instance = try await Task.detached(priority: .userInitiated) {
-                    try VLCInstance(arguments: VLCInstance.defaultArguments, applicationName: "CineNex")
-                }.value
-                try Task.checkCancellation()
-                PlaybackDiagnostics.record("Creating VLC player")
-                player = SwiftVLC.Player(instance: instance)
+                player = try await VLCPlaybackRuntime.makePlayer()
                 PlaybackDiagnostics.record("VLC player ready")
             } catch is CancellationError {
                 return
