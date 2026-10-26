@@ -53,3 +53,15 @@ Repeated attempts stopping at `Creating libtorrent session` narrow the failure t
 Both build workflows apply `Scripts/patch_xitrix_session_startup.py` before compilation, and its hash invalidates old native caches. The native initializer appends bounded JSON-lines checkpoints, synchronously flushed at each step, covering settings conversion, session construction, persistence restoration and the alerts thread. Records include attempt ID, uptime, thread and resident memory. Swift diagnostics add attempt-relative timing, errors, metadata peer/rate snapshots, selected-file size/type and piece wait ranges. No source URL, manifest configuration path, movie title, credentials or magnet hash is intentionally recorded; URL-shaped values in error details are redacted. The report is local and shared only through the user's Share action.
 
 Provider diagnostics distinguish manifest and stream requests, HTTP status/bytes/timing, parsed hash/direct counts and final displayed counts per provider. Legacy generic ElfHosted-only configurations also query Midnight; custom configured MediaFusion paths are preserved. App version/build are included so a report identifies its installed artifact.
+
+## Comparison with SceneBox's native startup
+
+Reference: `Diam0ndNEX/scenebox` commit `865bd5acb5a1e31e19756f18d742e248b1b186c0`, specifically `LibTorrent/LibTorrentEngine/TorrentEngine.mm` and `WatchBox/Core/TorrentEngine/LibtorrentSession.swift`.
+
+SceneBox uses a separate Objective-C++ `TorrentEngine` API and one process-wide `LTSharedSession`; CineNex uses the XITRIX framework and per-selection sessions. SceneBox supplies listen/outgoing strings directly as C++ literals and thus avoids the XITRIX null-NSString conversion defect. CineNex's startup patch supplies the same interface values and checks every returned UTF-8 pointer.
+
+The patch also adapts SceneBox's explicit TCP/discovery profile: 150 connection limit, named DHT bootstrap routers, all-tier/all-tracker announcing and peer/handshake timeouts. Swift disables uTP, UPnP and NAT-PMP to match that profile. SceneBox's default tracker list is added after each descriptor's trackers, preserving descriptor identity and the existing validation/deduplication limit.
+
+CineNex does not claim to share SceneBox's native session implementation. Its wrapper now exposes an explicit shutdown: pause the session, cancel the alert thread and let its loop exit instead of keeping a per-selection session alive forever. The Swift engine invokes it during teardown. This avoids an independently confirmed lifecycle leak; it is not evidence that this leak caused the reported first-start crash.
+
+The header/tail buffering and piece-read implementations remain distinct. They execute after session creation and therefore cannot explain the supplied logs stopping during session settings initialization. A device retry remains necessary after the native fix.

@@ -35,6 +35,21 @@ class NativeStartupPatchTests(unittest.TestCase):
         self.assertIn('@"persistence.restore.begin"', session)
         self.assertIn('@"alerts.thread.start"', session)
 
+    def test_scene_box_peer_profile_is_adapted(self):
+        settings, _, _ = patched_sources(*self.sources())
+        self.assertIn('settings_pack::connections_limit, 150', settings)
+        self.assertIn('settings_pack::dht_bootstrap_nodes', settings)
+        self.assertIn('router.bittorrent.com:6881', settings)
+        self.assertIn('settings_pack::enable_outgoing_tcp, true', settings)
+        self.assertIn('settings_pack::announce_to_all_trackers, true', settings)
+
+    def test_native_alert_thread_can_be_stopped(self):
+        _, session, header = patched_sources(*self.sources())
+        self.assertIn('- (void)shutdown;', header)
+        self.assertIn('[_eventsThread cancel];', session)
+        self.assertNotIn('while (YES)', session)
+        self.assertIn('while (![[NSThread currentThread] isCancelled])', session)
+
     def test_patch_is_idempotent(self):
         result = patched_sources(*self.sources())
         self.assertIsNone(patched_sources(*result))

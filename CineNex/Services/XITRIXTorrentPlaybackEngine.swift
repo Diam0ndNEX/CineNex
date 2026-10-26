@@ -235,7 +235,9 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         settings.maxUploadingTorrents = 1
         settings.isDhtEnabled = true
         settings.isLsdEnabled = false
-        settings.isUtpEnabled = true
+        settings.isUtpEnabled = false
+        settings.isUpnpEnabled = false
+        settings.isNatEnabled = false
         settings.preallocateStorage = false
         settings.validateHttpsTrackers = true
 
@@ -256,10 +258,11 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         self.downloadRoot = root
         self.session = session
 
-        guard let magnet = MagnetURI(with: descriptor.magnetURL) else {
+        guard let bootstrapped = SceneBoxTorrentBootstrap.withDefaultTrackers(descriptor),
+              let magnet = MagnetURI(with: bootstrapped.magnetURL) else {
             throw TorrentStreamingError.invalidRequest
         }
-        PlaybackDiagnostics.record("Adding magnet to libtorrent")
+        PlaybackDiagnostics.record("Adding magnet to libtorrent", details: ["tracker_count": String(bootstrapped.trackers.count), "transport": "tcp", "bootstrap_profile": "scenebox"] )
         guard let handle = session.addTorrent(magnet) else {
             throw TorrentStreamingError.engineUnavailable
         }
@@ -474,7 +477,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             handle.pause()
             session.removeTorrent(handle, deleteFiles: true)
         }
-        session?.pause()
+        session?.shutdown()
         if let downloadRoot {
             try? FileManager.default.removeItem(at: downloadRoot)
         }

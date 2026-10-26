@@ -3,9 +3,9 @@ from pathlib import Path
 import argparse
 import re
 
-MARKER = '// CineNex native startup diagnostics v1'
+MARKER = '// CineNex native startup diagnostics v2'
 TRACE = r'''
-// CineNex native startup diagnostics v1
+// CineNex native startup diagnostics v2
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -125,6 +125,25 @@ def patched_sources(settings, session, header):
         _proxyPassword = @"";
 '''
     settings = settings.replace(settings_anchor, defaults + settings_anchor, 1)
+    # Adapt SceneBox TorrentEngine.mm's peer-discovery profile to this wrapper.
+    profile_anchor = '    settings.set_int(lt::settings_pack::aio_threads, 4);'
+    if settings.count(profile_anchor) != 1:
+        raise PatchError('Unexpected native disk-thread settings anchor.')
+    profile = r'''
+    // Adapted from SceneBox LibTorrent/LibTorrentEngine/TorrentEngine.mm.
+    settings.set_int(lt::settings_pack::connections_limit, 150);
+    settings.set_str(lt::settings_pack::dht_bootstrap_nodes,
+        "router.bittorrent.com:6881,dht.transmissionbt.com:6881,router.utorrent.com:6881,dht.libtorrent.org:25401");
+    settings.set_bool(lt::settings_pack::enable_outgoing_tcp, true);
+    settings.set_bool(lt::settings_pack::enable_incoming_tcp, true);
+    settings.set_bool(lt::settings_pack::announce_to_all_trackers, true);
+    settings.set_bool(lt::settings_pack::announce_to_all_tiers, true);
+    settings.set_int(lt::settings_pack::peer_connect_timeout, 8);
+    settings.set_int(lt::settings_pack::peer_timeout, 30);
+    settings.set_int(lt::settings_pack::handshake_timeout, 20);
+'''
+    settings = settings.replace(profile_anchor, profile_anchor + '\n' + profile, 1)
+
     for field in fields:
         settings = settings.replace(f'[_{field} UTF8String]', f'CineNexSafeUTF8(_{field})')
     session = session[:start] + constructor + session[end:]
@@ -133,6 +152,23 @@ def patched_sources(settings, session, header):
         raise PatchError('Unexpected Session error-domain declaration.')
     session = session.replace(anchor, TRACE + anchor, 1)
     header = header.replace(signature, '- (nullable instancetype)initWith:', 1)
+    loop_anchor = '    while (YES) {'
+    if session.count(loop_anchor) != 1 or header.count('- (void)pause;') != 1:
+        raise PatchError('Unexpected native alerts-loop lifecycle.')
+    session = session.replace(loop_anchor, '    while (![[NSThread currentThread] isCancelled]) {', 1)
+    shutdown = r'''
+- (void)shutdown {
+    CineNexNativeStage(@"session.shutdown.requested");
+    [_eventsThread cancel];
+    if (_session != nullptr) { _session->pause(); }
+}
+
+'''
+    if session.count('- (void)dealloc {') != 1:
+        raise PatchError('Unexpected native deallocator.')
+    session = session.replace('- (void)dealloc {', shutdown + '- (void)dealloc {', 1)
+    header = header.replace('- (void)pause;', '- (void)shutdown;\n- (void)pause;', 1)
+
     return settings, session, header
 
 
