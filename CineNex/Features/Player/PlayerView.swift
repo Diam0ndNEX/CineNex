@@ -246,6 +246,10 @@ struct PlayerView: View {
         player.pause()
         player.replaceCurrentItem(with: nil)
         vlcPlayer.stop()
+        vlcNowPlayingController?.end()
+        vlcNowPlayingController = nil
+        nowPlayingController?.end()
+        nowPlayingController = nil
         audioGroup = nil
         subtitleGroup = nil
         audioOptions = []
