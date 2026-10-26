@@ -135,7 +135,8 @@ final class NowPlayingController {
         artworkTask = Task { [weak self] in
             guard let (data, response) = try? await URLSession.shared.data(from: url),
                   !Task.isCancelled,
-                  (response as? HTTPURLResponse)?.statusCode.map({ (200..<300).contains($0) }) ?? true,
+                  let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode),
                   let image = UIImage(data: data) else {
                 return
             }
