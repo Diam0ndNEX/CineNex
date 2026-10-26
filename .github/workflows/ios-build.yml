@@ -91,8 +91,9 @@ jobs:
           path: Thirdparty/LibTorrent-Swift/Build
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
 
-      - name: Cache Swift package downloads
-        uses: actions/cache@v4
+      - name: Restore Swift package downloads
+        id: package-cache
+        uses: actions/cache/restore@v4
         with:
           path: SourcePackages
           key: swift-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-key.outputs.fingerprint }}-${{ hashFiles('project.yml') }}
@@ -102,6 +103,19 @@ jobs:
 
       - name: Generate Xcode project
         run: xcodegen generate
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project CineNex.xcodeproj -scheme CineNex \
+            -clonedSourcePackagesDirPath SourcePackages
+
+      - name: Save packages before compilation
+        if: steps.package-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: SourcePackages
+          key: ${{ steps.package-cache.outputs.cache-primary-key }}
 
       - name: Select an available iPhone simulator
         id: simulator

@@ -1,6 +1,7 @@
 import XCTest
 @testable import CineNex
 
+@MainActor
 final class TraktRatingsStoreRecoveryTests: XCTestCase {
     func testStoreRestoresLatestDuplicateAndDropsInvalidPersistedRatings() async throws {
         let suiteName = "TraktRatingsStoreRecoveryTests.\(UUID().uuidString)"

@@ -1,6 +1,7 @@
 import XCTest
 @testable import CineNex
 
+@MainActor
 final class TraktHistoryTests: XCTestCase {
     func testHistoryDecodeDeduplicatesMoviesAndKeepsLatestWatchDateAndPlayCount() throws {
         let data = Data("""
