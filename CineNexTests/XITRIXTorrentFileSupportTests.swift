@@ -4,14 +4,14 @@ import XCTest
 
 final class XITRIXTorrentFileSupportTests: XCTestCase {
     func testAcceptsNativeAVPlayerFileTypes() {
-        for path in ["movie.mp4", "movie.m4v", "movie.mov", "track.mp3", "track.m4a", "track.aac", "track.wav"] {
+        for path in ["movie.mp4", "movie.m4v", "movie.mov", "movie.mkv", "movie.avi", "movie.webm", "movie.ts", "movie.m2ts", "movie.flv", "movie.wmv", "movie.ogv", "movie.mpeg", "movie.3gp", "track.mp3", "track.m4a", "track.aac", "track.wav", "track.flac", "track.ogg", "track.opus"] {
             XCTAssertTrue(XITRIXTorrentFileSupport.isPlayableFile(path), path)
             XCTAssertNotNil(XITRIXTorrentFileSupport.contentType(for: path), path)
         }
     }
 
-    func testRejectsContainersNotSupportedByNativeAVPlayer() {
-        for path in ["movie.mkv", "movie.avi", "movie.webm", "notes.txt", "folder/movie"] {
+    func testRejectsUnknownAndNonMediaFiles() {
+        for path in ["notes.txt", "cover.jpg", "sample.nfo", "folder/movie"] {
             XCTAssertFalse(XITRIXTorrentFileSupport.isPlayableFile(path), path)
             XCTAssertNil(XITRIXTorrentFileSupport.contentType(for: path), path)
         }
