@@ -203,6 +203,13 @@ struct SceneBoxPlaybackSettingsPanel: View {
         }
     }
 
+    func trackLabel(for track: Track) -> String {
+        guard let language = track.language, !language.isEmpty else { return track.name }
+        return track.name.localizedCaseInsensitiveContains(language)
+            ? track.name
+            : "\(track.name) · \(language)"
+    }
+
     private func uniqueTracks(_ tracks: [Track]) -> [Track] {
         var seen = Set<String>()
         return tracks.filter { seen.insert($0.id).inserted }
