@@ -245,28 +245,35 @@ struct ContentView: View {
     }
 
     private var homeScreen: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                header
-                experiencePicker
+        VStack(spacing: 0) {
+            experiencePicker
+                .padding(.top, 10)
+                .padding(.bottom, 8)
+                .zIndex(1)
 
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    header
+
+                    if selectedHomeExperience == "anime" {
+                        animeHomeContent
+                    } else {
+                        moviesAndSeriesHomeContent
+                    }
+                }
+                .padding(.top, 4)
+                .padding(.bottom, 30)
+            }
+            .background(Color.cineNexBackground.ignoresSafeArea())
+            .refreshable {
                 if selectedHomeExperience == "anime" {
-                    animeHomeContent
+                    await loadAnimeCatalog(force: true)
                 } else {
-                    moviesAndSeriesHomeContent
+                    await loadCatalog(force: true)
                 }
             }
-            .padding(.top, 4)
-            .padding(.bottom, 30)
         }
         .background(Color.cineNexBackground.ignoresSafeArea())
-        .refreshable {
-            if selectedHomeExperience == "anime" {
-                await loadAnimeCatalog(force: true)
-            } else {
-                await loadCatalog(force: true)
-            }
-        }
         .task(id: selectedHomeExperience) {
             if selectedHomeExperience == "anime" {
                 await loadAnimeCatalog()
