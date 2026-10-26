@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build-ipa:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 35
     steps:
       - name: Check out repository
@@ -23,13 +23,32 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
 
+      - name: Fingerprint native dependencies and toolchain
+        id: native-key
+        shell: bash
+        run: |
+          native_fingerprint=$( { xcodebuild -version; printf '%s\n' "$ImageVersion"; git submodule status --recursive; } | shasum -a 256 | awk '{print $1}')
+          echo "fingerprint=$native_fingerprint" >> "$GITHUB_OUTPUT"
+
+      - name: Restore native frameworks
+        id: native-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: Thirdparty/LibTorrent-Swift/Build
+          key: native-v1-${{ runner.os }}-${{ runner.arch }}-device-${{ steps.native-key.outputs.fingerprint }}-${{ hashFiles('Scripts/patch_xitrix_piece_priority.py', '.github/workflows/fast-ipa-build.yml') }}
+
       - name: Install native build tools
-        run: brew install cmake boost xcodegen
+        run: brew install xcodegen
+
+      - name: Install uncached native build tools
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        run: brew install cmake boost
 
       - name: Apply native wrapper bridge
         run: python3 Scripts/patch_xitrix_piece_priority.py Thirdparty/LibTorrent-Swift
 
       - name: Build native iOS frameworks
+        if: steps.native-cache.outputs.cache-hit != 'true'
         run: |
           export BOOST_ROOT="$(brew --prefix boost)"
           export BOOST_INCLUDEDIR="$BOOST_ROOT/include"
@@ -52,14 +71,42 @@ jobs:
             -framework Thirdparty/LibTorrent-Swift/DerivedData/Build/Products/Release-iphoneos/OpenSSL.framework \
             -output Thirdparty/LibTorrent-Swift/Build/OpenSSL.xcframework
 
+      - name: Save native frameworks before app compilation
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: Thirdparty/LibTorrent-Swift/Build
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
+
+      - name: Restore Swift package downloads
+        id: package-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: SourcePackages
+          key: swift-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-key.outputs.fingerprint }}-${{ hashFiles('project.yml') }}
+
       - name: Generate Xcode project
         run: xcodegen generate
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project CineNex.xcodeproj -scheme CineNex \
+            -clonedSourcePackagesDirPath SourcePackages
+
+      - name: Save packages before compilation
+        if: steps.package-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: SourcePackages
+          key: ${{ steps.package-cache.outputs.cache-primary-key }}
 
       - name: Build unsigned iOS app
         run: |
           xcodebuild \
             -project CineNex.xcodeproj \
             -scheme CineNex \
+            -clonedSourcePackagesDirPath SourcePackages \
             -destination 'generic/platform=iOS' \
             -derivedDataPath DerivedDataDevice \
             CODE_SIGNING_ALLOWED=NO \
