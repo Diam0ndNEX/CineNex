@@ -166,6 +166,24 @@ final class StremioAddonClientTests: XCTestCase {
         XCTAssertEqual(followedURL, allowedURL)
     }
 
+    func testMalformedStreamEntriesDoNotDiscardValidMediaFusionResults() throws {
+        let payload = """
+        {
+          "streams": [
+            17,
+            {"name":"Torrentio","infoHash":"0123456789abcdef0123456789abcdef01234567","fileIdx":0,"sources":["tracker:udp://tracker.example:80"]},
+            {"name":"broken URL field","url":17,"infoHash":null},
+            {"name":"MediaFusion direct","url":"https://media.example/video.mkv","title":"1080p WEB-DL"}
+          ]
+        }
+        """
+        let response = try JSONDecoder().decode(StremioStreamResponse.self, from: Data(payload.utf8))
+        XCTAssertEqual(response.streams.count, 3)
+        XCTAssertEqual(response.streams[0].infoHash, "0123456789abcdef0123456789abcdef01234567")
+        XCTAssertNil(response.streams[1].url)
+        XCTAssertEqual(response.streams[2].url?.absoluteString, "https://media.example/video.mkv")
+    }
+
     func testReportsHTTPFailureInsteadOfTreatingItAsAnEmptyResult() async throws {
         StremioStubURLProtocol.handler = { request in
             (self.response(for: request, statusCode: 503), Data())
