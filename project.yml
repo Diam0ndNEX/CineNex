@@ -25,10 +25,20 @@ settings:
     INFOPLIST_KEY_NSLocalNetworkUsageDescription: CineNex connects to peers and its local streaming server for torrent playback.
     OTHER_LDFLAGS: "$(inherited) -ObjC"
     SWIFT_EMIT_LOC_STRINGS: YES
+    INFOPLIST_KEY_CINENEX_ANILIST_CLIENT_ID: "$(CINENEX_ANILIST_CLIENT_ID)"
+    INFOPLIST_KEY_CINENEX_MAL_CLIENT_ID: "$(CINENEX_MAL_CLIENT_ID)"
+    INFOPLIST_KEY_CINENEX_TRAKT_CLIENT_ID: "$(CINENEX_TRAKT_CLIENT_ID)"
+    INFOPLIST_KEY_CINENEX_TRAKT_TOKEN_BROKER_URL: "$(CINENEX_TRAKT_TOKEN_BROKER_URL)"
 targets:
   CineNex:
     type: application
     platform: iOS
+    info:
+      path: Generated/CineNex-Info.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLName: com.diam0ndnex.cinenex.oauth
+            CFBundleURLSchemes: [cinenex]
     sources:
       - path: CineNex
     dependencies:

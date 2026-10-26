@@ -4,9 +4,7 @@ import UniformTypeIdentifiers
 
 struct TrackingView: View {
     @StateObject private var trakt = TraktIntegration.shared
-    @State private var clientID = TraktIntegration.shared.savedClientID
     @State private var scrobblingEnabled = UserDefaults.standard.bool(forKey: "cinenex.traktScrobbleEnabled")
-    @State private var showingSetupHelp = false
     @StateObject private var letterboxd = LetterboxdLibraryStore.shared
     @State private var importingLetterboxd = false
     @State private var exportingLetterboxd = false
@@ -45,6 +43,7 @@ struct TrackingView: View {
                 }
 
                 tmdbCard
+                AccountConnectionsView()
                 traktCard
                 traktWatchlistCard
                 traktHistoryCard
@@ -96,12 +95,7 @@ struct TrackingView: View {
             defaultFilename: exportFilename,
             onCompletion: finishLetterboxdExport
         )
-        .alert("Set up Trakt", isPresented: $showingSetupHelp) {
-            Button("Open Trakt Developer", action: openTraktDeveloper)
-            Button("Done", role: .cancel) {}
-        } message: {
-            Text("Create an API application on Trakt, copy its Client ID into this screen, and then connect your account. CineNex uses the device authorization flow and does not ask for your Trakt password.")
-        }
+
     }
 
     private var tmdbCard: some View {
@@ -240,18 +234,9 @@ struct TrackingView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Trakt API Client ID")
-                    .font(.subheadline.weight(.semibold))
-                SecureField("Paste your Client ID", text: $clientID)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .padding(12)
-                    .background(Color.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
-                Button("How to get a Client ID") {
-                    showingSetupHelp = true
-                }
-                .font(.footnote.weight(.medium))
+            if !trakt.browserLoginAvailable, !trakt.isConnected {
+                Text("Trakt browser login needs to be enabled in this CineNex build. No API credentials are required from you.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Toggle(isOn: $scrobblingEnabled) {
@@ -311,23 +296,13 @@ struct TrackingView: View {
                 .buttonStyle(.bordered)
             } else {
                 Button {
-                    Task {
-                        do {
-                            let authorization = try await trakt.requestDeviceAuthorization(clientID: clientID)
-                            let pollingTask = Task {
-                                await trakt.completeDeviceAuthorization(authorization)
-                            }
-                            _ = await pollingTask.value
-                        } catch {
-                            traktError(error)
-                        }
-                    }
+                    Task { await trakt.signInWithBrowser() }
                 } label: {
-                    Label(trakt.activeAuthorization == nil ? "Connect Trakt" : "Waiting for authorization…", systemImage: "link")
+                    Label(trakt.isAuthorizing ? "Waiting for Trakt sign-in…" : "Sign in to Trakt", systemImage: "link")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || trakt.activeAuthorization != nil)
+                .disabled(!trakt.browserLoginAvailable || trakt.isAuthorizing)
             }
         }
         .padding(18)

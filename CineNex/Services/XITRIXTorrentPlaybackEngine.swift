@@ -223,6 +223,10 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             .appendingPathComponent("CineNex", isDirectory: true)
             .appendingPathComponent("Torrents", isDirectory: true)
             .appendingPathComponent(descriptor.infoHash, isDirectory: true)
+        self.downloadRoot = root
+        await TorrentCacheMaintenance.shared.register(root)
+        await TorrentCacheMaintenance.shared.trim()
+        try ensureCurrentLifecycle(generation)
         let torrentsDirectory = root.appendingPathComponent("metadata", isDirectory: true)
         let resumeDirectory = root.appendingPathComponent("resume", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -469,6 +473,10 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         throw TorrentStreamingError.pieceAvailabilityTimeout
     }
 
+    private var retainPartialTransfers: Bool {
+        UserDefaults.standard.object(forKey: "cinenex.retainPartialTransfers") as? Bool ?? true
+    }
+
     func stop() async {
         if isStopping {
             await waitForStopCompletion()
@@ -487,11 +495,15 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         }
         if let handle, let session {
             handle.pause()
-            session.removeTorrent(handle, deleteFiles: true)
+            session.removeTorrent(handle, deleteFiles: false)
         }
         session?.shutdown()
         if let downloadRoot {
-            try? FileManager.default.removeItem(at: downloadRoot)
+            if retainPartialTransfers {
+                try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: downloadRoot.path)
+            }
+            await TorrentCacheMaintenance.shared.release(downloadRoot, removeIfUnused: !retainPartialTransfers)
+            await TorrentCacheMaintenance.shared.trim()
         }
         self.reader = nil
         self.preparedFile = nil

@@ -44,6 +44,8 @@ private final class PosterImageLoader: ObservableObject {
         return cache
     }()
 
+    static func clearMemoryCache() { cache.removeAllObjects() }
+
     func load(from url: URL?) async {
         image = nil
         guard let url,
@@ -59,17 +61,13 @@ private final class PosterImageLoader: ObservableObject {
         }
 
         image = nil
-        var request = URLRequest(url: url)
-        request.cachePolicy = .useProtocolCachePolicy
-        request.timeoutInterval = 15
-
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let data = try await ArtworkDiskCache.shared.data(for: url)
             try Task.checkCancellation()
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200..<300).contains(httpResponse.statusCode),
-                  data.count <= 20_000_000,
-                  let decoded = await PosterThumbnailDecoder.shared.decode(data) else { return }
+            guard let decoded = await PosterThumbnailDecoder.shared.decode(data) else {
+                await ArtworkDiskCache.shared.invalidate(url)
+                return
+            }
             try Task.checkCancellation()
             let decodedImage = UIImage(cgImage: decoded.image)
             Self.cache.setObject(decodedImage, forKey: url as NSURL, cost: decoded.cost)
@@ -102,5 +100,13 @@ private actor PosterThumbnailDecoder {
                 kCGImageSourceShouldCacheImmediately: true
               ] as CFDictionary) else { return nil }
         return DecodedPosterThumbnail(image: image)
+    }
+}
+
+@MainActor
+enum ArtworkCacheMaintenance {
+    static func clear() async {
+        PosterImageLoader.clearMemoryCache()
+        await ArtworkDiskCache.shared.clear()
     }
 }

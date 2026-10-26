@@ -141,6 +141,10 @@ struct ContentView: View {
                 Tab("Home", systemImage: "house.fill", value: AppTab.home) {
                     homeScreen
                 }
+                Tab("Browse", systemImage: "square.grid.2x2.fill", value: AppTab.browse) {
+                    CatalogBrowserView(title: "Browse", items: catalog, onSelect: { selectedItem = $0 },
+                                       footer: AnyView(catalogPaginationFooter))
+                }
                 Tab("Search", systemImage: "magnifyingglass", value: AppTab.search) {
                     searchScreen
                 }
@@ -218,6 +222,7 @@ struct ContentView: View {
     private var navigationTitle: String {
         switch selectedTab {
         case .home: return "CineNex"
+        case .browse: return "Browse"
         case .search: return "Search"
         case .library: return "Your library"
         case .tracking: return "Settings"
@@ -225,12 +230,13 @@ struct ContentView: View {
     }
 
     private var experiencePicker: some View {
-        HStack(spacing: 4) {
-            experienceButton("Cinema", subtitle: "Movies & series", symbol: "film.stack", value: "moviesAndSeries")
-            experienceButton("Anime", subtitle: "A different universe", symbol: "sparkles.tv", value: "anime")
+        CineNexGlassGroup(spacing: 4) {
+            HStack(spacing: 4) {
+                experienceButton("Cinema", subtitle: "Movies & series", symbol: "film.stack", value: "moviesAndSeries")
+                experienceButton("Anime", subtitle: "A different universe", symbol: "sparkles.tv", value: "anime")
+            }
         }
         .padding(5)
-        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 20))
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
     }
@@ -249,8 +255,12 @@ struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 46)
-            .foregroundStyle(selected ? Color.white : Color.secondary)
-            .background(selected ? Color.cineNexAccent : Color.clear, in: RoundedRectangle(cornerRadius: 16))
+            .foregroundStyle(selected ? Color.cineNexAccent : Color.primary)
+            .cineNexGlass(in: RoundedRectangle(cornerRadius: 16), prominent: selected)
+            .overlay {
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(selected ? Color.cineNexAccent.opacity(0.5) : Color.clear, lineWidth: 1)
+            }
             .contentShape(RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
@@ -373,45 +383,22 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder
     private var catalogPaginationFooter: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Explore more titles").font(.title3.bold())
-                Spacer()
-                Text("\(catalog.count) loaded").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        if catalogPage > 0 && catalogPage < catalogTotalPages {
+            CatalogAutomaticPageFooter(loadedCount: catalog.count, isLoading: catalogLoadingMore || catalogLoading,
+                                       error: catalogMoreError) {
+                guard !catalogLoading, !catalogLoadingMore else { return }
+                catalogPaginationTask = Task { await loadMoreCatalog() }
             }
-            if let catalogMoreError {
-                Label(catalogMoreError, systemImage: "exclamationmark.triangle")
-                    .font(.caption).foregroundStyle(.orange)
-            }
-            if catalogPage > 0 && catalogPage < catalogTotalPages {
-                Button {
-                    guard !catalogLoading, !catalogLoadingMore else { return }
-                    catalogPaginationTask = Task { await loadMoreCatalog() }
-                } label: {
-                    HStack(spacing: 10) {
-                        if catalogLoadingMore { ProgressView().controlSize(.small) }
-                        Text(catalogLoadingMore ? "Loading more titles…" : catalogMoreError == nil ? "Load more titles" : "Retry loading more")
-                        Spacer()
-                        Image(systemName: "plus.circle")
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(16)
-                    .frame(maxWidth: .infinity)
-                    .background(Color.cineNexAccent.opacity(0.13), in: RoundedRectangle(cornerRadius: 14))
-                }
-                .buttonStyle(.plain)
-                .disabled(catalogLoading || catalogLoadingMore)
-                Text("Loads the next catalog page only when you tap. Pull down to refresh from the start.")
-                    .font(.caption2).foregroundStyle(.secondary)
-            } else {
-                Button("Search the full catalog", systemImage: "magnifyingglass") { selectedTab = .search }
-                    .font(.subheadline.weight(.semibold))
-            }
+            .padding(.horizontal, 20)
+        } else if catalogLoading {
+            catalogLoadingStatus
+        } else {
+            Text("\(catalog.count) titles loaded")
+                .font(.caption).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity).padding(20)
         }
-        .padding(18)
-        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 20))
-        .padding(.horizontal, 20)
     }
 
     private var homeLaneItems: [MediaItem] {
@@ -472,8 +459,8 @@ struct ContentView: View {
                     } label: {
                         Text(lane.rawValue).font(.subheadline.weight(.semibold))
                             .padding(.horizontal, 16).padding(.vertical, 11)
-                            .foregroundStyle(homeLane == lane ? Color.cineNexBackground : Color.primary)
-                            .background(homeLane == lane ? Color.primary : Color.cineNexSurface, in: Capsule())
+                            .foregroundStyle(homeLane == lane ? Color.cineNexAccent : Color.primary)
+                            .cineNexGlass(in: Capsule(), prominent: homeLane == lane)
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(homeLane == lane ? .isSelected : [])
@@ -481,7 +468,7 @@ struct ContentView: View {
                 }
                 Button { shuffleOffset += 1 } label: {
                     Image(systemName: "arrow.triangle.2.circlepath").frame(width: 42, height: 42)
-                        .background(Color.cineNexSurface, in: Circle())
+                        .cineNexGlass(in: Circle())
                 }.buttonStyle(.plain).accessibilityLabel("Rotate featured picks")
             }.padding(.horizontal, 20)
         }.scrollIndicators(.hidden)
@@ -625,12 +612,12 @@ struct ContentView: View {
                     } else {
                         posterGrid(displayedSearchResults)
                         if remoteSearchPage < remoteSearchTotalPages {
-                            Button(remoteSearchLoadingMore ? "Loading…" : "Load more results") {
+                            CatalogAutomaticPageFooter(loadedCount: remoteSearchResults.count,
+                                                       isLoading: remoteSearchLoading || remoteSearchLoadingMore,
+                                                       error: remoteSearchError) {
                                 Task { await loadMoreTMDBSearchResults() }
                             }
-                            .disabled(remoteSearchLoadingMore)
-                            .buttonStyle(.bordered)
-                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 20)
                         }
                     }
                 }
@@ -651,19 +638,12 @@ struct ContentView: View {
 
     private var searchPrompt: some View {
         VStack(alignment: .leading, spacing: 24) {
-            if selectedHomeExperience == "anime" {
-                recentSearchSection
-                ContentUnavailableView("Find your next anime", systemImage: "sparkles.tv",
-                                       description: Text("Search titles from AniList above."))
+            if recentSearches.isEmpty {
+                ContentUnavailableView(selectedHomeExperience == "anime" ? "Search anime" : "Search movies & series",
+                                       systemImage: "magnifyingglass",
+                                       description: Text("Enter a title above. Your submitted searches will be saved here."))
             } else {
                 recentSearchSection
-                genreDestinations
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Popular titles").font(.title2.bold())
-                    ForEach(Array(catalog.prefix(6))) { item in
-                        CatalogLibraryRow(item: item, onDetails: { selectedItem = item }, onPlay: { watchHubItem = item })
-                    }
-                }.padding(.horizontal, 20)
             }
         }
     }
@@ -861,7 +841,7 @@ struct ContentView: View {
     }
 
     private func catalogCollection(title: String, items: [MediaItem]) -> some View {
-        CatalogBrowserView(title: title, items: items) { selectedItem = $0 }
+        CatalogBrowserView(title: title, items: items, onSelect: { selectedItem = $0 })
     }
 
     private func mediaSection(title: String, subtitle: String, items: [MediaItem], showProgress: Bool = false) -> some View {
@@ -1194,6 +1174,7 @@ struct ContentView: View {
 
 private enum AppTab: Hashable {
     case home
+    case browse
     case search
     case library
     case tracking

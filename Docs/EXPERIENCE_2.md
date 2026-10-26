@@ -30,3 +30,18 @@ Native visual QA and measured energy improvement remain unverified until device 
 The original redesign commit passed iOS CI. Review still found that Home was constrained to one initial catalog response, and the season episode screen retained its older list. Follow-up work adds manual paginated movie/TV discovery for configured TMDB connections (documented discover endpoints), duplicate suppression, first-page-only caching, explicit refresh cancellation and stale-response guards. Token-free Cinemeta discovery stays unchanged; collection screens show the loaded catalog snapshot until reopened. Search re-entry and rapid anime query replacement are also handled.
 
 The episode picker now uses real episode/season metadata in the new layout. No fabricated viewing completion or transfer percentage is shown. Follow-up Swift validation and device layout checks remain required; the PR stays unmerged.
+
+
+## Source responsiveness, glass, browsing and account follow-up
+
+Source discovery now has an explicit cancellable task, immediate Close/Cancel state invalidation, off-main result mapping and cached off-main filtered releases. Parsed descriptor identities and metadata are reused. Add-on requests are bounded to four concurrent clients and their statuses are counted per client. MediaFusion size/peer data is retained from all returned text/structured fields; unavailable metadata stays unknown.
+
+Search now contains query/results/history. Browse carries the live movie/series catalog with media-kind, genre and release-year filters and provider/popularity, newest, rating and title ordering. Home/Browse/search pagination uses one automatic request per footer visibility entry, retains error Retry, and avoids an auto-fetch loop when filtered results do not move the footer.
+
+Liquid Glass uses native iOS26 controls, grouped sampling and a narrow player timeline with separate transport circles. Older iOS and Reduce Transparency have fallbacks. Solid cards remain appropriate for readable content.
+
+Artwork has hashed URL keys, request coalescing, a 256 MiB disk budget, 7-day expiry and memory reuse. Clear cancels pending downloads and invalidates their write generations. Corrupt decoded entries are removed. Partial torrent bytes can be retained under a 2 GiB inactive-cache budget and 7-day expiry; active roots are reference-count protected. Native metadata removal means these bytes may require metadata fetching and hash rechecking next time. This is not guaranteed instant fast-resume or a complete offline copy. iOS may purge caches. Movie playback position and saved catalog snapshots continue using their existing stores.
+
+Account code is present but not enabled: CineNex's provider app registrations/public IDs are absent, and Trakt's developer-controlled token broker is not deployed. See ACCOUNT_LOGIN.md. AniList/MAL list access is currently read-only (MAL first100 entries), not two-way episode sync. Do not advertise successful live login until configuration and device sign-in are verified.
+
+The first-start touch-block symptom and energy effects still require a device replay. New regression coverage covers metadata preservation, bounded add-on fan-out, same-host provider counts, disk-cache persistence/expiry, active partial-cache deletion protection and OAuth callback validation.

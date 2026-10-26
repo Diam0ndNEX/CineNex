@@ -26,6 +26,8 @@ struct WatchHubView: View {
     @State private var manifestStorageError: String?
     @State private var manifestConfigurationLoaded = false
     @State private var sourceSearchGeneration = UUID()
+    @State private var sourceSearchTask: Task<Void, Never>?
+    @State private var filteredTorrentDescriptors: [StremioTorrentDescriptor] = []
 
     private static let legacyDefaultStremioAddonManifestURLTexts: Set<String> = [
         "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json",
@@ -54,6 +56,7 @@ struct WatchHubView: View {
     @State private var torrentPreparationTask: Task<Void, Never>?
     @State private var torrentPreparationGeneration = UUID()
     @State private var searchingAddonSources = false
+    @State private var sourceSearchCancelled = false
     @State private var discoveryCompletedProviders = 0
     @State private var cancellingPreparation = false
     @State private var addonSearchMessage: String?
@@ -83,12 +86,7 @@ struct WatchHubView: View {
 
     private var visibleTorrentSources: [StremioTorrentDescriptor] {
         guard selectedSourceFilter == "All" || selectedSourceFilter == "Torrent" else { return [] }
-        return SceneBoxStreamPicker.filtered(
-            discoveredTorrentDescriptors,
-            provider: selectedTorrentProvider == "All providers" ? nil : selectedTorrentProvider,
-            quality: selectedQuality == "Any quality" ? nil : selectedQuality,
-            sort: releaseSort
-        )
+        return filteredTorrentDescriptors
     }
 
     private var visibleEmbeddedSources: [ResolvedEmbedSource] {
@@ -131,7 +129,10 @@ struct WatchHubView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close", systemImage: "xmark") { dismiss() }
+                    Button("Close", systemImage: "xmark") {
+                        cancelSourceSearch()
+                        dismiss()
+                    }
                         .labelStyle(.iconOnly)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -170,6 +171,27 @@ struct WatchHubView: View {
                 resolveSources()
                 await searchStremioAddonSources()
             }
+            .task(id: sourceFilterRequest) {
+                let filter = sourceFilterRequest
+                filteredTorrentDescriptors = []
+                let worker = Task.detached(priority: .userInitiated) {
+                    let started = Date()
+                    let results = SceneBoxStreamPicker.filtered(filter.streams, provider: filter.provider, quality: filter.quality, sort: filter.sort)
+                    PlaybackDiagnostics.record("discovery.filter.complete", details: [
+                        "input_count": String(filter.streams.count), "output_count": String(results.count),
+                        "elapsed_ms": String(Int(Date().timeIntervalSince(started) * 1_000)),
+                        "on_main_thread": String(Thread.isMainThread)
+                    ])
+                    return results
+                }
+                let result = await withTaskCancellationHandler {
+                    await worker.value
+                } onCancel: {
+                    worker.cancel()
+                }
+                guard !Task.isCancelled else { return }
+                filteredTorrentDescriptors = result
+            }
             .task(id: item.id) {
                 await loadCatalogDetails()
             }
@@ -182,7 +204,7 @@ struct WatchHubView: View {
                 torrentPreparationTask?.cancel()
                 torrentPreparationTask = nil
                 torrentPreparationGeneration = UUID()
-                sourceSearchGeneration = UUID()
+                cancelSourceSearch()
                 Task {
                     await TorrentPlaybackSessionRegistry.shared.stopAll()
                 }
@@ -337,14 +359,16 @@ struct WatchHubView: View {
             }
             .frame(width: 24, height: 24)
             VStack(alignment: .leading, spacing: 5) {
-                Text(searchingAddonSources ? "Discovering releases" : "Search complete")
+                Text(searchingAddonSources ? "Discovering releases" : (sourceSearchCancelled ? "Search cancelled" : "Search complete"))
                     .font(.subheadline.weight(.semibold))
                 Text(searchingAddonSources
-                     ? (discoveryCompletedProviders == 0 ? "Contacting Torrentio and MediaFusion…" : "Results are ready to use. Checking remaining providers…")
+                     ? (discoveryCompletedProviders == 0 ? "Contacting configured source providers…" : "Results are ready to use. Checking remaining providers…")
                      : "\(discoveredTorrentDescriptors.count) torrent releases · \(discoveredSources.count + (item.streamURL == nil ? 0 : 1)) direct links")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if searchingAddonSources {
+                    Button("Cancel search", role: .cancel) { cancelSourceSearch() }
+                        .font(.caption.weight(.semibold))
                     ProgressView(value: Double(discoveryCompletedProviders), total: 2)
                         .tint(Color.cineNexAccent)
                         .padding(.top, 4)
@@ -743,10 +767,41 @@ struct WatchHubView: View {
         }
     }
 
+    private var sourceFilterRequest: SourceFilterRequest {
+        SourceFilterRequest(streams: discoveredTorrentDescriptors,
+                            provider: selectedTorrentProvider == "All providers" ? nil : selectedTorrentProvider,
+                            quality: selectedQuality == "Any quality" ? nil : selectedQuality,
+                            sort: releaseSort)
+    }
+
+    @MainActor
+    private func cancelSourceSearch() {
+        if searchingAddonSources { PlaybackDiagnostics.record("discovery.cancel", details: ["reason": "user_or_screen_closed"]) }
+        sourceSearchGeneration = UUID()
+        sourceSearchTask?.cancel()
+        sourceSearchTask = nil
+        searchingAddonSources = false
+        sourceSearchCancelled = true
+        addonSearchMessage = "Search cancelled. Releases already found remain available."
+    }
+
     @MainActor
     private func searchStremioAddonSources() async {
+        guard !Task.isCancelled else { return }
+        sourceSearchTask?.cancel()
+        let task = Task { await performSourceSearch() }
+        sourceSearchTask = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    @MainActor
+    private func performSourceSearch() async {
         // Reappearing beneath a player must not tear down its active torrent session.
-        guard activePlaybackSheet == nil, torrentPreparationTask == nil else { return }
+        guard !Task.isCancelled, activePlaybackSheet == nil, torrentPreparationTask == nil else { return }
         let configuredManifestURLs = stremioAddonManifestURLs
             .split(whereSeparator: \.isNewline)
             .compactMap { line -> URL? in
@@ -767,9 +822,9 @@ struct WatchHubView: View {
         }
         let generation = UUID()
         sourceSearchGeneration = generation
-        await TorrentPlaybackSessionRegistry.shared.stopAll()
         guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
         searchingAddonSources = true
+        sourceSearchCancelled = false
         discoveryCompletedProviders = 0
         providerStatuses = []
         addonSearchMessage = nil
@@ -809,7 +864,7 @@ struct WatchHubView: View {
                 providerStatuses = batches.flatMap(\.providerStatuses)
                 var seen = Set<String>()
                 discoveredSources = batches.flatMap(\.sources).filter { seen.insert($0.id).inserted }
-                discoveredTorrentDescriptors = SceneBoxStreamPicker.balanced(batches.flatMap(\.torrentDescriptors), limit: Int.max)
+                discoveredTorrentDescriptors = batches.flatMap(\.torrentDescriptors)
                 addonSearchMessage = "Received \(discoveredTorrentDescriptors.count) torrent releases. Remaining providers are still being checked."
             }
             return batches
@@ -843,7 +898,7 @@ struct WatchHubView: View {
         }
     }
 
-    private static func discoverAddonSources(
+    nonisolated private static func discoverAddonSources(
         manifestURLs: [URL],
         request: PlaybackSourceRequest,
         resolver: AutomaticExternalIDResolver
@@ -1110,4 +1165,11 @@ private struct DiscoveredSourcePlaybackView: View {
             }
         }
     }
+}
+
+private struct SourceFilterRequest: Equatable, Sendable {
+    let streams: [StremioTorrentDescriptor]
+    let provider: String?
+    let quality: String?
+    let sort: SourceReleaseSort
 }

@@ -36,6 +36,16 @@ final class SceneBoxStreamPickerTests: XCTestCase {
         XCTAssertEqual(SceneBoxStreamPicker.filtered(streams, quality: "Unknown").map(\.id), [unknown.id])
     }
 
+    func testSizeSortUsesMetadataFromDescriptionAndStructuredBytes() throws {
+        let json = #"{"title":"Readable title","description":"Seeders: 24 · 800 MiB","name":"Add-on 720p","infoHash":"0123456789abcdef0123456789abcdef01234567"}"#
+        let entry = try JSONDecoder().decode(StremioStreamEntry.self, from: Data(json.utf8))
+        let smaller = try XCTUnwrap(StremioTorrentDescriptor(stream: entry))
+        let larger = try XCTUnwrap(StremioTorrentDescriptor(infoHash: String(repeating: "a", count: 40), fileIndex: nil, videoSize: 1_000_000_000))
+        XCTAssertEqual(SceneBoxStreamPicker.filtered([larger, smaller], sort: .size).map(\.id), [smaller.id, larger.id])
+        XCTAssertEqual(SceneBoxStreamPicker.seeders(for: smaller), 24)
+        XCTAssertEqual(SceneBoxStreamPicker.sizeBytes(for: smaller), 838_860_800)
+    }
+
     private func descriptor(_ number: Int, provider: String = "Torrentio", title: String) throws -> StremioTorrentDescriptor {
         try XCTUnwrap(StremioTorrentDescriptor(infoHash: String(format: "%040x", number), fileIndex: 0, title: title, providerName: provider))
     }

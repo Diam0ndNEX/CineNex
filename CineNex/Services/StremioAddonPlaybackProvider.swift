@@ -330,20 +330,24 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                 of: (index: Int, entries: [StremioStreamEntry], failure: String?).self,
                 returning: (batches: [(index: Int, entries: [StremioStreamEntry])], failuresByIndex: [Int: String]).self
             ) { group in
-                for (index, client) in clients.enumerated() {
-                    group.addTask {
-                        do {
-                            return (index, try await client.fetchStreams(for: streamRequest), nil)
-                        } catch is CancellationError {
-                            return (index, [], "Request cancelled.")
-                        } catch {
-                            return (index, [], error.localizedDescription)
-                        }
-                    }
+                let maximumConcurrentRequests = 4
+                var nextIndex = 0
+                while nextIndex < min(maximumConcurrentRequests, clients.count) {
+                    let index = nextIndex
+                    let client = clients[index]
+                    group.addTask { await Self.fetch(client, index: index, request: streamRequest) }
+                    nextIndex += 1
                 }
                 var fetched: [(index: Int, entries: [StremioStreamEntry])] = []
                 var errorsByIndex: [Int: String] = [:]
                 for await result in group {
+                    if Task.isCancelled { group.cancelAll(); break }
+                    if nextIndex < clients.count {
+                        let index = nextIndex
+                        let client = clients[index]
+                        group.addTask { await Self.fetch(client, index: index, request: streamRequest) }
+                        nextIndex += 1
+                    }
                     if let failure = result.failure {
                         errorsByIndex[result.index] = failure
                     } else {
@@ -359,32 +363,33 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
         try Task.checkCancellation()
 
         batches.sort { $0.index < $1.index }
-        let sources = batches.flatMap { batch in
-            Self.mapSources(
-                batch.entries,
-                index: batch.index,
-                providerID: id,
-                displayName: clientDisplayNames.indices.contains(batch.index) ? clientDisplayNames[batch.index] : displayName,
-                priority: priority
-            )
-        }
+        let mappingStarted = Date()
+        var sources: [PlaybackSource] = []
+        var descriptors: [StremioTorrentDescriptor] = []
+        var countsByIndex: [Int: (direct: Int, torrents: Int)] = [:]
         var seenDescriptors = Set<String>()
-        let descriptors = batches.flatMap { batch in
-            let providerName = clientDisplayNames.indices.contains(batch.index) ? clientDisplayNames[batch.index] : displayName
-            return batch.entries.compactMap {
-                StremioTorrentDescriptor(stream: $0, providerName: providerName)
-            }
-        }.filter { descriptor in
-            seenDescriptors.insert(descriptor.id).inserted
+        for batch in batches {
+            try Task.checkCancellation()
+            let name = clientDisplayNames.indices.contains(batch.index) ? clientDisplayNames[batch.index] : displayName
+            let direct = Self.mapSources(batch.entries, index: batch.index, providerID: id, displayName: name, priority: priority)
+            let torrents = batch.entries.compactMap { StremioTorrentDescriptor(stream: $0, providerName: name) }
+            countsByIndex[batch.index] = (direct.count, torrents.count)
+            sources.append(contentsOf: direct)
+            descriptors.append(contentsOf: torrents.filter { seenDescriptors.insert($0.id).inserted })
         }
+        PlaybackDiagnostics.record("addon.mapping.complete", details: [
+            "elapsed_ms": String(Int(Date().timeIntervalSince(mappingStarted) * 1_000)),
+            "torrent_count": String(descriptors.count), "direct_count": String(sources.count),
+            "on_main_thread": String(Thread.isMainThread)
+        ])
 
         let providerStatuses = clientDisplayNames.enumerated().map { index, name in
             let statusID = "\(index)-\(name.lowercased())"
             if let failure = failuresByIndex[index] {
                 return StremioAddonProviderStatus(id: statusID, name: name, outcome: .failed(failure))
             }
-            let directCount = sources.filter { $0.providerName == name }.count
-            let torrentCount = descriptors.filter { $0.providerName == name }.count
+            let directCount = countsByIndex[index]?.direct ?? 0
+            let torrentCount = countsByIndex[index]?.torrents ?? 0
             if directCount + torrentCount > 0 {
                 return StremioAddonProviderStatus(
                     id: statusID,
@@ -399,6 +404,14 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
             torrentDescriptors: descriptors,
             providerStatuses: providerStatuses
         )
+    }
+
+    private static func fetch(
+        _ client: StremioAddonClient, index: Int, request: StremioStreamRequest
+    ) async -> (index: Int, entries: [StremioStreamEntry], failure: String?) {
+        do { return (index, try await client.fetchStreams(for: request), nil) }
+        catch is CancellationError { return (index, [], "Request cancelled.") }
+        catch { return (index, [], error.localizedDescription) }
     }
 
     private static func mapSources(

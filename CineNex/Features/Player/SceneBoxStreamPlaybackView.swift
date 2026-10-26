@@ -68,7 +68,7 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
             .accessibilityLabel(chrome.isVisible ? "Hide playback controls" : "Show playback controls")
 
             LinearGradient(
-                colors: [.black.opacity(0.78), .clear, .clear, .black.opacity(0.82)],
+                colors: [.black.opacity(0.45), .clear, .clear, .black.opacity(0.5)],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -77,12 +77,13 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
             .opacity(chrome.isVisible ? 1 : 0)
 
             VStack(spacing: 0) {
+                CineNexGlassGroup(spacing: 12) {
                 HStack(spacing: 12) {
                     Button(action: onClose) {
                         Image(systemName: "xmark")
                             .font(.headline.weight(.bold))
                             .frame(width: 44, height: 44)
-                            .background(.ultraThinMaterial, in: Circle())
+                            .cineNexGlass(in: Circle())
                     }
                     .accessibilityLabel("Close player")
 
@@ -105,7 +106,7 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
                         if sleepDeadline != nil { Button("Cancel sleep timer", role: .cancel) { sleepDeadline = nil } }
                     } label: {
                         Image(systemName: sleepDeadline == nil ? "moon.zzz" : "moon.zzz.fill")
-                            .frame(width: 44, height: 44).background(.ultraThinMaterial, in: Circle())
+                            .frame(width: 44, height: 44).cineNexGlass(in: Circle())
                     }.accessibilityLabel("Sleep timer")
                     Button {
                         isSettingsPresented = true
@@ -113,9 +114,10 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
                         Image(systemName: "slider.horizontal.3")
                             .font(.headline.weight(.semibold))
                             .frame(width: 44, height: 44)
-                            .background(.ultraThinMaterial, in: Circle())
+                            .cineNexGlass(in: Circle())
                     }
                     .accessibilityLabel("Playback settings")
+                }
                 }
                 .padding(.horizontal, 18)
                 .padding(.top, 12)
@@ -152,7 +154,7 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
                     }
                     .padding(24)
                     .frame(maxWidth: 360)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22))
+                    .background(Color.black.opacity(0.86), in: RoundedRectangle(cornerRadius: 22))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     SceneBoxTransportControls(
@@ -182,7 +184,7 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
                     Button("Choose another release", action: onClose).buttonStyle(.bordered)
                 }
                 .padding(20).frame(maxWidth: 300)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                .background(Color.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 20))
             }
         }
         .foregroundStyle(.white)
@@ -414,15 +416,17 @@ private struct SceneBoxTransportControls: View {
     }
 
     var body: some View {
-        VStack(spacing: 14) {
-            HStack(spacing: 42) {
+        CineNexGlassGroup(spacing: 18) {
+        VStack(spacing: 18) {
+            HStack(spacing: 18) {
                 Button {
                     try? player.seek(by: .seconds(-Double(skipSeconds)), fast: true)
                     onInteraction()
                 } label: {
                     Image(systemName: "gobackward.\(skipSeconds)")
                         .font(.system(size: 27, weight: .medium))
-                        .frame(width: 48, height: 48)
+                        .frame(width: 52, height: 52)
+                        .cineNexGlass(in: Circle())
                 }
                 .disabled(!player.isSeekable)
                 .accessibilityLabel("Back \(skipSeconds) seconds")
@@ -433,8 +437,8 @@ private struct SceneBoxTransportControls: View {
                 } label: {
                     Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 28, weight: .semibold))
-                        .frame(width: 62, height: 62)
-                        .background(Color.cineNexAccent, in: Circle())
+                        .frame(width: 70, height: 70)
+                        .cineNexGlass(in: Circle(), prominent: true)
                 }
                 .accessibilityLabel(player.isPlaying ? "Pause playback" : "Resume playback")
 
@@ -444,7 +448,8 @@ private struct SceneBoxTransportControls: View {
                 } label: {
                     Image(systemName: "goforward.\(skipSeconds)")
                         .font(.system(size: 27, weight: .medium))
-                        .frame(width: 48, height: 48)
+                        .frame(width: 52, height: 52)
+                        .cineNexGlass(in: Circle())
                 }
                 .disabled(!player.isSeekable)
                 .accessibilityLabel("Forward \(skipSeconds) seconds")
@@ -470,7 +475,7 @@ private struct SceneBoxTransportControls: View {
                         scrubPosition = nil
                     }
                 )
-                .tint(Color.cineNexAccent)
+                .tint(.white)
                 .disabled(!player.isSeekable || durationSeconds <= 0)
                 .accessibilityLabel("Playback position")
 
@@ -478,10 +483,13 @@ private struct SceneBoxTransportControls: View {
                     .font(.caption.monospacedDigit())
                     .frame(minWidth: 42, alignment: .trailing)
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            .cineNexGlass(in: Capsule())
         }
         .foregroundStyle(.white)
-        .padding(18)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22))
+        .frame(maxWidth: 620)
+        }
     }
 
     private func timecode(_ seconds: Double) -> String {

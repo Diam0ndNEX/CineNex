@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CineNexSettingsView: View {
+    @AppStorage("cinenex.retainPartialTransfers") private var retainPartialTransfers = true
     @State private var showingAppearance = false
     @State private var showingClearConfirmation = false
     @State private var maintenanceMessage: String?
@@ -58,6 +59,9 @@ struct CineNexSettingsView: View {
                     }
                     Text((TorrentTransferProfile(rawValue: transferProfile) ?? .balanced).detail)
                         .font(.caption).foregroundStyle(.secondary)
+                    Toggle("Reuse partial torrent data", isOn: $retainPartialTransfers)
+                    Text("Inactive partial transfers use up to 2 GiB and expire after 7 days. Active transfers are protected and can exceed that budget. This is a cache, not an offline download.")
+                        .font(.caption).foregroundStyle(.secondary)
                     Text("Applies to the next torrent session. Actual battery use depends on the release, codec and connection.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
@@ -71,6 +75,15 @@ struct CineNexSettingsView: View {
                         settingsLink("Playback report", detail: "Provider responses, timing and native events", symbol: "waveform.path.ecg")
                     }
                     Divider()
+                    Button("Clear inactive partial transfers", systemImage: "internaldrive") {
+                        Task { await TorrentCacheMaintenance.shared.trim(clear: true); maintenanceMessage = "Inactive partial transfer cache cleared. Active playback was preserved." }
+                    }
+                    Button("Clear cached artwork", systemImage: "photo.on.rectangle") {
+                        Task {
+                            await ArtworkCacheMaintenance.clear()
+                            maintenanceMessage = "Artwork cache cleared. Posters download again when needed."
+                        }
+                    }
                     Button("Clear cached catalog", systemImage: "arrow.clockwise") { showingClearConfirmation = true }
                     if let maintenanceMessage { Text(maintenanceMessage).font(.caption).foregroundStyle(.secondary) }
                     Text("CineNex \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") · Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "")")

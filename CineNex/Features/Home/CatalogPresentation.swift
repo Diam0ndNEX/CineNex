@@ -154,9 +154,12 @@ struct CatalogBrowserView: View {
     let title: String
     let items: [MediaItem]
     let onSelect: (MediaItem) -> Void
+    var footer: AnyView? = nil
     @State private var query = ""
     @State private var sort = CatalogCollectionSort.relevance
     @State private var selectedGenre = ""
+    @State private var selectedKind = "all"
+    @State private var selectedYear = 0
     @AppStorage("cinenex.posterDensity") private var posterDensity = "comfortable"
 
     private var genres: [String] {
@@ -167,7 +170,9 @@ struct CatalogBrowserView: View {
     private var results: [MediaItem] {
         let matches = items.filter { item in
             (query.isEmpty || item.title.localizedCaseInsensitiveContains(query)) &&
-            (selectedGenre.isEmpty || item.genre.localizedCaseInsensitiveContains(selectedGenre))
+            (selectedGenre.isEmpty || item.genre.localizedCaseInsensitiveContains(selectedGenre)) &&
+            (selectedKind == "all" || (selectedKind == "movies" && item.kind == .movie) || (selectedKind == "series" && item.kind == .series)) &&
+            (selectedYear == 0 || item.year == selectedYear)
         }
         switch sort {
         case .relevance: return matches
@@ -180,6 +185,19 @@ struct CatalogBrowserView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
+                Picker("Content type", selection: $selectedKind) {
+                    Text("All").tag("all")
+                    Text("Movies").tag("movies")
+                    Text("Series").tag("series")
+                }.pickerStyle(.segmented)
+                ScrollView(.horizontal) {
+                    HStack(spacing: 9) {
+                        browseSortButton("Popular", sort: .relevance)
+                        browseSortButton("Newest", sort: .newest)
+                        browseSortButton("Top rated", sort: .rating)
+                        browseSortButton("A–Z", sort: .title)
+                    }
+                }.scrollIndicators(.hidden)
                 HStack {
                     Text("\(results.count) titles").font(.subheadline).foregroundStyle(.secondary)
                     Spacer()
@@ -187,6 +205,10 @@ struct CatalogBrowserView: View {
                         Picker("Genre", selection: $selectedGenre) {
                             Text("All genres").tag("")
                             ForEach(genres, id: \.self) { Text($0).tag($0) }
+                        }
+                        Picker("Release year", selection: $selectedYear) {
+                            Text("All years").tag(0)
+                            ForEach(Array(Set(items.map(\.year).filter { $0 > 0 })).sorted(by: >), id: \.self) { Text(String($0)).tag($0) }
                         }
                         Picker("Sort", selection: $sort) {
                             ForEach(CatalogCollectionSort.allCases) { Text($0.rawValue).tag($0) }
@@ -196,10 +218,17 @@ struct CatalogBrowserView: View {
                             .font(.subheadline.weight(.semibold))
                     }
                 }
-                if !selectedGenre.isEmpty {
-                    Button { selectedGenre = "" } label: {
-                        Label(selectedGenre, systemImage: "xmark.circle.fill")
-                            .font(.caption.weight(.semibold))
+                if !selectedGenre.isEmpty || selectedKind != "all" || selectedYear != 0 || !query.isEmpty {
+                    HStack(spacing: 8) {
+                        if !selectedGenre.isEmpty { Text(selectedGenre).font(.caption.weight(.semibold)) }
+                        if selectedYear != 0 { Text(String(selectedYear)).font(.caption.weight(.semibold)) }
+                        Spacer()
+                        Button("Clear filters", systemImage: "xmark.circle") {
+                            selectedGenre = ""
+                            selectedKind = "all"
+                            selectedYear = 0
+                            query = ""
+                        }.font(.caption.weight(.semibold))
                     }
                 }
                 if results.isEmpty {
@@ -213,6 +242,7 @@ struct CatalogBrowserView: View {
                         }
                     }
                 }
+                if let footer { footer }
             }
             .padding(20)
         }
@@ -221,6 +251,17 @@ struct CatalogBrowserView: View {
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $query, prompt: "Filter these titles")
     }
+    private func browseSortButton(_ title: String, sort value: CatalogCollectionSort) -> some View {
+        Button { sort = value } label: {
+            Text(title).font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 15).padding(.vertical, 10)
+                .foregroundStyle(sort == value ? Color.cineNexAccent : Color.primary)
+                .cineNexGlass(in: Capsule(), prominent: sort == value)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(sort == value ? .isSelected : [])
+    }
+
 }
 
 private enum CatalogCollectionSort: String, CaseIterable, Identifiable {
@@ -319,5 +360,51 @@ struct CatalogDetailHero: View {
             Text(item.genre).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// One request per visibility entry: adding pages never rekeys this view into an auto-fetch loop.
+struct CatalogAutomaticPageFooter: View {
+    let loadedCount: Int
+    let isLoading: Bool
+    let error: String?
+    let onLoad: () -> Void
+    @State private var enteredViewport = false
+    @State private var requestedInEntry = false
+
+    var body: some View {
+        VStack(spacing: 12) {
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.orange)
+                Button("Retry loading titles", systemImage: "arrow.clockwise", action: onLoad)
+                    .font(.subheadline.weight(.semibold)).disabled(isLoading)
+            } else if isLoading {
+                ProgressView("Loading more titles…")
+            } else {
+                Label("Keep exploring", systemImage: "arrow.down")
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            Text("\(loadedCount) titles loaded").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 90)
+        .padding(16)
+        .onAppear {
+            enteredViewport = true
+            requestIfEligible()
+        }
+        .onChange(of: isLoading) { _, loading in
+            if !loading { requestIfEligible() }
+        }
+        .onDisappear {
+            enteredViewport = false
+            requestedInEntry = false
+        }
+    }
+
+    private func requestIfEligible() {
+        guard enteredViewport, !requestedInEntry, !isLoading, error == nil else { return }
+        requestedInEntry = true
+        onLoad()
     }
 }

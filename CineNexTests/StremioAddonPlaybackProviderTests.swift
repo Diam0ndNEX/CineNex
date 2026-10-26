@@ -88,6 +88,44 @@ final class StremioAddonPlaybackProviderTests: XCTestCase {
         }
     }
 
+    func testManyConfiguredAddonsUseBoundedParallelRequests() async throws {
+        BoundedAddonURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [BoundedAddonURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let urls = (0..<12).map { URL(string: "https://addons.example.test/instance-\($0)/manifest.json")! }
+        let provider = try StremioAddonPlaybackProvider(
+            manifestURLs: urls,
+            externalIDResolver: StubExternalIDResolver(value: "tt1234567"),
+            session: session
+        )
+        let result = try await provider.discover(for: PlaybackSourceRequest(title: "Example", mediaKind: .movie))
+        let statistics = BoundedAddonURLProtocol.statistics()
+        XCTAssertEqual(result.providerStatuses.count, 12)
+        XCTAssertEqual(statistics.completed, 12)
+        XCTAssertLessThanOrEqual(statistics.maximum, 4)
+        XCTAssertGreaterThan(statistics.maximum, 1)
+    }
+
+    func testSeparateConfigurationsOnSameHostHaveIndependentCounts() async throws {
+        ProviderStubURLProtocol.handler = { request in
+            if request.url!.path.hasSuffix("manifest.json") {
+                return (self.response(request, 200), Data(#"{"id":"addon","version":"1","name":"Addon","resources":["stream"],"types":["movie"]}"#.utf8))
+            }
+            let body = request.url!.path.contains("first")
+                ? #"{"streams":[{"url":"https://media.example.test/movie.mp4"}]}"#
+                : #"{"streams":[]}"#
+            return (self.response(request, 200), Data(body.utf8))
+        }
+        let provider = try StremioAddonPlaybackProvider(
+            manifestURLs: [URL(string: "https://addons.example.test/first/manifest.json")!, URL(string: "https://addons.example.test/second/manifest.json")!],
+            externalIDResolver: StubExternalIDResolver(value: "tt1234567"), session: makeSession()
+        )
+        let result = try await provider.discover(for: PlaybackSourceRequest(title: "Example", mediaKind: .movie))
+        XCTAssertEqual(result.providerStatuses.map(\.outcome), [.found(directSourceCount: 1, torrentSourceCount: 0), .noSources])
+    }
+
     override func tearDown() {
         ProviderStubURLProtocol.handler = nil
         super.tearDown()
@@ -297,6 +335,64 @@ private final class ProviderStubURLProtocol: URLProtocol {
         } catch {
             client?.urlProtocol(self, didFailWithError: error)
         }
+    }
+
+    override func stopLoading() {}
+}
+
+private final class BoundedAddonURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var active = 0
+    nonisolated(unsafe) private static var maximum = 0
+    nonisolated(unsafe) private static var completed = 0
+
+    static func reset() {
+        lock.lock()
+        defer { lock.unlock() }
+        active = 0; maximum = 0; completed = 0
+    }
+
+    static func statistics() -> (maximum: Int, completed: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (maximum, completed)
+    }
+
+    private static func beganStream() {
+        lock.lock()
+        defer { lock.unlock() }
+        active += 1
+        maximum = max(maximum, active)
+    }
+
+    private static func endedStream() {
+        lock.lock()
+        defer { lock.unlock() }
+        active -= 1
+        completed += 1
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        if request.url!.path.hasSuffix("manifest.json") {
+            finish(#"{"id":"bounded","version":"1","name":"Bounded","resources":["stream"],"types":["movie"]}"#)
+        } else {
+            Self.beganStream()
+            Task.detached { [self] in
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                Self.endedStream()
+                finish(#"{"streams":[]}"#)
+            }
+        }
+    }
+
+    private func finish(_ json: String) {
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(json.utf8))
+        client?.urlProtocolDidFinishLoading(self)
     }
 
     override func stopLoading() {}

@@ -40,7 +40,7 @@ struct CineNexPreferenceCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 18) {
             Label(title.uppercased(), systemImage: symbol)
                 .font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(Color.cineNexAccent)
-            content
+            content.cineNexGlassButtons()
         }
         .padding(20).frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 24))
