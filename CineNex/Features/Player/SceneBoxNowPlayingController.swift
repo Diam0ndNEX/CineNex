@@ -87,6 +87,7 @@ final class SceneBoxNowPlayingController {
         artworkTask = nil
         for (command, target) in commandTargets {
             command.removeTarget(target)
+            command.isEnabled = false
         }
         commandTargets.removeAll()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
