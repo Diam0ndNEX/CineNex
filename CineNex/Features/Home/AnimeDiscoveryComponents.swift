@@ -4,29 +4,37 @@ struct AnimeFeaturedBanner: View {
     let anime: AnimeTitle
     let onDetails: () -> Void
 
+    @AppStorage("cinenex.featuredStyle") private var featuredStyle = "immersive"
+    @AppStorage("cinenex.showRatings") private var showRatings = true
+
     var body: some View {
-        HStack(alignment: .top, spacing: 20) {
-            CachedPosterImage(url: anime.coverURL, fallbackSymbol: "sparkles", symbolSize: 44)
-                .frame(width: 116, height: 174)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-            VStack(alignment: .leading, spacing: 12) {
-                Text("ANIME SPOTLIGHT").font(.caption2.weight(.bold)).tracking(2)
-                    .foregroundStyle(Color.cineNexAccent)
-                Text(anime.title).font(.title2.bold()).lineLimit(3)
-                Text([anime.seasonYear.map(String.init), anime.format?.replacingOccurrences(of: "_", with: " ")]
-                    .compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary)
-                Button(action: onDetails) {
-                    Label("Explore series", systemImage: "arrow.up.right")
-                        .font(.subheadline.bold()).padding(.vertical, 11).padding(.horizontal, 14)
-                        .foregroundStyle(.white).background(Color.cineNexAccent, in: Capsule())
-                }.buttonStyle(.plain)
-            }.frame(maxWidth: .infinity, alignment: .leading)
+        Button(action: onDetails) {
+            ZStack(alignment: .bottomLeading) {
+                Color.cineNexSurface
+                CachedPosterImage(url: anime.coverURL, fallbackSymbol: "sparkles", symbolSize: 64)
+                LinearGradient(colors: [.clear, .black.opacity(0.95)], startPoint: .top, endPoint: .bottom)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("ANIME SPOTLIGHT").font(.system(size: 9, weight: .heavy)).tracking(2.4)
+                        .foregroundStyle(Color.cineNexAccent)
+                    Text(anime.title).font(.system(size: 31, weight: .black, design: .serif)).lineLimit(3)
+                    HStack(spacing: 9) {
+                        Text([anime.seasonYear.map(String.init), anime.format?.replacingOccurrences(of: "_", with: " ")]
+                            .compactMap { $0 }.joined(separator: " · "))
+                        if showRatings, let rating = anime.averageRating {
+                            Label(String(format: "%.1f", rating), systemImage: "star.fill").foregroundStyle(.yellow)
+                        }
+                    }.font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.75))
+                    Label("Explore anime", systemImage: "arrow.right")
+                        .font(.subheadline.bold()).padding(.vertical, 12).padding(.horizontal, 18)
+                        .foregroundStyle(.black).background(Color.cineNexAccent, in: Capsule())
+                }.padding(22).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(height: featuredStyle == "compact" ? 290 : 410)
+            .clipShape(RoundedRectangle(cornerRadius: 24)).contentShape(RoundedRectangle(cornerRadius: 24))
         }
-        .padding(20).frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 26))
-        .overlay { RoundedRectangle(cornerRadius: 26).strokeBorder(.white.opacity(0.07)) }
+        .buttonStyle(.plain).foregroundStyle(.white)
         .padding(.horizontal, 20)
+        .accessibilityLabel("Explore \(anime.title)")
     }
 }
 
@@ -165,7 +173,7 @@ struct AnimeDetailView: View {
 
                         VStack(alignment: .leading, spacing: 9) {
                             Text(anime.title)
-                                .font(.title2.bold())
+                                .font(.system(size: 29, weight: .black, design: .serif))
                             if let nativeTitle = anime.nativeTitle, !nativeTitle.isEmpty {
                                 Text(nativeTitle)
                                     .font(.subheadline)

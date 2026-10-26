@@ -19,6 +19,17 @@ final class StremioAddonPlaybackProviderTests: XCTestCase {
         XCTAssertEqual(id, "tt1234567")
     }
 
+    func testAutomaticResolverSkipsTMDBWhenCatalogAlreadySuppliesIMDbID() async throws {
+        ProviderStubURLProtocol.handler = { _ in
+            XCTFail("A known IMDb ID must not wait for TMDB even when a token is configured.")
+            throw URLError(.badServerResponse)
+        }
+        let resolver = AutomaticExternalIDResolver(tmdbReadAccessToken: "fixture-token", session: makeSession())
+        let result = try await resolver.imdbID(for: PlaybackSourceRequest(title: "Example", mediaKind: .movie,
+                                                                        tmdbID: 42, imdbID: "tt1234567"))
+        XCTAssertEqual(result, "tt1234567")
+    }
+
     func testUsesExistingIMDbIDBeforeTitleLookup() async throws {
         ProviderStubURLProtocol.handler = { _ in
             XCTFail("A valid IMDb ID should be used directly without a network lookup.")

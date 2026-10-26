@@ -2,7 +2,15 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var selectedTab = AppTab.home
-    @AppStorage("cinenex.accentPreset") private var accentPreset = "violet"
+    @AppStorage("cinenex.accentPreset") private var accentPreset = "amber"
+    @AppStorage("cinenex.navigationLabels") private var navigationLabels = true
+    @AppStorage("cinenex.startTab") private var startTab = "home"
+    @AppStorage("cinenex.home.showFeatured") private var showFeatured = true
+    @AppStorage("cinenex.home.showContinue") private var showContinue = true
+    @AppStorage("cinenex.home.showWatchlist") private var showWatchlist = true
+    @AppStorage("cinenex.home.showRated") private var showRated = true
+    @AppStorage("cinenex.home.showGenres") private var showGenres = true
+    @State private var initialTabApplied = false
     @AppStorage("cinenex.canvasStyle") private var canvasStyle = "midnight"
     @AppStorage("cinenex.posterDensity") private var posterDensity = "comfortable"
     @AppStorage("cinenex.showRatings") private var showRatings = true
@@ -30,6 +38,8 @@ struct ContentView: View {
     @State private var animeLoading = false
     @State private var animeError: String?
     @State private var animeSearchText = ""
+    @State private var animeGenre = ""
+    @State private var animeFormat = "all"
     @State private var animeSearchResults: [AnimeTitle] = []
     @State private var animeSearchLoading = false
     @State private var animeSearchGeneration = UUID()
@@ -141,7 +151,7 @@ struct ContentView: View {
                 Tab("Home", systemImage: "house.fill", value: AppTab.home) {
                     homeScreen
                 }
-                Tab("Browse", systemImage: "square.grid.2x2.fill", value: AppTab.browse) {
+                Tab("Discover", systemImage: "square.grid.2x2.fill", value: AppTab.browse) {
                     CatalogBrowserView(title: "Browse", items: catalog, onSelect: { selectedItem = $0 },
                                        footer: AnyView(catalogPaginationFooter))
                 }
@@ -152,7 +162,7 @@ struct ContentView: View {
                     libraryScreen
                 }
                 Tab("Settings", systemImage: "gearshape.fill", value: AppTab.tracking) {
-                    CineNexSettingsView()
+                    CineNexSettingsView(onOpenDownloads: { showingDownloads = true })
                 }
             }
             .navigationDestination(item: $selectedItem) { item in
@@ -164,19 +174,33 @@ struct ContentView: View {
                     onSelectItem: { selectedItem = $0 }
                 )
             }
+            .toolbarVisibility(.hidden, for: .tabBar)
+            .safeAreaInset(edge: .bottom, spacing: 0) { navigationDock }
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
             .toolbar {
-                if selectedTab == .home {
+                if selectedTab == .home && selectedItem == nil {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Text("CINENEX").font(.system(size: 14, weight: .black)).tracking(3)
+                            .foregroundStyle(Color.cineNexAccent)
+                    }
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("Search", systemImage: "magnifyingglass") { selectedTab = .search }
+                        Button("Downloads", systemImage: "arrow.down.circle") { showingDownloads = true }
                     }
                 }
             }
         }
         .tint(currentAccent)
         .preferredColorScheme(.dark)
-        .task { await loadCatalog() }
+        .task {
+            if !initialTabApplied {
+                initialTabApplied = true
+                if startTab == "browse" { selectedTab = .browse }
+                else if startTab == "library" { selectedTab = .library }
+            }
+            await loadCatalog()
+        }
         .task(id: selectedHomeExperience) {
             if selectedHomeExperience == "anime" { await loadAnimeCatalog() }
         }
@@ -221,24 +245,53 @@ struct ContentView: View {
 
     private var navigationTitle: String {
         switch selectedTab {
-        case .home: return "CineNex"
-        case .browse: return "Browse"
+        case .home: return ""
+        case .browse: return "Discover"
         case .search: return "Search"
         case .library: return "Your library"
         case .tracking: return "Settings"
         }
     }
 
-    private var experiencePicker: some View {
-        CineNexGlassGroup(spacing: 4) {
-            HStack(spacing: 4) {
-                experienceButton("Cinema", subtitle: "Movies & series", symbol: "film.stack", value: "moviesAndSeries")
-                experienceButton("Anime", subtitle: "A different universe", symbol: "sparkles.tv", value: "anime")
-            }
+    private var navigationDock: some View {
+        HStack(spacing: 3) {
+            dockButton(.home, title: "Home", symbol: "house")
+            dockButton(.browse, title: "Discover", symbol: "square.grid.2x2")
+            dockButton(.search, title: "Search", symbol: "magnifyingglass")
+            dockButton(.library, title: "Library", symbol: "bookmark")
+            dockButton(.tracking, title: "Settings", symbol: "slider.horizontal.3")
         }
-        .padding(5)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Color.cineNexBackground)
+        .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1) }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Main navigation")
+    }
+
+    private func dockButton(_ tab: AppTab, title: String, symbol: String) -> some View {
+        Button {
+            selectedTab = tab
+        } label: {
+            VStack(spacing: 5) {
+                Image(systemName: symbol).font(.system(size: 19, weight: selectedTab == tab ? .bold : .medium))
+                if navigationLabels { Text(title).font(.system(size: 9, weight: .semibold)) }
+            }
+            .foregroundStyle(selectedTab == tab ? Color.cineNexAccent : Color.secondary)
+            .frame(maxWidth: .infinity, minHeight: navigationLabels ? 48 : 44)
+            .background(selectedTab == tab ? Color.cineNexAccent.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 14))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).accessibilityLabel(title)
+        .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
+    }
+
+    private var experiencePicker: some View {
+        HStack(spacing: 8) {
+            experienceButton("Cinema", subtitle: "Movies & series", symbol: "film.stack", value: "moviesAndSeries")
+            experienceButton("Anime", subtitle: "Anime", symbol: "sparkles.tv", value: "anime")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 10)
     }
 
     private func experienceButton(_ title: String, subtitle: String, symbol: String, value: String) -> some View {
@@ -247,21 +300,12 @@ struct ContentView: View {
             if reduceMotion || systemReduceMotion { selectedHomeExperience = value }
             else { withAnimation(.easeInOut(duration: 0.2)) { selectedHomeExperience = value } }
         } label: {
-            HStack(spacing: 9) {
-                Image(systemName: symbol).font(.headline)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.subheadline.bold())
-                    Text(subtitle).font(.system(size: 9, weight: .medium)).lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity, minHeight: 46)
-            .foregroundStyle(selected ? Color.cineNexAccent : Color.primary)
-            .cineNexGlass(in: RoundedRectangle(cornerRadius: 16), prominent: selected)
-            .overlay {
-                RoundedRectangle(cornerRadius: 16)
-                    .strokeBorder(selected ? Color.cineNexAccent.opacity(0.5) : Color.clear, lineWidth: 1)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 16))
+            Label(title, systemImage: symbol)
+                .font(.subheadline.weight(.bold))
+                .padding(.horizontal, 16).padding(.vertical, 11)
+                .foregroundStyle(selected ? Color.cineNexBackground : Color.primary)
+                .background(selected ? Color.cineNexAccent : Color.cineNexSurface, in: Capsule())
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(value == "anime" ? "Browse anime" : "Browse movies and series")
@@ -274,7 +318,6 @@ struct ContentView: View {
             experiencePicker
                 .background(Color.cineNexBackground)
                 .zIndex(1)
-            Divider().opacity(0.25)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 28) {
                     if selectedHomeExperience == "anime" {
@@ -325,7 +368,7 @@ struct ContentView: View {
                         .buttonStyle(.borderedProminent)
                 }
             } else {
-                if !continueWatchingItems.isEmpty {
+                if showContinue && !continueWatchingItems.isEmpty {
                     continueWatchingSection
                 }
                 homeEditorialHeader
@@ -334,6 +377,7 @@ struct ContentView: View {
                     ContentUnavailableView("No titles in this lane", systemImage: "film.stack",
                                            description: Text(homeLane == .saved ? "Add titles to your watchlist to see them here." : "Try another lane or refresh the catalog."))
                 } else {
+                    if showFeatured {
                     ScrollView(.horizontal) {
                         LazyHStack(alignment: .top, spacing: 16) {
                             ForEach(featuredLaneItems) { item in
@@ -349,6 +393,7 @@ struct ContentView: View {
                     }
                     .scrollTargetBehavior(.viewAligned)
                     .scrollIndicators(.hidden)
+                    }
                     if homeLane != .all {
                         mediaSection(title: homeLane.rawValue, subtitle: "\(homeLaneItems.count) titles to explore", items: homeLaneItems)
                     }
@@ -362,21 +407,24 @@ struct ContentView: View {
                 }
                 if homeLane == .all {
                 let unwatched = favoriteItems.filter { playbackProgressStore.progress(for: $0.id) == nil }
-                if !unwatched.isEmpty {
+                if showWatchlist && !unwatched.isEmpty {
                     mediaSection(title: "Your watchlist", subtitle: "Saved for a night like this", items: unwatched)
                 }
                 let topRated = catalog.filter { ($0.rating ?? 0) >= 7 }.sorted { ($0.rating ?? 0) > ($1.rating ?? 0) }
-                if !topRated.isEmpty { mediaSection(title: "Highly rated", subtitle: "Standouts worth a closer look", items: Array(topRated.prefix(10))) }
+                if showRated && !topRated.isEmpty { mediaSection(title: "Highly rated", subtitle: "Standouts worth a closer look", items: Array(topRated.prefix(10))) }
                 let movies = catalog.filter { $0.kind == .movie }
                 if !movies.isEmpty { mediaSection(title: "Movie night", subtitle: "Find your next feature", items: movies) }
                 let series = catalog.filter { $0.kind == .series }
                 if !series.isEmpty { mediaSection(title: "One more episode", subtitle: "Series to spend time with", items: series) }
-                genreDestinations
+                if showGenres { genreDestinations }
                 }
-                let laneIDs = Set(homeLaneItems.map(\.id))
-                let newlyLoaded = latestCatalogPageItems.filter { laneIDs.contains($0.id) }
-                if !newlyLoaded.isEmpty {
-                    mediaSection(title: "More discoveries", subtitle: "From the page you just loaded", items: newlyLoaded)
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack {
+                        Text("Keep exploring").font(.title2.bold())
+                        Spacer()
+                        Text("\(homeLaneItems.count) titles").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    }.padding(.horizontal, 20)
+                    posterGrid(homeLaneItems)
                 }
                 catalogPaginationFooter
             }
@@ -420,31 +468,23 @@ struct ContentView: View {
     }
 
     private var homeEditorialHeader: some View {
-        HStack(alignment: .bottom, spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("THE CINENEX EDIT").font(.system(size: 10, weight: .heavy)).tracking(2.4)
-                    .foregroundStyle(Color.cineNexAccent)
-                Text(homeLane == .all ? "Make tonight\na good watch." : homeLane.rawValue)
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .tracking(-1.2)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("\(catalog.count) titles in your discovery catalog")
-                    .font(.caption).foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text(homeLane == .all ? "Tonight,\nyour way." : homeLane.rawValue)
+                    .font(.system(size: 38, weight: .black, design: .serif))
+                    .tracking(-1.3).fixedSize(horizontal: false, vertical: true)
+                Text("Discover a story worth your time.")
+                    .font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
             Button {
                 guard let item = homeLaneItems.randomElement() else { return }
                 selectedItem = item
             } label: {
-                VStack(spacing: 6) {
-                    Image(systemName: "shuffle").font(.title2)
-                    Text("Surprise me").font(.system(size: 9, weight: .bold))
-                }
-                .frame(width: 82, height: 82)
-                .background(Color.cineNexAccent.opacity(0.13), in: RoundedRectangle(cornerRadius: 24))
-                .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(Color.cineNexAccent.opacity(0.3), lineWidth: 1))
+                Image(systemName: "shuffle").font(.title3.weight(.semibold))
+                    .frame(width: 48, height: 48).cineNexGlass(in: Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain).accessibilityLabel("Pick a random title")
             .disabled(homeLaneItems.isEmpty)
         }.padding(.horizontal, 20)
     }
@@ -459,8 +499,8 @@ struct ContentView: View {
                     } label: {
                         Text(lane.rawValue).font(.subheadline.weight(.semibold))
                             .padding(.horizontal, 16).padding(.vertical, 11)
-                            .foregroundStyle(homeLane == lane ? Color.cineNexAccent : Color.primary)
-                            .cineNexGlass(in: Capsule(), prominent: homeLane == lane)
+                            .foregroundStyle(homeLane == lane ? Color.cineNexAccent : Color.secondary)
+                            .background(homeLane == lane ? Color.cineNexAccent.opacity(0.10) : Color.clear, in: Capsule())
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(homeLane == lane ? .isSelected : [])
@@ -546,8 +586,20 @@ struct ContentView: View {
         }.padding(.horizontal, 20)
     }
 
+    private var animeVisibleCatalog: [AnimeTitle] {
+        animeCatalog.filter {
+            (animeGenre.isEmpty || $0.genres.contains(animeGenre)) &&
+            (animeFormat == "all" || $0.format == animeFormat)
+        }
+    }
+
     private var animeHomeContent: some View {
         Group {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("BEYOND THE ORDINARY").font(.system(size: 9, weight: .black)).tracking(2.5).foregroundStyle(Color.cineNexAccent)
+                Text("A whole\nother world.").font(.system(size: 38, weight: .black, design: .serif)).tracking(-1)
+                Text("Find an anime to get lost in.").font(.subheadline).foregroundStyle(.secondary)
+            }.padding(.horizontal, 20)
             if let animeError {
                 Label(animeError, systemImage: "wifi.exclamationmark")
                     .font(.footnote).foregroundStyle(.orange).padding(.horizontal, 20)
@@ -557,12 +609,52 @@ struct ContentView: View {
             } else if animeCatalog.isEmpty {
                 ContentUnavailableView("No anime available", systemImage: "sparkles.tv", description: Text("Pull down to try again."))
             } else {
-                if let featured = animeCatalog.first {
+                HStack {
+                    Menu {
+                        Picker("Format", selection: $animeFormat) {
+                            Text("Every format").tag("all")
+                            ForEach(Array(Set(animeCatalog.compactMap(\.format))).sorted(), id: \.self) {
+                                Text($0.replacingOccurrences(of: "_", with: " ")).tag($0)
+                            }
+                        }
+                        Picker("Genre", selection: $animeGenre) {
+                            Text("Every genre").tag("")
+                            ForEach(Array(Set(animeCatalog.flatMap(\.genres))).sorted(), id: \.self) { Text($0).tag($0) }
+                        }
+                    } label: { Label("Refine anime", systemImage: "slider.horizontal.3").font(.subheadline.bold()) }
+                    Spacer()
+                    if !animeGenre.isEmpty || animeFormat != "all" {
+                        Button("Reset") { animeGenre = ""; animeFormat = "all" }.font(.caption.bold())
+                    }
+                    Text("\(animeVisibleCatalog.count) titles").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }.padding(.horizontal, 20)
+                let continuingAnime = animeProgressStore.trackedAnime.filter { anime in
+                    let watched = animeProgressStore.watchedEpisodeCount(for: anime)
+                    return watched > 0 && (anime.episodeCount == nil || watched < (anime.episodeCount ?? 0))
+                }
+                if showContinue && !continuingAnime.isEmpty {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Continue anime").font(.title2.bold()).padding(.horizontal, 20)
+                        AnimePosterShelf(items: continuingAnime, progressStore: animeProgressStore) { selectedAnime = $0 }
+                    }
+                }
+                if showFeatured, let featured = animeVisibleCatalog.first {
                     AnimeFeaturedBanner(anime: featured) { selectedAnime = featured }
                 }
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("Trending anime").font(.title2.bold()).padding(.horizontal, 20)
-                    AnimePosterShelf(items: animeCatalog, progressStore: animeProgressStore) { selectedAnime = $0 }
+                if animeVisibleCatalog.isEmpty {
+                    ContentUnavailableView("No matching anime", systemImage: "slider.horizontal.3", description: Text("Try another format or genre."))
+                } else {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Trending anime").font(.title2.bold()).padding(.horizontal, 20)
+                        AnimePosterShelf(items: animeVisibleCatalog, progressStore: animeProgressStore) { selectedAnime = $0 }
+                    }
+                    let shortSeries = animeVisibleCatalog.filter { ($0.episodeCount ?? Int.max) > 0 && ($0.episodeCount ?? Int.max) <= 13 }
+                    if !shortSeries.isEmpty {
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("A shorter watch").font(.title2.bold()).padding(.horizontal, 20)
+                            AnimePosterShelf(items: shortSeries, progressStore: animeProgressStore) { selectedAnime = $0 }
+                        }
+                    }
                 }
             }
         }
@@ -576,6 +668,18 @@ struct ContentView: View {
     private var searchScreen: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("FIND YOUR NEXT FAVORITE").font(.system(size: 9, weight: .black)).tracking(2.5).foregroundStyle(Color.cineNexAccent)
+                    Text("What are you\nlooking for?").font(.system(size: 36, weight: .black, design: .serif))
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
+                HStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField(selectedHomeExperience == "anime" ? "Search anime" : "Search movies and series", text: searchBinding)
+                        .submitLabel(.search).autocorrectionDisabled()
+                    if !searchBinding.wrappedValue.isEmpty {
+                        Button("Clear search", systemImage: "xmark.circle.fill") { searchBinding.wrappedValue = "" }.labelStyle(.iconOnly)
+                    }
+                }.padding(15).background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14)).padding(.horizontal, 20)
                 experiencePicker
                 if selectedHomeExperience == "anime" {
                     if animeSearchLoading { ProgressView("Searching anime…").frame(maxWidth: .infinity) }
@@ -624,7 +728,6 @@ struct ContentView: View {
             }.padding(.bottom, 30)
         }
         .background(Color.cineNexBackground.ignoresSafeArea())
-        .searchable(text: searchBinding, prompt: "Find a title, a world, a new favorite")
         .onSubmit(of: .search) { rememberSearch(searchBinding.wrappedValue) }
         .task(id: "\(selectedTab == .search)|\(selectedHomeExperience)|\(searchBinding.wrappedValue)") {
             guard selectedTab == .search else { return }
@@ -670,7 +773,7 @@ struct ContentView: View {
         if !recentSearches.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text("Pick up a search").font(.title2.bold())
+                    Text("Recent searches").font(.title2.bold())
                     Spacer()
                     Button("Clear") { recentSearchesStorage = "[]" }.font(.caption.weight(.semibold))
                 }
@@ -694,8 +797,20 @@ struct ContentView: View {
     private var libraryScreen: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("YOUR COLLECTION").font(.system(size: 9, weight: .black)).tracking(2.5).foregroundStyle(Color.cineNexAccent)
+                    Text("Keep the good ones.").font(.system(size: 34, weight: .black, design: .serif))
+                    Text("Saved stories, recent watches, and downloads.").font(.subheadline).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
                 experiencePicker
-                libraryOverview
+                if selectedHomeExperience != "anime" { libraryOverview }
+                HStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("Search your library", text: $libraryQuery).submitLabel(.search).autocorrectionDisabled()
+                    if !libraryQuery.isEmpty {
+                        Button("Clear library search", systemImage: "xmark.circle.fill") { libraryQuery = "" }.labelStyle(.iconOnly)
+                    }
+                }.padding(15).background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14)).padding(.horizontal, 20)
                 Button { showingDownloads = true } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "arrow.down.circle.fill").font(.title2).foregroundStyle(Color.cineNexAccent)
@@ -721,10 +836,6 @@ struct ContentView: View {
                         }.padding(.horizontal, 20)
                     }
                 } else {
-                    Picker("Your library", selection: $libraryShowsProgress) {
-                        Text("Watchlist").tag(false)
-                        Text("Continue watching").tag(true)
-                    }.pickerStyle(.segmented).padding(.horizontal, 20)
                     HStack {
                         Text(libraryShowsProgress ? "IN PROGRESS" : "SAVED FOR LATER")
                             .font(.system(size: 10, weight: .heavy)).tracking(1.6).foregroundStyle(.secondary)
@@ -781,7 +892,6 @@ struct ContentView: View {
             }.padding(.bottom, 30)
         }
         .background(Color.cineNexBackground.ignoresSafeArea())
-        .searchable(text: $libraryQuery, prompt: "Search your library")
     }
 
     private var libraryItems: [MediaItem] {
@@ -810,20 +920,19 @@ struct ContentView: View {
     }
 
     private func libraryMetric(title: String, value: Int, symbol: String, selected: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: symbol).foregroundStyle(Color.cineNexAccent)
-                Spacer()
-                Image(systemName: selected ? "checkmark.circle.fill" : "arrow.up.right").font(.caption)
-                    .foregroundStyle(selected ? Color.cineNexAccent : Color.secondary)
+        HStack(spacing: 11) {
+            Image(systemName: symbol).font(.title3).foregroundStyle(Color.cineNexAccent)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String(value)).font(.system(size: 25, weight: .black, design: .rounded))
+                Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             }
-            Text(String(value)).font(.system(size: 34, weight: .bold, design: .rounded))
-            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(selected ? Color.cineNexAccent.opacity(0.12) : Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 22))
-        .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(selected ? Color.cineNexAccent.opacity(0.35) : Color.clear, lineWidth: 1))
+        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+        .padding(14)
+        .background(selected ? Color.cineNexAccent.opacity(0.12) : Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(selected ? Color.cineNexAccent.opacity(0.35) : Color.clear, lineWidth: 1))
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private var posterColumns: [GridItem] { [GridItem(.adaptive(minimum: posterDensity == "compact" ? 104 : 140), spacing: 16, alignment: .top)] }
@@ -1510,7 +1619,8 @@ private struct MediaDetailView: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(.ultraThinMaterial)
+        .background(Color.cineNexBackground)
+        .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1) }
     }
 
     private func detailRow(_ title: String, value: String, symbol: String) -> some View {
@@ -1560,7 +1670,7 @@ private struct MediaDetailView: View {
 }
 
 private enum HomeDiscoveryLane: String, CaseIterable, Identifiable {
-    case all = "For you"
+    case all = "Discover"
     case movies = "Movies"
     case series = "Series"
     case rated = "Top rated"

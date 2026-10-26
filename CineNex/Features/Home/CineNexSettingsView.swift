@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CineNexSettingsView: View {
+    var onOpenDownloads: (() -> Void)? = nil
     @AppStorage("cinenex.retainPartialTransfers") private var retainPartialTransfers = true
     @State private var showingAppearance = false
     @State private var showingClearConfirmation = false
@@ -11,22 +12,29 @@ struct CineNexSettingsView: View {
     @AppStorage("cinenex.resumePlayback") private var resumePlayback = true
     @AppStorage("cinenex.transferProfile") private var transferProfile = "balanced"
     @AppStorage("cinenex.canvasStyle") private var canvasStyle = "midnight"
-    @AppStorage("cinenex.accentPreset") private var accent = "violet"
+    @AppStorage("cinenex.accentPreset") private var accent = "amber"
+    @AppStorage("cinenex.smartPlaybackAttempts") private var smartAttempts = 3
+    @AppStorage("cinenex.smartPreferredQuality") private var smartQuality = "1080p"
+    @AppStorage("cinenex.smartMaximumSizeGB") private var maximumSizeGB = 0.0
+    @AppStorage("cinenex.hideKnownDeadReleases") private var hideKnownDead = false
+    @AppStorage("cinenex.bufferStrategy") private var bufferStrategy = "balanced"
+    @AppStorage("cinenex.playerControlsDelay") private var controlsDelay = 5
+    @AppStorage("cinenex.showTransferHUD") private var showTransferHUD = true
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("YOUR CINENEX").font(.caption.weight(.bold)).tracking(3).foregroundStyle(Color.cineNexAccent)
-                    Text("Set the scene.").font(.system(size: 36, weight: .bold, design: .rounded))
-                    Text("A personal cinema, tuned to you.").font(.subheadline).foregroundStyle(.secondary)
+                    Text("PERSONALIZE YOUR EXPERIENCE").font(.system(size: 9, weight: .black)).tracking(2.5).foregroundStyle(Color.cineNexAccent)
+                    Text("Settings").font(.system(size: 38, weight: .black, design: .serif))
+                    Text("Your layout. Your playback. Your rules.").font(.subheadline).foregroundStyle(.secondary)
                 }.padding(.vertical, 20)
-                CineNexPreferenceCard(title: "Studio", symbol: "paintpalette.fill") {
+                CineNexPreferenceCard(title: "Appearance & layout", symbol: "paintpalette.fill") {
                     Button { showingAppearance = true } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 5) {
-                                Text("Design your space").font(.headline)
-                                Text("Canvas, accent, poster density and motion").font(.caption).foregroundStyle(.secondary)
+                                Text("Customize CineNex").font(.headline)
+                                Text("Home shelves, navigation, posters, colors & motion").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
                             Circle().fill(Color.cineNexAccent).frame(width: 30, height: 30)
@@ -46,10 +54,35 @@ struct CineNexSettingsView: View {
                     Picker("Subtitle language", selection: $subtitleLanguage) {
                         ForEach(SubtitleLanguage.offered) { Text($0.name).tag($0.code) }
                     }
+                    Divider()
+                    Picker("Opening buffer", selection: $bufferStrategy) {
+                        ForEach(TorrentPlaybackTuning.BufferStrategy.allCases) { Text($0.title).tag($0.rawValue) }
+                    }
+                    Text("Quick starts with a smaller buffer. Resilient prepares more video data and uses a longer player cache for less reliable connections.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Picker("Hide controls after", selection: $controlsDelay) {
+                        ForEach([3, 5, 8], id: \.self) { Text("\($0) seconds").tag($0) }
+                    }
+                    Toggle("Show transfer details in player", isOn: $showTransferHUD)
                     Text("Preferences apply to newly opened VLC players. Sleep timers are available from the clock in the player.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                CineNexPreferenceCard(title: "Streaming", symbol: "antenna.radiowaves.left.and.right") {
+                CineNexPreferenceCard(title: "Automatic source selection", symbol: "play.circle") {
+                    Picker("Preferred quality", selection: $smartQuality) {
+                        Text("4K · 2160p").tag("2160p")
+                        Text("Full HD · 1080p").tag("1080p")
+                        Text("HD · 720p").tag("720p")
+                    }
+                    Picker("Known file size limit", selection: $maximumSizeGB) {
+                        Text("No limit").tag(0.0)
+                        ForEach([2.0, 5, 10, 20, 40], id: \.self) { Text("Up to \(Int($0)) GB").tag($0) }
+                    }
+                    Stepper("Try up to \(smartAttempts) releases", value: $smartAttempts, in: 1...5)
+                    Toggle("Hide releases reporting zero seeders", isOn: $hideKnownDead)
+                    Text("Automatic playback tries actual preparation, then moves on when a release fails. Reported seed counts and sizes can be missing or outdated; unknown metadata is not a health check.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                CineNexPreferenceCard(title: "Streaming & storage", symbol: "antenna.radiowaves.left.and.right") {
                     NavigationLink { CineNexProviderSettingsView() } label: {
                         settingsLink("Sources & providers", detail: "Torrentio · MediaFusion · custom add-ons", symbol: "network")
                     }
@@ -65,12 +98,19 @@ struct CineNexSettingsView: View {
                     Text("Applies to the next torrent session. Actual battery use depends on the release, codec and connection.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
-                CineNexPreferenceCard(title: "Connections", symbol: "person.crop.circle") {
+                if let onOpenDownloads {
+                    CineNexPreferenceCard(title: "Downloads", symbol: "arrow.down.circle") {
+                        Button(action: onOpenDownloads) {
+                            settingsLink("Offline library", detail: "Download status, storage and saved media", symbol: "internaldrive")
+                        }.buttonStyle(.plain)
+                    }
+                }
+                CineNexPreferenceCard(title: "Accounts & tracking", symbol: "person.crop.circle") {
                     NavigationLink { TrackingView() } label: {
                         settingsLink("Accounts & tracking", detail: "Trakt, watch history and imports", symbol: "arrow.triangle.2.circlepath")
                     }
                 }
-                CineNexPreferenceCard(title: "App care", symbol: "heart.text.square") {
+                CineNexPreferenceCard(title: "Diagnostics & maintenance", symbol: "heart.text.square") {
                     NavigationLink { PlaybackDiagnosticsView() } label: {
                         settingsLink("Playback report", detail: "Provider responses, timing and native events", symbol: "waveform.path.ecg")
                     }
@@ -84,6 +124,12 @@ struct CineNexSettingsView: View {
                             maintenanceMessage = "Artwork cache cleared. Posters download again when needed."
                         }
                     }
+                    Button("Clear cached provider metadata", systemImage: "network") {
+                        Task {
+                            await SourceDiscoveryCache.shared.clear()
+                            maintenanceMessage = "Cached provider metadata cleared. New searches fetch fresh responses; active playback continues."
+                        }
+                    }
                     Button("Clear cached catalog", systemImage: "arrow.clockwise") { showingClearConfirmation = true }
                     if let maintenanceMessage { Text(maintenanceMessage).font(.caption).foregroundStyle(.secondary) }
                     Text("CineNex \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") · Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "")")
@@ -93,7 +139,8 @@ struct CineNexSettingsView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color.cineNexBackground.ignoresSafeArea())
-        .navigationTitle("Control room").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
+        .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
         .sheet(isPresented: $showingAppearance) { AppearanceSettingsView() }
         .confirmationDialog("Clear the cached catalog?", isPresented: $showingClearConfirmation) {
             Button("Clear cached catalog") { CatalogCacheStore.shared.clear(); maintenanceMessage = "Cache cleared. Pull down on Home to fetch fresh metadata." }

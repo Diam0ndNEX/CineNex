@@ -62,7 +62,8 @@ final class SceneBoxChromeVisibility {
 
     func autoHide() async {
         guard autoHideID != nil else { return }
-        try? await Task.sleep(for: .seconds(4))
+        let delay = TorrentPlaybackTuning.controlsDelay(UserDefaults.standard.integer(forKey: "cinenex.playerControlsDelay"))
+        try? await Task.sleep(for: .seconds(delay))
         guard !Task.isCancelled else { return }
         withAnimation(transitionAnimation) { isVisible = false }
         autoHideID = nil

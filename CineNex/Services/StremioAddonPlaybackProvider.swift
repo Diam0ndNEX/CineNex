@@ -23,12 +23,12 @@ struct TMDBExternalIDResolver: PlaybackExternalIDResolving, Sendable {
         var networkRequest = URLRequest(url: url)
         networkRequest.setValue("Bearer \(readAccessToken)", forHTTPHeaderField: "Authorization")
         networkRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-        networkRequest.timeoutInterval = 12
+        networkRequest.timeoutInterval = 5
 
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: networkRequest)
+            (data, response) = try await SourceDiscoveryNetworking.data(for: networkRequest, session: session, timeout: 5)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -92,13 +92,13 @@ struct CinemetaExternalIDResolver: PlaybackExternalIDResolving, Sendable {
         }
 
         var networkRequest = URLRequest(url: url)
-        networkRequest.timeoutInterval = 10
+        networkRequest.timeoutInterval = 5
         networkRequest.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: networkRequest)
+            (data, response) = try await SourceDiscoveryNetworking.data(for: networkRequest, session: session, timeout: 5)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -194,24 +194,34 @@ private struct CinemetaCatalogEntry: Decodable {
 struct AutomaticExternalIDResolver: PlaybackExternalIDResolving, Sendable {
     private let tmdbReadAccessToken: String?
     private let session: URLSession
+    private let identifierCache: SourceIdentifierCache?
 
-    init(tmdbReadAccessToken: String?, session: URLSession = .shared) {
+    init(tmdbReadAccessToken: String?, session: URLSession = .shared, identifierCache: SourceIdentifierCache? = nil) {
         let token = tmdbReadAccessToken?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.tmdbReadAccessToken = token.flatMap { $0.isEmpty ? nil : $0 }
         self.session = session
+        self.identifierCache = identifierCache ?? (session === URLSession.shared ? .shared : nil)
     }
 
     func imdbID(for request: PlaybackSourceRequest) async throws -> String? {
+        try Task.checkCancellation()
+        // Catalogs already supply IMDb IDs for most titles. Never delay these behind a TMDB call.
+        if let value = request.imdbID, value.range(of: "^tt[0-9]{5,12}$", options: .regularExpression) != nil { return value }
+        if let identifierCache {
+            // Episode coordinates do not change a series' IMDb ID.
+            let key = "\(request.mediaKind.rawValue)|\(request.tmdbID.map(String.init) ?? "none")|\(request.releaseYear.map(String.init) ?? "none")|\(request.title)"
+            return try await identifierCache.resolve(key: key) { try await self.lookup(request) }
+        }
+        return try await lookup(request)
+    }
+
+    private func lookup(_ request: PlaybackSourceRequest) async throws -> String? {
+        PlaybackDiagnostics.record("discovery.identifier.begin", details: ["media_kind": request.mediaKind.rawValue])
         if let token = tmdbReadAccessToken {
             do {
-                if let imdbID = try await TMDBExternalIDResolver(readAccessToken: token, session: session).imdbID(for: request) {
-                    return imdbID
-                }
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                guard !Task.isCancelled else { throw CancellationError() }
-            }
+                if let imdbID = try await TMDBExternalIDResolver(readAccessToken: token, session: session).imdbID(for: request) { return imdbID }
+            } catch is CancellationError { throw CancellationError() }
+            catch { try Task.checkCancellation() }
         }
         return try await CinemetaExternalIDResolver(session: session).imdbID(for: request)
     }
@@ -292,12 +302,32 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
         return discovery.sources
     }
 
-    func discover(for request: PlaybackSourceRequest) async throws -> StremioAddonDiscovery {
+    func discover(
+        for request: PlaybackSourceRequest,
+        onUpdate: (@Sendable (StremioAddonDiscovery) async -> Void)? = nil
+    ) async throws -> StremioAddonDiscovery {
         guard request.isValid else { throw StremioAddonClientError.invalidRequest }
         guard !clients.isEmpty else {
-            return StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: [])
+            let empty = StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: [])
+            if let onUpdate { await onUpdate(empty) }
+            return empty
         }
-        guard let imdbID = try await externalIDResolver.imdbID(for: request) else {
+        try Task.checkCancellation()
+        let resolvedID: String?
+        do {
+            if let existing = request.imdbID { resolvedID = existing }
+            else { resolvedID = try await externalIDResolver.imdbID(for: request) }
+        } catch {
+            try Task.checkCancellation()
+            if error is CancellationError { throw CancellationError() }
+            let statuses = clientDisplayNames.enumerated().map { index, name in
+                StremioAddonProviderStatus(id: "\(index)-\(name.lowercased())", name: name, outcome: .failed(error.localizedDescription))
+            }
+            let failed = StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: statuses)
+            if let onUpdate { await onUpdate(failed) }
+            return failed
+        }
+        guard let imdbID = resolvedID else {
             let statuses = clientDisplayNames.enumerated().map { index, name in
                 StremioAddonProviderStatus(
                     id: "\(index)-\(name.lowercased())",
@@ -305,7 +335,9 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                     outcome: .identifierUnavailable
                 )
             }
-            return StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: statuses)
+            let unavailable = StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: statuses)
+            if let onUpdate { await onUpdate(unavailable) }
+            return unavailable
         }
 
         let streamRequest = StremioStreamRequest(
@@ -324,6 +356,10 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                 throw CancellationError()
             } catch {
                 failuresByIndex[0] = error.localizedDescription
+            }
+            if let onUpdate {
+                try Task.checkCancellation()
+                await onUpdate(try makeDiscovery(batches: batches, failuresByIndex: failuresByIndex, completedIndices: [0]))
             }
         } else {
             let aggregated = await withTaskGroup(
@@ -353,6 +389,13 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
                     } else {
                         fetched.append((result.index, result.entries))
                     }
+                    if let onUpdate {
+                        let partial = try? makeDiscovery(
+                            batches: result.failure == nil ? [(result.index, result.entries)] : [],
+                            failuresByIndex: result.failure.map { [result.index: $0] } ?? [:],
+                            completedIndices: [result.index])
+                        if let partial, !Task.isCancelled { await onUpdate(partial) }
+                    }
                 }
                 return (fetched, errorsByIndex)
             }
@@ -362,7 +405,15 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
 
         try Task.checkCancellation()
 
-        batches.sort { $0.index < $1.index }
+        return try makeDiscovery(batches: batches, failuresByIndex: failuresByIndex)
+    }
+
+    private func makeDiscovery(
+        batches unsortedBatches: [(index: Int, entries: [StremioStreamEntry])],
+        failuresByIndex: [Int: String],
+        completedIndices: Set<Int>? = nil
+    ) throws -> StremioAddonDiscovery {
+        let batches = unsortedBatches.sorted { $0.index < $1.index }
         let mappingStarted = Date()
         var sources: [PlaybackSource] = []
         var descriptors: [StremioTorrentDescriptor] = []
@@ -382,7 +433,9 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
             "torrent_count": String(descriptors.count), "direct_count": String(sources.count),
         ])
 
-        let providerStatuses = clientDisplayNames.enumerated().map { index, name in
+        let providerStatuses = clientDisplayNames.enumerated().filter { index, _ in
+            completedIndices?.contains(index) ?? true
+        }.map { index, name in
             let statusID = "\(index)-\(name.lowercased())"
             if let failure = failuresByIndex[index] {
                 return StremioAddonProviderStatus(id: statusID, name: name, outcome: .failed(failure))

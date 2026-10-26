@@ -10,7 +10,7 @@ packages:
     revision: 0ec31e4ecd31d08189b5aa64f86dc00f1434c978
 settings:
   base:
-    MARKETING_VERSION: "2.0.0"
+    MARKETING_VERSION: "3.0.0"
     CURRENT_PROJECT_VERSION: "1"
     INFOPLIST_KEY_CFBundleShortVersionString: "$(MARKETING_VERSION)"
     INFOPLIST_KEY_CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"

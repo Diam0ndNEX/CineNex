@@ -28,6 +28,18 @@ struct WatchHubView: View {
     @State private var sourceSearchGeneration = UUID()
     @State private var sourceSearchTask: Task<Void, Never>?
     @State private var filteredTorrentDescriptors: [StremioTorrentDescriptor] = []
+    @AppStorage("cinenex.smartPlaybackAttempts") private var smartPlaybackAttempts = 3
+    @AppStorage("cinenex.smartPreferredQuality") private var smartPreferredQuality = "1080p"
+    @AppStorage("cinenex.smartMaximumSizeGB") private var smartMaximumSizeGB = 0.0
+    @AppStorage("cinenex.hideKnownDeadReleases") private var hideKnownDeadReleases = false
+    @State private var releaseQuery = ""
+    @State private var minimumSeeders = 0
+    @State private var releaseFailures: [String: String] = [:]
+    @State private var smartAttemptLabel: String?
+    @State private var preparingTorrentTransfer = true
+    @State private var discoveryStartedAt = Date()
+    @State private var discoveryStage = "Contacting providers"
+
 
     private static let legacyDefaultStremioAddonManifestURLTexts: Set<String> = [
         "https://torrentio.strem.fun/manifest.json\nhttps://mediafusion.elfhosted.com/manifest.json",
@@ -58,6 +70,7 @@ struct WatchHubView: View {
     @State private var searchingAddonSources = false
     @State private var sourceSearchCancelled = false
     @State private var discoveryCompletedProviders = 0
+    @State private var discoveryExpectedProviders = 3
     @State private var cancellingPreparation = false
     @State private var addonSearchMessage: String?
     @State private var availableProviders: [ResolvedEmbedSource] = []
@@ -119,25 +132,32 @@ struct WatchHubView: View {
                         .disabled(preparingTorrentDescriptorID != nil)
                     }
                     quickActions
+                    if preparingTorrentDescriptorID != nil { preparationPanel }
+                    if let torrentPreparationMessage, preparingTorrentDescriptorID == nil {
+                        Label(torrentPreparationMessage, systemImage: "info.circle")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     providerSection.disabled(preparingTorrentDescriptorID != nil)
                 }
                 .padding(20)
                 .padding(.bottom, 28)
             }
             .background(Color.cineNexBackground.ignoresSafeArea())
-            .navigationTitle("Choose a release")
+            .navigationTitle("Play")
+            .toolbarBackground(.hidden, for: .navigationBar)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close", systemImage: "xmark") {
                         cancelSourceSearch()
+                        cancelPlaybackPreparation()
                         dismiss()
                     }
                         .labelStyle(.iconOnly)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Refresh sources", systemImage: "arrow.clockwise") {
-                        Task { await searchStremioAddonSources() }
+                        Task { await searchStremioAddonSources(forceRefresh: true) }
                     }
                     .labelStyle(.iconOnly)
                     .disabled(searchingAddonSources || preparingTorrentDescriptorID != nil)
@@ -176,7 +196,13 @@ struct WatchHubView: View {
                 filteredTorrentDescriptors = []
                 let worker = Task.detached(priority: .userInitiated) {
                     let started = Date()
-                    let results = SceneBoxStreamPicker.filtered(filter.streams, provider: filter.provider, quality: filter.quality, sort: filter.sort)
+                    let candidates = filter.streams.filter { stream in
+                        (filter.query.isEmpty || stream.title.localizedCaseInsensitiveContains(filter.query) || stream.providerName.localizedCaseInsensitiveContains(filter.query))
+                            && (filter.minimumSeeders == 0 || (stream.reportedSeeders ?? -1) >= filter.minimumSeeders)
+                            && (!filter.hideKnownDead || stream.reportedSeeders != 0)
+                            && (filter.maximumBytes <= 0 || (stream.reportedSizeBytes.map { $0 <= filter.maximumBytes } ?? true))
+                    }
+                    let results = SceneBoxStreamPicker.filtered(candidates, provider: filter.provider, quality: filter.quality, sort: filter.sort)
                     PlaybackDiagnostics.record("discovery.filter.complete", details: [
                         "input_count": String(filter.streams.count), "output_count": String(results.count),
                         "elapsed_ms": String(Int(Date().timeIntervalSince(started) * 1_000)),
@@ -194,9 +220,6 @@ struct WatchHubView: View {
             .task(id: item.id) {
                 await loadCatalogDetails()
             }
-            .safeAreaInset(edge: .bottom) {
-                if preparingTorrentDescriptorID != nil { preparationPanel }
-            }
             .onDisappear {
                 guard activePlaybackSheet == nil else { return }
                 PlaybackDiagnostics.record("playback.preparation.cancel", details: ["reason": "source_screen_disappeared"])
@@ -213,33 +236,44 @@ struct WatchHubView: View {
     }
 
     private var preparationPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
-                ProgressView().padding(.trailing, 6)
-                Text("Connecting to release").font(.headline)
+                Label(smartAttemptLabel ?? "Preparing playback", systemImage: "antenna.radiowaves.left.and.right")
+                    .font(.subheadline.weight(.semibold))
                 Spacer()
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text("\(max(0, Int(context.date.timeIntervalSince(torrentPreparationStartedAt))))s")
-                        .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
             }
-            Text(torrentPreparationMessage ?? "Finding peers…")
-                .font(.subheadline).foregroundStyle(.secondary)
-            Button("Cancel and choose another release", role: .cancel) {
-                PlaybackDiagnostics.record("playback.preparation.cancel", details: ["reason": "user_selected_cancel"])
-                cancellingPreparation = true
-                torrentPreparationTask?.cancel()
-                torrentPreparationMessage = "Cancelling the current connection…"
+            if preparingTorrentTransfer { TorrentBufferingStatusView(compact: true) }
+            else {
+                ProgressView().progressViewStyle(.linear)
+                Text("Checking the direct link response. Transfer statistics are available for torrent releases.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            .buttonStyle(.bordered).frame(maxWidth: .infinity)
-            .disabled(cancellingPreparation)
-            ProgressView().progressViewStyle(.linear)
-            Text("Finding peers → fetching metadata → preparing video")
-                .font(.caption2).foregroundStyle(.secondary)
+            if let torrentPreparationMessage {
+                Text(torrentPreparationMessage).font(.caption).foregroundStyle(.secondary)
+            }
+            Button("Cancel preparation", role: .cancel) { cancelPlaybackPreparation() }
+                .buttonStyle(.bordered)
         }
-        .padding(20)
-        .background(.regularMaterial)
+        .padding(18)
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 22))
+        .overlay { RoundedRectangle(cornerRadius: 22).strokeBorder(Color.cineNexAccent.opacity(0.35)) }
         .accessibilityElement(children: .contain)
+    }
+
+    @MainActor
+    private func cancelPlaybackPreparation() {
+        PlaybackDiagnostics.record("playback.preparation.cancel", details: ["reason": "user_selected_cancel"])
+        torrentPreparationGeneration = UUID()
+        torrentPreparationTask?.cancel()
+        torrentPreparationTask = nil
+        preparingTorrentDescriptorID = nil
+        smartAttemptLabel = nil
+        cancellingPreparation = false
+        torrentPreparationMessage = "Preparation cancelled. You can choose another release."
     }
 
     private var hero: some View {
@@ -250,7 +284,7 @@ struct WatchHubView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .allowsHitTesting(false)
             VStack(alignment: .leading, spacing: 8) {
-                Text("CHOOSE A STREAM")
+                Text("PLAYBACK")
                     .font(.caption2.weight(.bold))
                     .tracking(1.5)
                     .foregroundStyle(Color.cineNexAccent)
@@ -279,7 +313,7 @@ struct WatchHubView: View {
             Button(action: playTopRelease) {
                 HStack(spacing: 12) {
                     Image(systemName: hasNativeSelection ? "play.fill" : "magnifyingglass")
-                    Text(hasNativeSelection ? "Play top release" : (searchingAddonSources ? "Finding releases…" : "Search again"))
+                    Text(hasNativeSelection ? "Find a ready release" : (searchingAddonSources ? "Finding releases…" : "Search again"))
                         .font(.headline)
                     Spacer()
                     if searchingAddonSources { ProgressView().tint(.white) }
@@ -291,7 +325,7 @@ struct WatchHubView: View {
             }
             .buttonStyle(.plain)
             .disabled(preparingTorrentDescriptorID != nil || (searchingAddonSources && !hasNativeSelection))
-            Text(hasNativeSelection ? "Uses the first release in your current filters." : "Sources are checked independently. You can play as soon as a result arrives.")
+            Text(hasNativeSelection ? "Checks a release’s startup data and tries another if it cannot prepare. Your filters and playback preferences apply." : "Sources are checked independently. You can play as soon as a result arrives.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -320,6 +354,7 @@ struct WatchHubView: View {
                         descriptor: descriptor,
                         isPreparing: preparingTorrentDescriptorID == descriptor.id,
                         isDisabled: preparingTorrentDescriptorID != nil,
+                        statusMessage: releaseFailures[descriptor.id],
                         onPlay: { startTorrentPlayback(for: descriptor) }
                     )
                 }
@@ -351,32 +386,37 @@ struct WatchHubView: View {
     }
 
     private var discoveryStatus: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Group {
-                if searchingAddonSources { ProgressView().tint(Color.cineNexAccent) }
-                else { Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(Color.cineNexAccent) }
-            }
-            .frame(width: 24, height: 24)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(searchingAddonSources ? "Discovering releases" : (sourceSearchCancelled ? "Search cancelled" : "Search complete"))
-                    .font(.subheadline.weight(.semibold))
-                Text(searchingAddonSources
-                     ? (discoveryCompletedProviders == 0 ? "Contacting configured source providers…" : "Results are ready to use. Checking remaining providers…")
-                     : "\(discoveredTorrentDescriptors.count) torrent releases · \(discoveredSources.count + (item.streamURL == nil ? 0 : 1)) direct links")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(searchingAddonSources ? "Finding your streams" : (sourceSearchCancelled ? "Search stopped" : "Your sources"))
+                    .font(.headline)
+                Spacer()
                 if searchingAddonSources {
-                    Button("Cancel search", role: .cancel) { cancelSourceSearch() }
-                        .font(.caption.weight(.semibold))
-                    ProgressView(value: Double(discoveryCompletedProviders), total: 2)
-                        .tint(Color.cineNexAccent)
-                        .padding(.top, 4)
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text("\(max(0, Int(context.date.timeIntervalSince(discoveryStartedAt))))s")
+                            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    }
                 }
             }
-            Spacer(minLength: 0)
+            if searchingAddonSources {
+                Text(discoveryStage).font(.caption).foregroundStyle(.secondary)
+                ProgressView(value: Double(discoveryCompletedProviders), total: Double(max(discoveryExpectedProviders, 1)))
+                    .tint(Color.cineNexAccent)
+                HStack {
+                    Text("\(discoveryCompletedProviders) / \(discoveryExpectedProviders) providers replied")
+                    Spacer()
+                    Button("Stop search", role: .cancel) { cancelSourceSearch() }
+                }.font(.caption)
+                Text("Discovery downloads provider lists only. Transfer speed appears when a release starts downloading.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 16) {
+                Label("\(discoveredTorrentDescriptors.count) torrents", systemImage: "arrow.down.circle")
+                Label("\(discoveredSources.count + (item.streamURL == nil ? 0 : 1)) direct", systemImage: "play.rectangle")
+            }.font(.caption.weight(.medium))
         }
-        .padding(16)
-        .background(Color.cineNexSurface.opacity(0.7), in: RoundedRectangle(cornerRadius: 18))
+        .padding(18)
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 20))
     }
 
     private var sourceTypePicker: some View {
@@ -405,9 +445,14 @@ struct WatchHubView: View {
     }
 
     private var releaseControls: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) { filterMenus }
-            VStack(alignment: .leading, spacing: 8) { filterMenus }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Filter release names, codecs or languages", text: $releaseQuery)
+                    .font(.subheadline).textInputAutocapitalization(.never).autocorrectionDisabled()
+                if !releaseQuery.isEmpty { Button("Clear", systemImage: "xmark.circle.fill") { releaseQuery = "" }.labelStyle(.iconOnly) }
+            }.padding(12).background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
+            ScrollView(.horizontal) { HStack(spacing: 8) { filterMenus } }.scrollIndicators(.hidden)
         }
     }
 
@@ -432,6 +477,20 @@ struct WatchHubView: View {
             }
         } label: {
             filterLabel(selectedQuality == "Any quality" ? "Quality" : selectedQuality, symbol: "viewfinder")
+        }
+        Menu {
+            Picker("Minimum reported seeders", selection: $minimumSeeders) {
+                Text("Any peer count").tag(0)
+                ForEach([5, 20, 50], id: \.self) { Text("At least \($0) seeders").tag($0) }
+            }
+            Toggle("Hide reported zero seeders", isOn: $hideKnownDeadReleases)
+            Picker("Maximum file size", selection: $smartMaximumSizeGB) {
+                Text("Any size").tag(0.0)
+                ForEach([2.0, 5.0, 10.0, 20.0, 40.0], id: \.self) { Text("Up to \(Int($0)) GB").tag($0) }
+            }
+            Text("Missing size or peer data stays unknown. Minimum-peer filters require reported counts.")
+        } label: {
+            filterLabel(minimumSeeders > 0 ? "\(minimumSeeders)+ seeders" : "More filters", symbol: "line.3.horizontal.decrease")
         }
         Menu {
             Picker("Sort releases", selection: $releaseSort) {
@@ -509,8 +568,12 @@ struct WatchHubView: View {
                 selectedSourceFilter = "All"
                 selectedTorrentProvider = "All providers"
                 selectedQuality = "Any quality"
+                releaseQuery = ""
+                minimumSeeders = 0
+                smartMaximumSizeGB = 0
+                hideKnownDeadReleases = false
             }
-            Button("Search again") { Task { await searchStremioAddonSources() } }
+            Button("Search again") { Task { await searchStremioAddonSources(forceRefresh: true) } }
         }
         .padding(.vertical, 12)
     }
@@ -583,15 +646,29 @@ struct WatchHubView: View {
     }
 
     private func playTopRelease() {
-        guard preparingTorrentDescriptorID == nil else { return }
-        if let descriptor = visibleTorrentSources.first {
-            startTorrentPlayback(for: descriptor)
-        } else if let source = visibleDirectSources.first {
-            activePlaybackSheet = .discovered(source)
-        } else if showsDirectPlayback, item.streamURL != nil {
-            onPlayDirect(item)
-        } else if !searchingAddonSources {
-            Task { await searchStremioAddonSources() }
+        guard torrentPreparationTask == nil else { return }
+        let direct = visibleDirectSources + ((showsDirectPlayback && item.streamURL != nil) ? [PlaybackSource(
+            id: "supplied-\(item.id)", providerID: "supplied", providerName: "Supplied media link", title: item.title,
+            url: item.streamURL!, qualityLabel: nil, languageCode: nil, subtitleLanguages: [],
+            supportsNativePlayback: true, providerPriority: 100)] : [])
+        let choices = SmartPlaybackSelection.candidates(torrents: visibleTorrentSources, direct: direct,
+            preferredQuality: smartPreferredQuality, maximumBytes: smartMaximumSizeGB * 1_000_000_000,
+            hidingKnownDead: hideKnownDeadReleases).filter { candidate in
+                switch candidate {
+                case .torrent(let descriptor): return releaseFailures[descriptor.id] == nil
+                case .direct: return releaseFailures[candidate.id] == nil
+                }
+            }
+        guard !choices.isEmpty else {
+            if !searchingAddonSources { Task { await searchStremioAddonSources() } }
+            return
+        }
+        let preparationID = UUID()
+        torrentPreparationGeneration = preparationID
+        torrentPreparationStartedAt = Date()
+        preparingTorrentDescriptorID = choices.first?.id
+        torrentPreparationTask = Task {
+            await prepareCandidates(choices, maximumAttempts: smartPlaybackAttempts, preparationID: preparationID)
         }
     }
 
@@ -770,7 +847,9 @@ struct WatchHubView: View {
         SourceFilterRequest(streams: discoveredTorrentDescriptors,
                             provider: selectedTorrentProvider == "All providers" ? nil : selectedTorrentProvider,
                             quality: selectedQuality == "Any quality" ? nil : selectedQuality,
-                            sort: releaseSort)
+                            sort: releaseSort, query: releaseQuery.trimmingCharacters(in: .whitespacesAndNewlines),
+                            minimumSeeders: minimumSeeders, maximumBytes: smartMaximumSizeGB * 1_000_000_000,
+                            hideKnownDead: hideKnownDeadReleases)
     }
 
     @MainActor
@@ -785,9 +864,12 @@ struct WatchHubView: View {
     }
 
     @MainActor
-    private func searchStremioAddonSources() async {
+    private func searchStremioAddonSources(forceRefresh: Bool = false) async {
         guard !Task.isCancelled else { return }
+        sourceSearchGeneration = UUID()
         sourceSearchTask?.cancel()
+        if forceRefresh { await SourceDiscoveryCache.shared.clearPlaybackResponses() }
+        guard !Task.isCancelled else { return }
         let task = Task { await performSourceSearch() }
         sourceSearchTask = task
         await withTaskCancellationHandler {
@@ -825,6 +907,9 @@ struct WatchHubView: View {
         searchingAddonSources = true
         sourceSearchCancelled = false
         discoveryCompletedProviders = 0
+        discoveryStartedAt = Date()
+        discoveryStage = "Resolving title and contacting providers…"
+        releaseFailures = [:]
         providerStatuses = []
         addonSearchMessage = nil
         torrentPreparationMessage = nil
@@ -852,21 +937,46 @@ struct WatchHubView: View {
             $0.host?.lowercased().contains("torrentio") ?? false
         }.map { $0.deletingLastPathComponent().absoluteString } + ["https://torrentio.strem.fun"])
         let addonURLs = addonManifestURLs
-        let batches = await withTaskGroup(of: StremioAddonDiscovery.self, returning: [StremioAddonDiscovery].self) { group in
-            group.addTask { await torrentioSearch.discover(for: searchRequest, externalIDResolver: resolver) }
-            group.addTask { await Self.discoverAddonSources(manifestURLs: addonURLs, request: searchRequest, resolver: resolver) }
-            var batches: [StremioAddonDiscovery] = []
-            for await batch in group {
-                guard !Task.isCancelled, sourceSearchGeneration == generation else { group.cancelAll(); break }
+        discoveryExpectedProviders = addonURLs.count + 1
+        let updates = AsyncStream<StremioAddonDiscovery>.makeStream()
+        let producer = Task {
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    let result = await torrentioSearch.discover(for: searchRequest, externalIDResolver: resolver)
+                    updates.continuation.yield(result)
+                }
+                group.addTask {
+                    _ = await Self.discoverAddonSources(manifestURLs: addonURLs, request: searchRequest, resolver: resolver,
+                        onUpdate: { batch in updates.continuation.yield(batch) })
+                }
+            }
+            updates.continuation.finish()
+        }
+        var batches: [StremioAddonDiscovery] = []
+        await withTaskCancellationHandler {
+            for await batch in updates.stream {
+                guard !Task.isCancelled, sourceSearchGeneration == generation else { producer.cancel(); break }
                 batches.append(batch)
-                discoveryCompletedProviders = batches.count
-                providerStatuses = batches.flatMap(\.providerStatuses)
+                var seenStatuses = Set<String>()
+                providerStatuses = batches.flatMap(\.providerStatuses).filter { seenStatuses.insert($0.id).inserted }
+                discoveryCompletedProviders = providerStatuses.count
+                discoveryStage = "\(batch.providerStatuses.map(\.name).joined(separator: ", ")) replied. Checking remaining providers…"
                 var seen = Set<String>()
                 discoveredSources = batches.flatMap(\.sources).filter { seen.insert($0.id).inserted }
-                discoveredTorrentDescriptors = batches.flatMap(\.torrentDescriptors)
-                addonSearchMessage = "Received \(discoveredTorrentDescriptors.count) torrent releases. Remaining providers are still being checked."
+                var seenTorrents = Set<String>()
+                discoveredTorrentDescriptors = batches.flatMap(\.torrentDescriptors).filter { seenTorrents.insert($0.id).inserted }
+                if discoveredTorrentDescriptors.count + discoveredSources.count > 0 {
+                    addonSearchMessage = "Results are ready. You can play while other providers finish."
+                }
+                PlaybackDiagnostics.record("discovery.provider.ready", details: [
+                    "provider": batch.providerStatuses.map(\.name).joined(separator: ","),
+                    "elapsed_ms": String(Int(Date().timeIntervalSince(discoveryStartedAt) * 1_000)),
+                    "torrent_count": String(discoveredTorrentDescriptors.count)])
             }
-            return batches
+            await producer.value
+        } onCancel: {
+            producer.cancel()
+            updates.continuation.finish()
         }
         guard !Task.isCancelled, sourceSearchGeneration == generation else { return }
         selectedTorrentProvider = "All providers"
@@ -900,7 +1010,8 @@ struct WatchHubView: View {
     nonisolated private static func discoverAddonSources(
         manifestURLs: [URL],
         request: PlaybackSourceRequest,
-        resolver: AutomaticExternalIDResolver
+        resolver: AutomaticExternalIDResolver,
+        onUpdate: (@Sendable (StremioAddonDiscovery) async -> Void)? = nil
     ) async -> StremioAddonDiscovery {
         guard !manifestURLs.isEmpty else {
             return StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: [])
@@ -910,7 +1021,7 @@ struct WatchHubView: View {
                 manifestURLs: manifestURLs,
                 externalIDResolver: resolver
             )
-            return try await provider.discover(for: request)
+            return try await provider.discover(for: request, onUpdate: onUpdate)
         } catch is CancellationError {
             return StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: [])
         } catch {
@@ -923,7 +1034,9 @@ struct WatchHubView: View {
                     outcome: .failed(error.localizedDescription)
                 )
             }
-            return StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: statuses)
+            let result = StremioAddonDiscovery(sources: [], torrentDescriptors: [], providerStatuses: statuses)
+            if let onUpdate { await onUpdate(result) }
+            return result
         }
     }
 
@@ -943,6 +1056,7 @@ struct WatchHubView: View {
         PlaybackDiagnostics.beginAttempt(provider: descriptor.providerName, fileIndex: descriptor.fileIndex)
         preparingTorrentDescriptorID = descriptor.id
         cancellingPreparation = false
+        preparingTorrentTransfer = true
         torrentPreparationStartedAt = Date()
         torrentPreparationMessage = "Preparing torrent stream. Torrent metadata may take a moment to load."
         let preparationID = UUID()
@@ -954,48 +1068,76 @@ struct WatchHubView: View {
 
     @MainActor
     private func prepareTorrentPlayback(for descriptor: StremioTorrentDescriptor, preparationID: UUID) async {
-        PlaybackDiagnostics.record("Preparing native torrent session")
-        let engine = XITRIXTorrentPlaybackEngine(descriptor: descriptor) { message in
-            Task { @MainActor in
-                guard torrentPreparationGeneration == preparationID else { return }
-                torrentPreparationMessage = message
-            }
-        }
-        let provider = TorrentPlaybackProvider(engine: engine)
+        await prepareCandidates([.torrent(descriptor)], maximumAttempts: 1, preparationID: preparationID)
+    }
+
+    @MainActor
+    private func prepareCandidates(_ candidates: [SmartPlaybackCandidate], maximumAttempts: Int, preparationID: UUID) async {
+        let playbackRequest = request
         defer {
             if torrentPreparationGeneration == preparationID {
-                if preparingTorrentDescriptorID == descriptor.id {
-                    preparingTorrentDescriptorID = nil
-                }
+                preparingTorrentDescriptorID = nil
                 torrentPreparationTask = nil
+                smartAttemptLabel = nil
             }
         }
-
         do {
-            let sources = try await provider.findSources(for: request)
-            try Task.checkCancellation()
-            guard torrentPreparationGeneration == preparationID else {
-                await provider.stop()
+            let source = try await SmartPlaybackSelection.firstReady(candidates: candidates, maximumAttempts: maximumAttempts,
+                onAttempt: { candidate, index, total in
+                    guard torrentPreparationGeneration == preparationID else { return }
+                    smartAttemptLabel = "Checking release \(index) of \(total)"
+                    if case .torrent = candidate { preparingTorrentTransfer = true }
+                    else { preparingTorrentTransfer = false }
+                    if case .torrent(let descriptor) = candidate {
+                        preparingTorrentDescriptorID = descriptor.id
+                        PlaybackDiagnostics.beginAttempt(provider: descriptor.providerName, fileIndex: descriptor.fileIndex)
+                    }
+                    torrentPreparationMessage = "Connecting to \(candidate.title)…"
+                }, onFailure: { candidate, message in
+                    guard torrentPreparationGeneration == preparationID else { return }
+                    if case .torrent(let descriptor) = candidate { releaseFailures[descriptor.id] = message }
+                    else { releaseFailures[candidate.id] = message }
+                    torrentPreparationMessage = message
+                    PlaybackDiagnostics.record("playback.selection.failed", details: ["provider": candidate.title])
+                }, discard: { source in
+                    _ = await TorrentPlaybackSessionRegistry.shared.stop(for: source.url)
+                }, prepare: { candidate in
+                    switch candidate {
+                    case .direct(let source):
+                        return try await DirectPlaybackReadinessProbe().confirm(source)
+                    case .torrent(let descriptor):
+                        let engine = XITRIXTorrentPlaybackEngine(descriptor: descriptor) { message in
+                            Task { @MainActor in
+                                guard torrentPreparationGeneration == preparationID else { return }
+                                torrentPreparationMessage = message
+                            }
+                        }
+                        let provider = TorrentPlaybackProvider(engine: engine)
+                        var registeredSources: [PlaybackSource] = []
+                        do {
+                            let sources = try await provider.findSources(for: playbackRequest)
+                            registeredSources = sources
+                            try Task.checkCancellation()
+                            guard torrentPreparationGeneration == preparationID else { throw CancellationError() }
+                            guard let source = sources.first else { throw SmartPlaybackSelection.SelectionError.unreachableLink }
+                            return source
+                        } catch {
+                            for source in registeredSources { _ = await TorrentPlaybackSessionRegistry.shared.stop(for: source.url) }
+                            await provider.stop()
+                            throw error
+                        }
+                    }
+                })
+            guard !Task.isCancelled, torrentPreparationGeneration == preparationID else {
+                _ = await TorrentPlaybackSessionRegistry.shared.stop(for: source.url)
                 return
             }
-            guard let source = sources.first else {
-                await provider.stop()
-                torrentPreparationMessage = "This torrent did not contain a playable file supported by CineNex."
-                return
-            }
-            PlaybackDiagnostics.record("Torrent HTTP stream ready; opening player")
             activePlaybackSheet = .discovered(source)
-            torrentPreparationMessage = "Torrent source is ready. Opening the VLC player."
+            torrentPreparationMessage = "Startup data received. Opening player…"
         } catch is CancellationError {
-            await provider.stop()
-            if torrentPreparationGeneration == preparationID {
-                torrentPreparationMessage = "Torrent preparation was cancelled."
-            }
+            if torrentPreparationGeneration == preparationID { torrentPreparationMessage = "Preparation cancelled." }
         } catch {
-            await provider.stop()
-            if torrentPreparationGeneration == preparationID {
-                torrentPreparationMessage = "Native torrent playback failed: \(error.localizedDescription). Try another source."
-            }
+            if torrentPreparationGeneration == preparationID { torrentPreparationMessage = error.localizedDescription }
         }
     }
 
@@ -1171,4 +1313,8 @@ private struct SourceFilterRequest: Equatable, Sendable {
     let provider: String?
     let quality: String?
     let sort: SourceReleaseSort
+    let query: String
+    let minimumSeeders: Int
+    let maximumBytes: Double
+    let hideKnownDead: Bool
 }

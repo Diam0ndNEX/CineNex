@@ -4,6 +4,7 @@ import SwiftUI
 struct CatalogPosterTile: View {
     let item: MediaItem
     @AppStorage("cinenex.showRatings") private var showRatings = true
+    @AppStorage("cinenex.posterMetadata") private var showMetadata = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -16,6 +17,7 @@ struct CatalogPosterTile: View {
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
+            if showMetadata {
             HStack(spacing: 6) {
                 Text(item.yearLabel ?? item.kind.rawValue)
                 if showRatings, let rating = item.rating, rating > 0 {
@@ -27,6 +29,7 @@ struct CatalogPosterTile: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(1)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .contentShape(Rectangle())
@@ -41,69 +44,55 @@ struct CatalogFeatureCard: View {
     let onPlay: () -> Void
     let onSave: () -> Void
     @AppStorage("cinenex.showRatings") private var showRatings = true
+    @AppStorage("cinenex.featuredStyle") private var featuredStyle = "immersive"
+    @AppStorage("cinenex.featuredSynopsis") private var showSynopsis = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                Label("ON YOUR RADAR", systemImage: "sparkles")
-                    .font(.system(size: 9, weight: .heavy)).tracking(2)
-                    .foregroundStyle(Color.cineNexAccent)
-                Spacer()
-                Text(item.kind.rawValue.uppercased()).font(.system(size: 9, weight: .bold)).tracking(1.2)
-                    .foregroundStyle(.secondary)
-            }
-            HStack(alignment: .top, spacing: 18) {
-                Button(action: onDetails) {
-                    CachedPosterImage(url: item.posterURL, fallbackSymbol: item.symbol, symbolSize: 32)
-                        .frame(width: 104, height: 156)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .rotationEffect(.degrees(-3))
-                        .shadow(color: .black.opacity(0.3), radius: 10, y: 6)
-                }.accessibilityLabel("Details for \(item.title)")
-                VStack(alignment: .leading, spacing: 10) {
-                    Button(action: onDetails) {
-                        Text(item.title).font(.system(size: 26, weight: .heavy, design: .rounded))
-                            .tracking(-0.6).foregroundStyle(.primary).lineLimit(3).multilineTextAlignment(.leading)
-                    }
-                    HStack(spacing: 8) {
-                        if let year = item.yearLabel { Text(year) }
-                        if showRatings, let rating = item.rating, rating > 0 {
-                            Label(String(format: "%.1f", rating), systemImage: "star.fill").foregroundStyle(.yellow)
-                        }
-                    }.font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    Text(item.genre).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    Text(item.synopsis).font(.caption).foregroundStyle(.secondary).lineLimit(3)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-            }
-            HStack(spacing: 12) {
-                Button(action: onPlay) {
-                    HStack {
-                        Image(systemName: "play.fill")
-                        Text("Watch now")
-                        Spacer()
-                        Image(systemName: "arrow.up.right")
-                    }
-                    .font(.subheadline.weight(.bold))
-                    .padding(15)
-                    .background(Color.primary, in: RoundedRectangle(cornerRadius: 14))
-                    .foregroundStyle(Color.cineNexBackground)
+        ZStack(alignment: .bottomLeading) {
+            Button(action: onDetails) {
+                ZStack {
+                    Color.cineNexSurface
+                    CachedPosterImage(url: item.posterURL, fallbackSymbol: item.symbol, symbolSize: 66)
                 }
-                Button(action: onSave) {
-                    Image(systemName: saved ? "checkmark" : "plus")
-                        .font(.headline).frame(width: 48, height: 48)
-                        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
-                }.accessibilityLabel(saved ? "Remove from watchlist" : "Add to watchlist")
-            }
+                .frame(maxWidth: .infinity)
+                .frame(height: featuredStyle == "compact" ? 290 : 440).clipped().contentShape(Rectangle())
+            }.accessibilityLabel("Details for \(item.title)")
+            LinearGradient(colors: [.clear, .black.opacity(0.20), .black.opacity(0.97)],
+                           startPoint: .top, endPoint: .bottom).allowsHitTesting(false)
+            VStack(alignment: .leading, spacing: 14) {
+                Label(item.kind == .movie ? "FEATURE FILM" : "SERIES SPOTLIGHT", systemImage: "sparkle")
+                    .font(.system(size: 9, weight: .heavy)).tracking(2).foregroundStyle(Color.cineNexAccent)
+                Button(action: onDetails) {
+                    Text(item.title).font(.system(size: 31, weight: .black, design: .serif))
+                        .tracking(-0.7).multilineTextAlignment(.leading).lineLimit(3)
+                }.foregroundStyle(.white)
+                HStack(spacing: 10) {
+                    if let year = item.yearLabel { Text(year) }
+                    Text(item.kind.rawValue)
+                    if showRatings, let rating = item.rating, rating > 0 {
+                        Label(String(format: "%.1f", rating), systemImage: "star.fill").foregroundStyle(.yellow)
+                    }
+                }.font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.75))
+                if showSynopsis && featuredStyle != "compact" {
+                    Text(item.synopsis).font(.caption).foregroundStyle(.white.opacity(0.75)).lineLimit(2)
+                }
+                HStack(spacing: 10) {
+                    Button(action: onPlay) {
+                        Label("Find sources", systemImage: "play.fill")
+                            .font(.subheadline.bold()).frame(maxWidth: .infinity).padding(.vertical, 14)
+                            .foregroundStyle(.black).background(Color.cineNexAccent, in: Capsule())
+                    }
+                    Button(action: onSave) {
+                        Image(systemName: saved ? "bookmark.fill" : "bookmark")
+                            .font(.headline).frame(width: 47, height: 47).cineNexGlass(in: Circle())
+                    }.foregroundStyle(.white).accessibilityLabel(saved ? "Remove from watchlist" : "Add to watchlist")
+                }
+            }.padding(22)
         }
         .buttonStyle(.plain)
-        .padding(22)
-        .frame(maxWidth: .infinity, minHeight: 312, alignment: .topLeading)
-        .background {
-            RoundedRectangle(cornerRadius: 28)
-                .fill(LinearGradient(colors: [Color.cineNexAccent.opacity(0.18), Color.cineNexSurface],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-        }
-        .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+        .frame(maxWidth: .infinity, minHeight: featuredStyle == "compact" ? 290 : 440, alignment: .bottomLeading)
+        .background(Color.cineNexSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
     }
 }
 
@@ -155,25 +144,20 @@ struct CatalogBrowserView: View {
     let items: [MediaItem]
     let onSelect: (MediaItem) -> Void
     var footer: AnyView? = nil
-    @State private var query = ""
-    @State private var sort = CatalogCollectionSort.relevance
-    @State private var selectedGenre = ""
-    @State private var selectedKind = "all"
-    @State private var selectedYear = 0
+    @State private var filters = CatalogFilterState()
+    @State private var showingFilters = false
+    @AppStorage("cinenex.browseSort") private var sortRaw = CatalogCollectionSort.relevance.rawValue
+    @AppStorage("cinenex.browseLayout") private var layout = "grid"
     @AppStorage("cinenex.posterDensity") private var posterDensity = "comfortable"
 
+    private var sort: CatalogCollectionSort { CatalogCollectionSort(rawValue: sortRaw) ?? .relevance }
     private var genres: [String] {
         Array(Set(items.flatMap { $0.genre.components(separatedBy: CharacterSet(charactersIn: ",·/")) }
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted()
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty && $0 != "Unknown" })).sorted()
     }
-
+    private var years: [Int] { Array(Set(items.map(\.year).filter { $0 > 0 })).sorted(by: >) }
     private var results: [MediaItem] {
-        let matches = items.filter { item in
-            (query.isEmpty || item.title.localizedCaseInsensitiveContains(query)) &&
-            (selectedGenre.isEmpty || item.genre.localizedCaseInsensitiveContains(selectedGenre)) &&
-            (selectedKind == "all" || (selectedKind == "movies" && item.kind == .movie) || (selectedKind == "series" && item.kind == .series)) &&
-            (selectedYear == 0 || item.year == selectedYear)
-        }
+        let matches = items.filter { filters.matches($0) }
         switch sort {
         case .relevance: return matches
         case .newest: return matches.sorted { $0.year == $1.year ? $0.title < $1.title : $0.year > $1.year }
@@ -184,88 +168,131 @@ struct CatalogBrowserView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
-                Picker("Content type", selection: $selectedKind) {
-                    Text("All").tag("all")
-                    Text("Movies").tag("movies")
-                    Text("Series").tag("series")
-                }.pickerStyle(.segmented)
-                ScrollView(.horizontal) {
-                    HStack(spacing: 9) {
-                        browseSortButton("Popular", sort: .relevance)
-                        browseSortButton("Newest", sort: .newest)
-                        browseSortButton("Top rated", sort: .rating)
-                        browseSortButton("A–Z", sort: .title)
-                    }
-                }.scrollIndicators(.hidden)
-                HStack {
-                    Text("\(results.count) titles").font(.subheadline).foregroundStyle(.secondary)
-                    Spacer()
-                    Menu {
-                        Picker("Genre", selection: $selectedGenre) {
-                            Text("All genres").tag("")
-                            ForEach(genres, id: \.self) { Text($0).tag($0) }
-                        }
-                        Picker("Release year", selection: $selectedYear) {
-                            Text("All years").tag(0)
-                            ForEach(Array(Set(items.map(\.year).filter { $0 > 0 })).sorted(by: >), id: \.self) { Text(String($0)).tag($0) }
-                        }
-                        Picker("Sort", selection: $sort) {
-                            ForEach(CatalogCollectionSort.allCases) { Text($0.rawValue).tag($0) }
-                        }
-                    } label: {
-                        Label("Filter & sort", systemImage: "line.3.horizontal.decrease")
-                            .font(.subheadline.weight(.semibold))
-                    }
+            LazyVStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("YOUR NEXT STORY").font(.system(size: 9, weight: .black)).tracking(2.5).foregroundStyle(Color.cineNexAccent)
+                    Text(title == "Browse" ? "Discover" : title).font(.system(size: 34, weight: .black, design: .serif))
+                    Text("Explore the catalog. Refine what catches your eye.").font(.subheadline).foregroundStyle(.secondary)
                 }
-                if !selectedGenre.isEmpty || selectedKind != "all" || selectedYear != 0 || !query.isEmpty {
-                    HStack(spacing: 8) {
-                        if !selectedGenre.isEmpty { Text(selectedGenre).font(.caption.weight(.semibold)) }
-                        if selectedYear != 0 { Text(String(selectedYear)).font(.caption.weight(.semibold)) }
-                        Spacer()
-                        Button("Clear filters", systemImage: "xmark.circle") {
-                            selectedGenre = ""
-                            selectedKind = "all"
-                            selectedYear = 0
-                            query = ""
-                        }.font(.caption.weight(.semibold))
+                HStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("Filter loaded titles", text: $filters.query).submitLabel(.search).autocorrectionDisabled()
+                    if !filters.query.isEmpty { Button("Clear search", systemImage: "xmark.circle.fill") { filters.query = "" }.labelStyle(.iconOnly) }
+                }.padding(15).background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14))
+                HStack(spacing: 7) {
+                    kindButton("Everything", value: "all")
+                    kindButton("Movies", value: "movies")
+                    kindButton("Series", value: "series")
+                }
+                HStack(spacing: 12) {
+                    Menu {
+                        Picker("Order", selection: $sortRaw) {
+                            ForEach(CatalogCollectionSort.allCases) { Text($0.rawValue).tag($0.rawValue) }
+                        }
+                    } label: { Label(sort.rawValue, systemImage: "arrow.up.arrow.down").font(.caption.weight(.semibold)) }
+                    Spacer()
+                    Button { showingFilters = true } label: {
+                        Label(filters.activeCount == 0 ? "Refine" : "Refine · \(filters.activeCount)", systemImage: "slider.horizontal.3")
+                            .font(.caption.weight(.bold)).padding(.horizontal, 13).padding(.vertical, 10)
+                            .background(Color.cineNexAccent.opacity(0.12), in: Capsule())
                     }
+                    Button {
+                        layout = layout == "grid" ? "list" : "grid"
+                    } label: { Image(systemName: layout == "grid" ? "list.bullet" : "square.grid.2x2").frame(width: 36, height: 36) }
+                    .accessibilityLabel(layout == "grid" ? "Use list layout" : "Use poster layout")
+                }.buttonStyle(.plain)
+                HStack {
+                    Text("\(results.count) of \(items.count) loaded titles").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    Spacer()
+                    if filters.activeCount > 0 { Button("Reset") { filters = CatalogFilterState() }.font(.caption.bold()) }
                 }
                 if results.isEmpty {
-                    ContentUnavailableView("No matching titles", systemImage: "film.stack",
-                                           description: Text("Try another title or clear the genre filter."))
+                    ContentUnavailableView("No matching titles", systemImage: "slider.horizontal.3",
+                                           description: Text("Try broader filters. Only loaded catalog titles are filtered; more pages load below."))
+                } else if layout == "list" {
+                    LazyVStack(spacing: 0) {
+                        ForEach(results) { item in
+                            Button { onSelect(item) } label: {
+                                HStack(spacing: 14) {
+                                    CachedPosterImage(url: item.posterURL, fallbackSymbol: item.symbol, symbolSize: 25)
+                                        .frame(width: 68, height: 100).clipShape(RoundedRectangle(cornerRadius: 10))
+                                    VStack(alignment: .leading, spacing: 7) {
+                                        Text(item.title).font(.headline).lineLimit(2)
+                                        Text([item.yearLabel, item.kind.rawValue].compactMap { $0 }.joined(separator: " · "))
+                                            .font(.caption).foregroundStyle(.secondary)
+                                        Text(item.genre).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    }.frame(maxWidth: .infinity, alignment: .leading)
+                                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                                }.foregroundStyle(.primary).padding(.vertical, 10).contentShape(Rectangle())
+                            }.buttonStyle(.plain).accessibilityLabel("Details for \(item.title)")
+                            Divider().opacity(0.2)
+                        }
+                    }
                 } else {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: posterDensity == "compact" ? 104 : 140), spacing: 16, alignment: .top)], alignment: .leading, spacing: 24) {
                         ForEach(results) { item in
-                            Button { onSelect(item) } label: { CatalogPosterTile(item: item) }
-                                .buttonStyle(.plain)
+                            Button { onSelect(item) } label: { CatalogPosterTile(item: item) }.buttonStyle(.plain)
                         }
                     }
                 }
                 if let footer { footer }
-            }
-            .padding(20)
+            }.padding(20)
         }
         .background(Color.cineNexBackground.ignoresSafeArea())
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.large)
-        .searchable(text: $query, prompt: "Filter these titles")
-    }
-    private func browseSortButton(_ title: String, sort value: CatalogCollectionSort) -> some View {
-        Button { sort = value } label: {
-            Text(title).font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 15).padding(.vertical, 10)
-                .foregroundStyle(sort == value ? Color.cineNexAccent : Color.primary)
-                .cineNexGlass(in: Capsule(), prominent: sort == value)
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(sort == value ? .isSelected : [])
+        .navigationTitle(title == "Browse" ? "Discover" : title).navigationBarTitleDisplayMode(.inline)
+        .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
+        .sheet(isPresented: $showingFilters) { filterSheet }
     }
 
+    private func kindButton(_ title: String, value: String) -> some View {
+        Button { filters.kind = value } label: {
+            Text(title).font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 12)
+                .foregroundStyle(filters.kind == value ? Color.cineNexBackground : Color.secondary)
+                .background(filters.kind == value ? Color.cineNexAccent : Color.cineNexSurface, in: Capsule())
+        }.buttonStyle(.plain).accessibilityAddTraits(filters.kind == value ? .isSelected : [])
+    }
+
+    private var filterSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Genre") {
+                    Picker("Genre", selection: $filters.genre) {
+                        Text("Any genre").tag("")
+                        ForEach(genres, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+                Section("Release window") {
+                    Picker("From year", selection: $filters.earliestYear) {
+                        Text("Any year").tag(0)
+                        ForEach(years, id: \.self) { Text(String($0)).tag($0) }
+                    }
+                    Picker("Through year", selection: $filters.latestYear) {
+                        Text("Any year").tag(0)
+                        ForEach(years, id: \.self) { Text(String($0)).tag($0) }
+                    }
+                    if filters.earliestYear > 0 && filters.latestYear > 0 && filters.earliestYear > filters.latestYear {
+                        Text("The start year is after the end year. Adjust the window to see matches.").font(.caption).foregroundStyle(.orange)
+                    }
+                }
+                Section("Rating & artwork") {
+                    Picker("Minimum rating", selection: $filters.minimumRating) {
+                        Text("Any rating").tag(0)
+                        ForEach(5...9, id: \.self) { Text("\($0)+ out of 10").tag($0) }
+                    }
+                    Toggle("Hide unrated titles", isOn: $filters.hideUnrated)
+                    Toggle("Only titles with poster artwork", isOn: $filters.requirePoster)
+                    Text("Unknown ratings and years do not pass an explicit minimum or release window. These filters apply to loaded catalog metadata, not playable-source availability.").font(.caption)
+                }
+                Section { Button("Reset all filters") { filters = CatalogFilterState() } }
+            }
+            .navigationTitle("Refine discovery").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Show \(results.count) titles") { showingFilters = false } } }
+        }.tint(Color.cineNexAccent).preferredColorScheme(.dark)
+    }
 }
 
 private enum CatalogCollectionSort: String, CaseIterable, Identifiable {
-    case relevance = "Original order"
+    case relevance = "Catalog order"
     case newest = "Newest first"
     case rating = "Highest rated"
     case title = "Title A–Z"
@@ -306,46 +333,29 @@ struct CatalogDetailHero: View {
     @Environment(\.dynamicTypeSize) private var dynamicType
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            HStack {
-                Label(item.kind == .movie ? "FEATURE FILM" : "SERIES", systemImage: item.symbol)
-                    .font(.system(size: 9, weight: .heavy)).tracking(1.8)
-                    .foregroundStyle(Color.cineNexAccent)
-                Spacer()
-                ShareLink(item: item.title) {
-                    Image(systemName: "square.and.arrow.up")
-                        .frame(width: 36, height: 36)
-                        .background(Color.white.opacity(0.08), in: Circle())
-                }.accessibilityLabel("Share title")
-            }
-            if dynamicType.isAccessibilitySize {
-                poster
-                metadata
-            } else {
-                HStack(alignment: .center, spacing: 22) {
-                    poster
-                    metadata
-                }
-            }
+        VStack(alignment: .leading, spacing: 18) {
+            ZStack(alignment: .bottomLeading) {
+                CachedPosterImage(url: item.posterURL, fallbackSymbol: item.symbol, symbolSize: 68)
+                    .frame(maxWidth: .infinity).frame(height: dynamicType.isAccessibilitySize ? 230 : 340).clipped()
+                LinearGradient(colors: [.clear, .black.opacity(0.86)], startPoint: .center, endPoint: .bottom)
+                    .allowsHitTesting(false)
+                HStack {
+                    Label(item.kind == .movie ? "FEATURE FILM" : "SERIES", systemImage: item.symbol)
+                        .font(.system(size: 10, weight: .heavy)).tracking(1.6)
+                    Spacer()
+                    ShareLink(item: item.title) {
+                        Image(systemName: "square.and.arrow.up").frame(width: 40, height: 40).cineNexGlass(in: Circle())
+                    }.accessibilityLabel("Share title")
+                }.foregroundStyle(.white).padding(18)
+            }.clipShape(RoundedRectangle(cornerRadius: 22))
+            metadata
         }
-        .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient(colors: [Color.cineNexAccent.opacity(0.17), Color.cineNexSurface],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: 28))
-        .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(Color.white.opacity(0.07), lineWidth: 1))
-    }
-
-    private var poster: some View {
-        CachedPosterImage(url: item.posterURL, fallbackSymbol: item.symbol, symbolSize: 42)
-            .frame(width: 120, height: 180)
-            .clipShape(RoundedRectangle(cornerRadius: 15))
-            .shadow(color: .black.opacity(0.3), radius: 12, y: 8)
     }
 
     private var metadata: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(item.title).font(.system(size: 29, weight: .heavy, design: .rounded))
+            Text(item.title).font(.system(size: 35, weight: .black, design: .serif))
                 .tracking(-0.7).fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             HStack(spacing: 10) {

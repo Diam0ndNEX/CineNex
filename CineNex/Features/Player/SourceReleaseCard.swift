@@ -5,6 +5,7 @@ struct SourceReleaseCard: View {
     let descriptor: StremioTorrentDescriptor
     let isPreparing: Bool
     let isDisabled: Bool
+    var statusMessage: String? = nil
     let onPlay: () -> Void
     @State private var showsDetails = false
 
@@ -51,6 +52,10 @@ struct SourceReleaseCard: View {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 6) { metadata }
                 VStack(alignment: .leading, spacing: 6) { metadata }
+            }
+            if let statusMessage {
+                Label(statusMessage, systemImage: "exclamationmark.circle")
+                    .font(.caption).foregroundStyle(.orange).lineLimit(3)
             }
             DisclosureGroup(isExpanded: $showsDetails) {
                 VStack(alignment: .leading, spacing: 8) {
