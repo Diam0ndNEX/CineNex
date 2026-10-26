@@ -11,9 +11,11 @@ struct SceneBoxTorrentSearch: Sendable {
         ],
         session: URLSession = .shared
     ) {
-        self.sourceBases = Array(NSOrderedSet(array: sourceBases.map {
+        let normalizedBases = sourceBases.map {
             $0.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        })) as? [String] ?? sourceBases
+        }
+        var seenBases = Set<String>()
+        self.sourceBases = normalizedBases.filter { seenBases.insert($0).inserted }
         self.session = session
     }
 
