@@ -16,19 +16,19 @@ final class NowPlayingController {
         self.title = title
 
         let center = MPRemoteCommandCenter.shared()
-        addTarget(to: center.playCommand) { [weak self] in
+        addTarget(to: center.playCommand) { [weak self] _ in
             guard let self, let player = self.player else { return .commandFailed }
             player.play()
             self.refresh()
             return .success
         }
-        addTarget(to: center.pauseCommand) { [weak self] in
+        addTarget(to: center.pauseCommand) { [weak self] _ in
             guard let self, let player = self.player else { return .commandFailed }
             player.pause()
             self.refresh()
             return .success
         }
-        addTarget(to: center.togglePlayPauseCommand) { [weak self] in
+        addTarget(to: center.togglePlayPauseCommand) { [weak self] _ in
             guard let self, let player = self.player else { return .commandFailed }
             if player.rate == 0 {
                 player.play()
