@@ -1,22 +1,42 @@
 # CineNex account login build configuration
 
-Consumer screens no longer request a Trakt API Client ID. They use system browser sign-in. AniList and MyAnimeList account cards authenticate and read profiles/anime lists; these lists are read-only and are not silently merged into local episode progress. MAL currently loads the first 100 list entries. These capabilities are not advertised as full two-way sync.
+Consumer screens no longer request a Trakt API Client ID. They use the system authentication browser. AniList and MyAnimeList account cards authenticate and read profiles/anime lists; these lists are read-only and are not silently merged into local episode progress. MAL currently loads the first 100 entries. These capabilities are not advertised as full two-way sync.
 
-## Required developer registration (not configured in this repository)
+## Required developer registration
 
-- `CINENEX_ANILIST_CLIENT_ID`: AniList OAuth application client ID. Register exactly `cinenex://oauth/aniList` as its redirect.
-- `CINENEX_MAL_CLIENT_ID`: MyAnimeList native OAuth application client ID. Register exactly `cinenex://oauth/myAnimeList` as its redirect. Native PKCE sends a fresh 256-bit random verifier/challenge with the service's plain method, and verifies state and callback identity.
-- `CINENEX_TRAKT_CLIENT_ID`: CineNex's Trakt OAuth app ID, registered redirect `cinenex://oauth/trakt`.
-- `CINENEX_TRAKT_TOKEN_BROKER_URL`: developer-controlled HTTPS endpoint that exchanges Trakt authorization codes and refresh tokens using the registered application's server-side secret. No client secret is embedded in CineNex. The repository does not deploy this endpoint.
+- `CINENEX_ANILIST_CLIENT_ID`: AniList OAuth app client ID. Register exactly `cinenex://oauth/aniList` as its redirect.
+- `CINENEX_MAL_CLIENT_ID`: MyAnimeList native OAuth app client ID. Register exactly `cinenex://oauth/myAnimeList`. Native PKCE sends a fresh 256-bit random verifier/challenge with the service's plain method and verifies state and callback identity.
+- `CINENEX_TRAKT_CLIENT_ID`: CineNex's Trakt OAuth app public client ID.
+- `CINENEX_TRAKT_REDIRECT_URI`: exact registered HTTPS callback on a domain associated with the app, for example an owned `/callback/trakt` path. This cannot be a `cinenex://` callback or a made-up domain. The domain must serve a correct Apple app-site-association file and match the app's signed Associated Domains entitlement and signing team/app ID. ASWebAuthenticationSession uses Apple's HTTPS callback matcher.
 
-Supply these values as Xcode build settings to both validation and IPA workflows when registration is complete. They map into Info.plist; the cinenex callback scheme is registered by XcodeGen. Missing configuration shows an explicit unavailable-build message and disabled login action. Do not substitute another application's IDs or secrets from public source.
+Supply these public values as Xcode build settings in validation and IPA builds. They map into Info.plist; the cinenex scheme is registered for AniList/MAL. Missing configuration shows an explicit unavailable-build message rather than asking consumers to enter API keys. Registered client IDs and the associated HTTPS callback are not configured by this source change; they must be verified before login can be advertised as enabled. Re-signing the IPA with a different team may invalidate its associated-domain relationship.
 
-The Trakt exchange endpoint accepts JSON `{grant_type: authorization_code, code, redirect_uri}` or `{grant_type: refresh_token, refresh_token}`. It must pin its own registered client/redirect, protect abuse, avoid logging credentials, and return standard Trakt JSON fields `access_token`, `refresh_token`, `expires_in`, `created_at`. Token exchange endpoint implementation, hosting and provider registration are prerequisites, not completed features. Existing saved Trakt tokens/client configuration remain readable for migration; legacy device-flow methods remain but are no longer the consumer sign-in action.
+## Trakt uses direct native PKCE; no token broker or client secret
+
+Trakt's current October 2026 official documentation deprecates client secrets for user sign-in. CineNex generates a fresh verifier, sends its SHA-256/base64url challenge with `code_challenge_method=S256`, validates the returned state and redirect, then exchanges the code and original verifier directly at `https://auth.trakt.tv/oauth/token`. It never sends a client secret. OAuth authorization, token exchange, refresh and legacy device routes use `auth.trakt.tv`; data API requests remain on `api.trakt.tv`.
+
+Concurrent API requests share one refresh task because current Trakt refresh tokens are single-use. The new access/refresh pair is stored before completion, and an authentication-generation guard prevents a refresh completing after disconnect from resurrecting the account. An `invalid_grant` refresh clears the invalid local session and asks for a fresh browser sign-in. Legacy saved Trakt tokens remain readable; expired pre-migration refresh tokens may require one reauthorization.
+
+No broker implementation, deployment or secret configuration is required. HTTPS callback hosting/association is distinct from running a token-exchange server.
 
 ## Storage and validation
 
-Tokens use device-only, unlocked Keychain storage. Sign-out removes local credentials/list state, not the provider account or remote list. Credential-bearing API calls refuse redirects. Callback validation rejects mismatched state, host/scheme/path/port and duplicate parameters. OAuth callback URLs/tokens are never sent to playback diagnostics.
+Tokens use device-only, unlocked Keychain storage. Account API sessions are ephemeral and credential-bearing requests refuse redirects. Sign-out removes local credentials/list state, not the provider account or remote list. Callback validation rejects mismatched state, host/scheme/path/port and duplicate parameters. OAuth callback URLs/tokens are never sent to playback diagnostics.
 
-AniList official docs support native-client implicit login at https://github.com/AniList/docs/blob/master/docs/guide/auth/implicit.md. Trakt official OAuth requirements are at https://trakt.docs.apiary.io/. MyAnimeList official authorization/API documentation is at https://myanimelist.net/apiconfig/references/authorization and https://myanimelist.net/apiconfig/references/api/v2; retrieval was unavailable in this editing environment. Its native PKCE/token/profile/list implementation requires verification against registered credentials.
+Primary references:
+- https://developer.trakt.tv/docs/authentication-oauth
+- https://developer.trakt.tv/docs/pkce
+- https://github.com/trakt/trakt-api/blob/master/projects/api/src/contracts/oauth/index.ts
+- https://developer.apple.com/documentation/authenticationservices/aswebauthenticationsession/callback/https(host:path:)
+- https://github.com/AniList/docs/blob/master/docs/guide/auth/implicit.md
+- https://myanimelist.net/apiconfig/references/authorization
+- https://myanimelist.net/apiconfig/references/api/v2
 
-Local Python checks and whitespace pass. Swift/iOS compilation, end-to-end provider login, token refresh, provider callback acceptance, large-account list behavior and profile/list error recovery remain unverified. Do not call these account integrations enabled until registered clients are configured and device sign-in succeeds.
+The MyAnimeList documentation endpoint was unavailable during editing; native PKCE/token/profile/list behavior still needs a registered-client replay. Local Python checks, YAML parsing and whitespace pass. Swift/iOS compilation, provider login, refresh and callback/domain acceptance, large-account lists and profile/list error recovery remain unverified until fresh CI and device testing. Unit tests cover the RFC7636 S256 vector, fixed Trakt auth host, HTTPS redirect policy, secret-free exchange payloads, callback-state rejection and secure random verifier format.
+
+
+## Build wiring and owned HTTPS callback
+
+Public IDs live in Config/AccountApplications.json or repository Actions variables with the same CINENEX_* names. Both validation and Fast IPA workflows run Scripts/configure_account_logins.py, then use Generated/OAuth.xcconfig for every app build/test. No secret is put in the app. The script validates IDs and HTTPS redirects, generates the associated-domain entitlement, and can produce an apple-app-site-association template when CINENEX_APP_TEAM_ID is provided. Publish that file at /.well-known/apple-app-site-association on the registered callback host, without redirects, and sign CineNex with the matching team and associated-domain entitlement. The callback website needs no token-exchange server.
+
+Provider app registration and acceptance of each provider's developer terms remain account-owner actions. Trakt's developer page currently requires connecting the public GitHub username and ID before Create App is enabled; that link awaits explicit user approval. Signing/associated-domain capability must survive external IPA re-signing. A generated template does not prove that the domain is deployed or associated with a signed app.

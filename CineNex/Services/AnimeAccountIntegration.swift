@@ -64,10 +64,16 @@ enum AnimeOAuthPolicy {
 @MainActor
 final class AnimeWebLogin: NSObject, ASWebAuthenticationPresentationContextProviding {
     private var session: ASWebAuthenticationSession?
-    func authorize(_ url: URL) async throws -> URL {
+    func authorize(_ url: URL, callback expected: URL = URL(string: "cinenex://oauth/aniList")!) async throws -> URL {
         defer { session = nil }
         return try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "cinenex") { callback, error in
+            let match: ASWebAuthenticationSession.Callback
+            if expected.scheme == "https", let host = expected.host {
+                match = .https(host: host, path: expected.path)
+            } else {
+                match = .customScheme(expected.scheme ?? "cinenex")
+            }
+            let session = ASWebAuthenticationSession(url: url, callback: match) { callback, error in
                 if let callback { continuation.resume(returning: callback) }
                 else { continuation.resume(throwing: error ?? AccountAuthError.message("Sign-in did not finish.")) }
             }
@@ -116,7 +122,7 @@ final class AnimeAccountIntegration: ObservableObject {
                 url.queryItems? += [URLQueryItem(name: "code_challenge", value: verifier), URLQueryItem(name: "code_challenge_method", value: "plain")]
             }
             guard let authorizeURL = url.url else { throw AccountAuthError.message("Could not prepare sign-in.") }
-            let callback = try await login.authorize(authorizeURL)
+            let callback = try await login.authorize(authorizeURL, callback: provider.redirect)
             let values = try AnimeOAuthPolicy.callbackValues(callback, expected: provider.redirect, state: state)
             let token: AnimeOAuthToken
             if provider == .aniList {

@@ -18,7 +18,7 @@ struct TraktDeviceAuthorization: Decodable, Equatable {
     }
 }
 
-private struct TraktTokenResponse: Codable {
+private struct TraktTokenResponse: Codable, Sendable {
     let accessToken: String
     let refreshToken: String
     let expiresIn: Int
@@ -65,6 +65,8 @@ final class TraktIntegration: ObservableObject {
     private let clientIDKey = "cinenex.trakt.clientID"
     private let tokenStore = TraktTokenKeychain()
     private var tokens: TraktTokenResponse?
+    private var refreshTask: Task<TraktTokenResponse, Error>?
+    private var authenticationGeneration = UUID()
 
     var savedClientID: String {
         let configured = (Bundle.main.object(forInfoDictionaryKey: "CINENEX_TRAKT_CLIENT_ID") as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -80,33 +82,37 @@ final class TraktIntegration: ObservableObject {
 
     private let webLogin = AnimeWebLogin()
     private let browserTokenSession = URLSession(configuration: .ephemeral)
-    private var brokerURL: URL? {
-        guard let value = Bundle.main.object(forInfoDictionaryKey: "CINENEX_TRAKT_TOKEN_BROKER_URL") as? String,
-              let url = URL(string: value), url.scheme == "https", url.host != nil, url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else { return nil }
-        return url
+    private var redirectURL: URL? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "CINENEX_TRAKT_REDIRECT_URI") as? String else { return nil }
+        return TraktOAuthPolicy.validRedirect(value)
     }
-    var browserLoginAvailable: Bool { !savedClientID.isEmpty && brokerURL != nil }
+    var browserLoginAvailable: Bool { !savedClientID.isEmpty && redirectURL != nil }
 
     func signInWithBrowser() async {
         guard !isAuthorizing else { return }
         guard browserLoginAvailable else {
-            lastError = "Trakt login is not enabled in this build. CineNex needs its registered app and secure token exchange configured by the developer; you do not need an API key."
+            lastError = "Trakt login is not enabled in this build. CineNex needs its registered app and associated HTTPS callback configured by the developer; you do not need an API key."
             return
         }
         isAuthorizing = true
+        refreshTask?.cancel()
+        refreshTask = nil
+        let generation = UUID()
+        authenticationGeneration = generation
         defer { isAuthorizing = false }
         statusMessage = "Opening Trakt sign-in…"
         lastError = nil
         do {
             let state = try AnimeOAuthPolicy.randomVerifier()
-            let redirect = URL(string: "cinenex://oauth/trakt")!
-            var authorize = URLComponents(string: "https://trakt.tv/oauth/authorize")!
-            authorize.queryItems = [URLQueryItem(name: "client_id", value: savedClientID), URLQueryItem(name: "redirect_uri", value: redirect.absoluteString), URLQueryItem(name: "response_type", value: "code"), URLQueryItem(name: "state", value: state)]
-            guard let url = authorize.url else { throw IntegrationError.message("Could not prepare Trakt sign-in.") }
-            let response = try await webLogin.authorize(url)
+            let verifier = try AnimeOAuthPolicy.randomVerifier()
+            guard let redirect = redirectURL else { throw IntegrationError.message("Trakt requires a registered HTTPS callback.") }
+            let authorize = try TraktOAuthPolicy.authorizationURL(clientID: savedClientID, redirect: redirect, verifier: verifier, state: state)
+            let response = try await webLogin.authorize(authorize, callback: redirect)
+            guard authenticationGeneration == generation else { throw CancellationError() }
             let values = try AnimeOAuthPolicy.callbackValues(response, expected: redirect, state: state)
             guard let code = values["code"], !code.isEmpty else { throw IntegrationError.message("Trakt did not return an authorization code.") }
-            let token = try await brokerToken(["grant_type": "authorization_code", "code": code, "redirect_uri": redirect.absoluteString])
+            let token = try await exchangeToken(["grant_type": "authorization_code", "code": code, "code_verifier": verifier, "redirect_uri": redirect.absoluteString])
+            guard authenticationGeneration == generation else { throw CancellationError() }
             try tokenStore.save(token)
             tokens = token
             isConnected = true
@@ -114,18 +120,23 @@ final class TraktIntegration: ObservableObject {
         } catch { lastError = error.localizedDescription; statusMessage = "Trakt sign-in did not finish" }
     }
 
-    private func brokerToken(_ fields: [String: String]) async throws -> TraktTokenResponse {
-        guard let brokerURL else { throw IntegrationError.message("The secure Trakt token exchange is not configured.") }
-        var request = URLRequest(url: brokerURL)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 20
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: fields)
+    private func exchangeToken(_ fields: [String: String]) async throws -> TraktTokenResponse {
+        let request = try TraktOAuthPolicy.tokenRequest(fields, clientID: savedClientID)
         let (data, response) = try await browserTokenSession.data(for: request, delegate: AccountNoRedirectDelegate())
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count < 100_000 else { throw IntegrationError.message("Trakt sign-in could not exchange the authorization securely.") }
+        guard let http = response as? HTTPURLResponse, data.count < 100_000 else { throw IntegrationError.message("Trakt returned an invalid sign-in response.") }
+        guard (200..<300).contains(http.statusCode) else {
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            if object?["error"] as? String == "invalid_grant" { throw TokenExchangeError.reauthorizationRequired }
+            throw IntegrationError.message("Trakt sign-in was rejected (HTTP \(http.statusCode)). Try again later.")
+        }
         let token = try JSONDecoder().decode(TraktTokenResponse.self, from: data)
         guard !token.accessToken.isEmpty, !token.refreshToken.isEmpty, token.expiresIn > 0 else { throw IntegrationError.message("Trakt returned an invalid session.") }
         return token
+    }
+
+    private enum TokenExchangeError: LocalizedError {
+        case reauthorizationRequired
+        var errorDescription: String? { "Your Trakt session expired. Sign in again to reconnect." }
     }
 
     func saveClientID(_ clientID: String) {
@@ -208,6 +219,9 @@ final class TraktIntegration: ObservableObject {
     }
 
     func disconnect() {
+        authenticationGeneration = UUID()
+        refreshTask?.cancel()
+        refreshTask = nil
         try? tokenStore.delete()
         tokens = nil
         isConnected = false
@@ -310,26 +324,29 @@ final class TraktIntegration: ObservableObject {
             return current
         }
 
-        if brokerURL != nil {
-            let refreshed = try await brokerToken(["grant_type": "refresh_token", "refresh_token": current.refreshToken])
+        // Trakt refresh tokens are single-use: concurrent API calls must share one refresh.
+        if let refreshTask { return try await refreshTask.value }
+        let generation = authenticationGeneration
+        let task = Task { @MainActor in
+            let refreshed: TraktTokenResponse
+            do { refreshed = try await exchangeToken(["grant_type": "refresh_token", "refresh_token": current.refreshToken]) }
+            catch {
+                if authenticationGeneration == generation, error is TokenExchangeError {
+                    try? tokenStore.delete()
+                    tokens = nil
+                    isConnected = false
+                    statusMessage = "Sign in to reconnect Trakt"
+                }
+                throw error
+            }
+            guard authenticationGeneration == generation else { throw CancellationError() }
             try tokenStore.save(refreshed)
             tokens = refreshed
             return refreshed
         }
-        let refreshed: TraktTokenResponse = try await post(
-            path: "/oauth/token",
-            body: [
-                "refresh_token": current.refreshToken,
-                "client_id": savedClientID,
-                "grant_type": "refresh_token"
-            ],
-            clientID: savedClientID,
-            bearerToken: nil,
-            acceptsPendingAuthorization: false
-        )
-        try tokenStore.save(refreshed)
-        tokens = refreshed
-        return refreshed
+        refreshTask = task
+        defer { if authenticationGeneration == generation { refreshTask = nil } }
+        return try await task.value
     }
 
     private func get(
@@ -337,7 +354,8 @@ final class TraktIntegration: ObservableObject {
         clientID: String,
         bearerToken: String
     ) async throws -> Data {
-        guard let url = URL(string: "https://api.trakt.tv\(path)") else {
+        let host = path.hasPrefix("/oauth/") ? "auth.trakt.tv" : "api.trakt.tv"
+        guard let url = URL(string: "https://\(host)\(path)") else {
             throw IntegrationError.message("The Trakt API URL is invalid.")
         }
         var request = URLRequest(url: url)
@@ -365,7 +383,8 @@ final class TraktIntegration: ObservableObject {
         bearerToken: String?,
         acceptsPendingAuthorization: Bool
     ) async throws -> Response {
-        guard let url = URL(string: "https://api.trakt.tv\(path)") else {
+        let host = path.hasPrefix("/oauth/") ? "auth.trakt.tv" : "api.trakt.tv"
+        guard let url = URL(string: "https://\(host)\(path)") else {
             throw IntegrationError.message("The Trakt API URL is invalid.")
         }
         var request = URLRequest(url: url)

@@ -42,6 +42,11 @@ Liquid Glass uses native iOS26 controls, grouped sampling and a narrow player ti
 
 Artwork has hashed URL keys, request coalescing, a 256 MiB disk budget, 7-day expiry and memory reuse. Clear cancels pending downloads and invalidates their write generations. Corrupt decoded entries are removed. Partial torrent bytes can be retained under a 2 GiB inactive-cache budget and 7-day expiry; active roots are reference-count protected. Native metadata removal means these bytes may require metadata fetching and hash rechecking next time. This is not guaranteed instant fast-resume or a complete offline copy. iOS may purge caches. Movie playback position and saved catalog snapshots continue using their existing stores.
 
-Account code is present but not enabled: CineNex's provider app registrations/public IDs are absent, and Trakt's developer-controlled token broker is not deployed. See ACCOUNT_LOGIN.md. AniList/MAL list access is currently read-only (MAL first100 entries), not two-way episode sync. Do not advertise successful live login until configuration and device sign-in are verified.
+Account code is present but not enabled: CineNex's provider app registrations/public IDs are absent, and Trakt's registered HTTPS callback and app/domain association are not configured. See ACCOUNT_LOGIN.md. AniList/MAL list access is currently read-only (MAL first100 entries), not two-way episode sync. Do not advertise successful live login until configuration and device sign-in are verified.
 
 The first-start touch-block symptom and energy effects still require a device replay. New regression coverage covers metadata preservation, bounded add-on fan-out, same-host provider counts, disk-cache persistence/expiry, active partial-cache deletion protection and OAuth callback validation.
+
+
+## Current Trakt authentication correction
+
+Trakt's October2026 official guidance supports direct native PKCE with S256 and no client secret or token broker. CineNex now uses auth.trakt.tv for authorization/token exchange and serialized refresh, with registered HTTPS callback matching. Earlier broker requirements in conversation were based on outdated documentation and are superseded. Registration/public IDs, verified callback domain and matching signing association remain external setup prerequisites.

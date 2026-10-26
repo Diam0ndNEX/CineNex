@@ -380,7 +380,6 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
         PlaybackDiagnostics.record("addon.mapping.complete", details: [
             "elapsed_ms": String(Int(Date().timeIntervalSince(mappingStarted) * 1_000)),
             "torrent_count": String(descriptors.count), "direct_count": String(sources.count),
-            "on_main_thread": String(Thread.isMainThread)
         ])
 
         let providerStatuses = clientDisplayNames.enumerated().map { index, name in

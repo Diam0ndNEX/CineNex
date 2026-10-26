@@ -69,12 +69,21 @@ jobs:
           path: SourcePackages
           key: swift-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-key.outputs.fingerprint }}-${{ hashFiles('project.yml') }}
 
+      - name: Prepare public account login configuration
+        env:
+          CINENEX_ANILIST_CLIENT_ID: ${{ vars.CINENEX_ANILIST_CLIENT_ID }}
+          CINENEX_MAL_CLIENT_ID: ${{ vars.CINENEX_MAL_CLIENT_ID }}
+          CINENEX_TRAKT_CLIENT_ID: ${{ vars.CINENEX_TRAKT_CLIENT_ID }}
+          CINENEX_TRAKT_REDIRECT_URI: ${{ vars.CINENEX_TRAKT_REDIRECT_URI }}
+          CINENEX_APP_TEAM_ID: ${{ vars.CINENEX_APP_TEAM_ID }}
+        run: python3 Scripts/configure_account_logins.py
+
       - name: Generate Xcode project
         run: xcodegen generate
 
       - name: Resolve Swift packages
         run: |
-          xcodebuild -resolvePackageDependencies \
+          xcodebuild -xcconfig Generated/OAuth.xcconfig -resolvePackageDependencies \
             -project CineNex.xcodeproj -scheme CineNex \
             -clonedSourcePackagesDirPath SourcePackages
 
@@ -87,7 +96,7 @@ jobs:
 
       - name: Build unsigned iOS app
         run: |
-          xcodebuild \
+          xcodebuild -xcconfig Generated/OAuth.xcconfig \
             -project CineNex.xcodeproj \
             -scheme CineNex \
             -clonedSourcePackagesDirPath SourcePackages \

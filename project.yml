@@ -28,7 +28,7 @@ settings:
     INFOPLIST_KEY_CINENEX_ANILIST_CLIENT_ID: "$(CINENEX_ANILIST_CLIENT_ID)"
     INFOPLIST_KEY_CINENEX_MAL_CLIENT_ID: "$(CINENEX_MAL_CLIENT_ID)"
     INFOPLIST_KEY_CINENEX_TRAKT_CLIENT_ID: "$(CINENEX_TRAKT_CLIENT_ID)"
-    INFOPLIST_KEY_CINENEX_TRAKT_TOKEN_BROKER_URL: "$(CINENEX_TRAKT_TOKEN_BROKER_URL)"
+    INFOPLIST_KEY_CINENEX_TRAKT_REDIRECT_URI: "$(CINENEX_TRAKT_REDIRECT_URI)"
 targets:
   CineNex:
     type: application
@@ -50,6 +50,7 @@ targets:
         embed: true
     settings:
       base:
+        CODE_SIGN_ENTITLEMENTS: Generated/CineNex.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.diam0ndnex.cinenex
         PRODUCT_NAME: CineNex
         INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads: NO
@@ -67,4 +68,5 @@ targets:
       - target: CineNex
     settings:
       base:
+        CODE_SIGN_ENTITLEMENTS: Generated/CineNex.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.diam0ndnex.cinenex.tests

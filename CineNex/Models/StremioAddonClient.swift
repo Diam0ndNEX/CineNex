@@ -309,7 +309,6 @@ struct StremioAddonClient: Sendable {
         PlaybackDiagnostics.record("addon.streams.parsed", details: [
             "host": manifestURL.host ?? "unknown",
             "entry_count": String(response.streams.count),
-            "on_main_thread": String(Thread.isMainThread),
             "hash_entries": String(response.streams.filter { $0.infoHash != nil }.count),
             "direct_candidates": String(response.streams.filter { $0.validatedPlaybackURL != nil }.count)
         ])

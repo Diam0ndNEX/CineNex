@@ -16,3 +16,6 @@ xcuserdata/
 *.key
 .env
 Secrets.xcconfig
+
+# Generated OAuth build files and callback association templates
+Generated/

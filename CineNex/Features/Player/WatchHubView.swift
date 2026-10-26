@@ -180,7 +180,6 @@ struct WatchHubView: View {
                     PlaybackDiagnostics.record("discovery.filter.complete", details: [
                         "input_count": String(filter.streams.count), "output_count": String(results.count),
                         "elapsed_ms": String(Int(Date().timeIntervalSince(started) * 1_000)),
-                        "on_main_thread": String(Thread.isMainThread)
                     ])
                     return results
                 }
