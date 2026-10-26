@@ -110,7 +110,12 @@ struct WatchHubView: View {
                         url: provider.url
                     )
                 case .discovered(let source):
-                    DiscoveredSourcePlaybackView(source: source) {
+                    DiscoveredSourcePlaybackView(
+                        source: source,
+                        item: item,
+                        seasonNumber: seasonNumber,
+                        episodeNumber: episodeNumber
+                    ) {
                         discoveredSources.removeAll { $0.id == source.id }
                     }
                 }
@@ -1086,57 +1091,27 @@ private struct EmbedWebPlaybackView: View {
 
 private struct DiscoveredSourcePlaybackView: View {
     let source: PlaybackSource
+    let item: MediaItem
+    let seasonNumber: Int
+    let episodeNumber: Int
     let onTorrentSessionStopped: () -> Void
+
     @Environment(\.dismiss) private var dismiss
-    @AppStorage(PlaybackCleanerPolicy.enabledStorageKey) private var cleanerGloballyEnabled = true
-    @AppStorage(PlaybackCleanerPolicy.disabledProvidersStorageKey) private var disabledProviderStorage = ""
-    @State private var player: AVPlayer
-    @State private var videoGravity: AVLayerVideoGravity = .resizeAspect
-
-    private var cleanerEnabled: Bool {
-        PlaybackCleanerPolicy.isEnabled(
-            globallyEnabled: cleanerGloballyEnabled,
-            providerID: source.providerID,
-            disabledProviderIDs: PlaybackCleanerPolicy.disabledProviderIDs(from: disabledProviderStorage)
-        )
-    }
-
-    init(source: PlaybackSource, onTorrentSessionStopped: @escaping () -> Void = {}) {
-        self.source = source
-        self.onTorrentSessionStopped = onTorrentSessionStopped
-        _player = State(initialValue: AVPlayer(url: source.url))
-    }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if source.supportsNativePlayback {
-                    NativePlaybackView(player: player, videoGravity: $videoGravity)
-                        .onAppear { player.play() }
-                        .onDisappear {
-                            player.pause()
-                            Task { @MainActor in
-                                if await TorrentPlaybackSessionRegistry.shared.stop(for: source.url) {
-                                    onTorrentSessionStopped()
-                                }
-                            }
-                        }
-                        .background(.black)
-                        .ignoresSafeArea(edges: .bottom)
-                } else {
-                    EmbedWebView(url: source.url, cleanerEnabled: cleanerEnabled, onFailure: {})
-                        .background(.black)
-                        .ignoresSafeArea(edges: .bottom)
-                }
-            }
-            .navigationTitle(source.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Sources") { dismiss() }
+        SceneBoxStreamPlaybackView(
+            source: source,
+            item: item,
+            seasonNumber: seasonNumber,
+            episodeNumber: episodeNumber,
+            onClose: { dismiss() }
+        )
+        .onDisappear {
+            Task { @MainActor in
+                if await TorrentPlaybackSessionRegistry.shared.stop(for: source.url) {
+                    onTorrentSessionStopped()
                 }
             }
         }
-        .tint(Color.cineNexAccent)
     }
 }
