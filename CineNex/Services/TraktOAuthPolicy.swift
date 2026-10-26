@@ -2,6 +2,37 @@ import CryptoKit
 import Foundation
 
 enum TraktOAuthPolicy {
+    enum DevicePollAction: Equatable {
+        case pending, slowDown, denied, expired, invalidCode, alreadyUsed, failed
+    }
+
+    static func devicePollAction(status: Int, error: String?) -> DevicePollAction {
+        switch status {
+        case 400:
+            if error == "slow_down" { return .slowDown }
+            if error == "access_denied" { return .denied }
+            if error == "expired_token" { return .expired }
+            // Trakt's documented pending response may have an empty body.
+            return error == nil || error == "authorization_pending" ? .pending : .failed
+        case 429: return .slowDown
+        case 404: return .invalidCode
+        case 409: return .alreadyUsed
+        case 410: return .expired
+        case 418: return .denied
+        default: return .failed
+        }
+    }
+
+    static func validDeviceAuthorization(_ authorization: TraktDeviceAuthorization) -> Bool {
+        let url = authorization.verificationURL
+        return !authorization.deviceCode.isEmpty && !authorization.userCode.isEmpty
+            && authorization.expiresIn > 0 && authorization.expiresIn <= 86_400
+            && authorization.interval > 0 && authorization.interval <= authorization.expiresIn
+            && url.scheme == "https" && ["auth.trakt.tv", "trakt.tv"].contains(url.host ?? "")
+            && url.path == "/activate" && url.user == nil && url.password == nil
+            && url.port == nil && url.query == nil && url.fragment == nil
+    }
+
     static func validRedirect(_ value: String) -> URL? {
         guard let url = URL(string: value), url.scheme == "https", let host = url.host,
               !host.isEmpty, host != "localhost", host != "127.0.0.1", host != "[::1]",

@@ -72,6 +72,7 @@ struct TrackingView: View {
             .padding(20)
         }
         .background(Color.cineNexBackground.ignoresSafeArea())
+        .onDisappear { trakt.cancelDeviceSignIn() }
         .navigationTitle("Tracking")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingPrivacyDetails) {
@@ -234,8 +235,8 @@ struct TrackingView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            if !trakt.browserLoginAvailable, !trakt.isConnected {
-                Text("Trakt browser login needs to be enabled in this CineNex build. No API credentials are required from you.")
+            if !trakt.loginAvailable, !trakt.isConnected {
+                Text("Trakt login needs to be enabled in this CineNex build. No API credentials are required from you.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -278,6 +279,12 @@ struct TrackingView: View {
                 .background(Color.cineNexAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
             }
 
+            if trakt.isAuthorizing {
+                ProgressView(trakt.activeAuthorization == nil ? "Requesting sign-in code…" : "Waiting for approval on Trakt…")
+                    .font(.caption)
+                Button("Cancel sign-in", role: .cancel) { trakt.cancelDeviceSignIn() }
+            }
+
             if let error = trakt.lastError {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.footnote)
@@ -296,13 +303,13 @@ struct TrackingView: View {
                 .buttonStyle(.bordered)
             } else {
                 Button {
-                    Task { await trakt.signInWithBrowser() }
+                    trakt.startDeviceSignIn()
                 } label: {
                     Label(trakt.isAuthorizing ? "Waiting for Trakt sign-in…" : "Sign in to Trakt", systemImage: "link")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!trakt.browserLoginAvailable || trakt.isAuthorizing)
+                .disabled(!trakt.loginAvailable || trakt.isAuthorizing)
             }
         }
         .padding(18)

@@ -33,4 +33,33 @@ final class TraktOAuthPolicyTests: XCTestCase {
         let refresh = try TraktOAuthPolicy.tokenRequest(["grant_type": "refresh_token", "refresh_token": "fixture"], clientID: "fixture")
         XCTAssertEqual(refresh.url?.host, "auth.trakt.tv")
     }
+    func testDevicePollingSupportsDocumentedEmptyPendingAndSlowDownResponses() {
+        XCTAssertEqual(TraktOAuthPolicy.devicePollAction(status: 400, error: nil), .pending)
+        XCTAssertEqual(TraktOAuthPolicy.devicePollAction(status: 400, error: "authorization_pending"), .pending)
+        XCTAssertEqual(TraktOAuthPolicy.devicePollAction(status: 429, error: nil), .slowDown)
+        XCTAssertEqual(TraktOAuthPolicy.devicePollAction(status: 400, error: "slow_down"), .slowDown)
+        XCTAssertEqual(TraktOAuthPolicy.devicePollAction(status: 418, error: nil), .denied)
+        XCTAssertEqual(TraktOAuthPolicy.devicePollAction(status: 410, error: nil), .expired)
+        XCTAssertEqual(TraktOAuthPolicy.devicePollAction(status: 404, error: nil), .invalidCode)
+        XCTAssertEqual(TraktOAuthPolicy.devicePollAction(status: 409, error: nil), .alreadyUsed)
+        XCTAssertEqual(TraktOAuthPolicy.devicePollAction(status: 400, error: "invalid_client"), .failed)
+        XCTAssertEqual(TraktOAuthPolicy.devicePollAction(status: 500, error: nil), .failed)
+    }
+
+    func testDeviceLoginRejectsUntrustedActivationAddressesAndInvalidLifetimes() throws {
+        func authorization(_ url: String, expires: Int = 600, interval: Int = 5) throws -> TraktDeviceAuthorization {
+            TraktDeviceAuthorization(deviceCode: "fixture-device", userCode: "ABC12345",
+                                     verificationURL: try XCTUnwrap(URL(string: url)), expiresIn: expires, interval: interval)
+        }
+        XCTAssertTrue(TraktOAuthPolicy.validDeviceAuthorization(try authorization("https://auth.trakt.tv/activate")))
+        XCTAssertTrue(TraktOAuthPolicy.validDeviceAuthorization(try authorization("https://trakt.tv/activate")))
+        for address in ["http://auth.trakt.tv/activate", "https://trakt.tv.attacker.test/activate",
+                        "https://user@auth.trakt.tv/activate", "https://auth.trakt.tv/activate?redirect=evil",
+                        "https://auth.trakt.tv/other", "https://auth.trakt.tv:8443/activate"] {
+            XCTAssertFalse(TraktOAuthPolicy.validDeviceAuthorization(try authorization(address)), address)
+        }
+        XCTAssertFalse(TraktOAuthPolicy.validDeviceAuthorization(try authorization("https://auth.trakt.tv/activate", expires: 0)))
+        XCTAssertFalse(TraktOAuthPolicy.validDeviceAuthorization(try authorization("https://auth.trakt.tv/activate", interval: 0)))
+    }
+
 }

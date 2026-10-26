@@ -340,7 +340,34 @@ private final class ProviderStubURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
-private final class BoundedAddonURLProtocol: URLProtocol, @unchecked Sendable {
+private final class BoundedAddonURLProtocol: URLProtocol {
+    // URLProtocol explicitly cannot conform to Sendable. Only this one-shot response crosses
+    // the task boundary; its lock arbitrates cancellation/delivery and owns the callback target.
+    // Keep this test-only bridge until URLProtocol has a concurrency-safe callback API.
+    private final class PendingResponse: @unchecked Sendable {
+        private let lock = NSLock()
+        private var target: BoundedAddonURLProtocol?
+        private var cancelled = false
+        func install(_ target: BoundedAddonURLProtocol) {
+            lock.lock()
+            defer { lock.unlock() }
+            if !cancelled { self.target = target }
+        }
+        func cancel() {
+            lock.lock()
+            defer { lock.unlock() }
+            cancelled = true
+            target = nil
+        }
+        func deliver() {
+            lock.lock()
+            let target = self.target
+            self.target = nil
+            lock.unlock()
+            target?.finish(#"{"streams":[]}"#)
+        }
+    }
+    private let pendingResponse = PendingResponse()
     private static let lock = NSLock()
     nonisolated(unsafe) private static var active = 0
     nonisolated(unsafe) private static var maximum = 0
@@ -380,10 +407,12 @@ private final class BoundedAddonURLProtocol: URLProtocol, @unchecked Sendable {
             finish(#"{"id":"bounded","version":"1","name":"Bounded","resources":["stream"],"types":["movie"]}"#)
         } else {
             Self.beganStream()
-            Task.detached { [self] in
+            let pending = pendingResponse
+            pending.install(self)
+            Task.detached {
                 try? await Task.sleep(nanoseconds: 50_000_000)
                 Self.endedStream()
-                finish(#"{"streams":[]}"#)
+                pending.deliver()
             }
         }
     }
@@ -395,5 +424,5 @@ private final class BoundedAddonURLProtocol: URLProtocol, @unchecked Sendable {
         client?.urlProtocolDidFinishLoading(self)
     }
 
-    override func stopLoading() {}
+    override func stopLoading() { pendingResponse.cancel() }
 }

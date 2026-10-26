@@ -2,7 +2,7 @@ import Combine
 import Foundation
 import Security
 
-struct TraktDeviceAuthorization: Decodable, Equatable {
+struct TraktDeviceAuthorization: Decodable, Equatable, Sendable {
     let deviceCode: String
     let userCode: String
     let verificationURL: URL
@@ -67,13 +67,15 @@ final class TraktIntegration: ObservableObject {
     private var tokens: TraktTokenResponse?
     private var refreshTask: Task<TraktTokenResponse, Error>?
     private var authenticationGeneration = UUID()
+    private var deviceLoginTask: Task<Void, Never>?
 
     var savedClientID: String {
         let configured = (Bundle.main.object(forInfoDictionaryKey: "CINENEX_TRAKT_CLIENT_ID") as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return !configured.isEmpty && !configured.hasPrefix("$(") ? configured : (defaults.string(forKey: clientIDKey) ?? "")
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, session: URLSession = URLSession(configuration: .ephemeral)) {
+        self.browserTokenSession = session
         self.defaults = defaults
         self.tokens = try? tokenStore.load()
         self.isConnected = tokens != nil
@@ -81,12 +83,13 @@ final class TraktIntegration: ObservableObject {
     }
 
     private let webLogin = AnimeWebLogin()
-    private let browserTokenSession = URLSession(configuration: .ephemeral)
+    private let browserTokenSession: URLSession
     private var redirectURL: URL? {
         guard let value = Bundle.main.object(forInfoDictionaryKey: "CINENEX_TRAKT_REDIRECT_URI") as? String else { return nil }
         return TraktOAuthPolicy.validRedirect(value)
     }
-    var browserLoginAvailable: Bool { !savedClientID.isEmpty && redirectURL != nil }
+    var loginAvailable: Bool { !savedClientID.isEmpty }
+    var browserLoginAvailable: Bool { loginAvailable && redirectURL != nil }
 
     func signInWithBrowser() async {
         guard !isAuthorizing else { return }
@@ -144,72 +147,91 @@ final class TraktIntegration: ObservableObject {
         lastError = nil
     }
 
-    func requestDeviceAuthorization(clientID: String) async throws -> TraktDeviceAuthorization {
-        let normalizedID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedID.isEmpty else {
-            throw IntegrationError.message("Enter the Client ID from your Trakt API application first.")
+    /// Device authorization survives IPA re-signing; no callback domain or client secret is needed.
+    func startDeviceSignIn() {
+        guard !isAuthorizing else { return }
+        guard loginAvailable else {
+            lastError = "Trakt login is not configured in this build. No API key is required from you."
+            return
         }
-        saveClientID(normalizedID)
-        statusMessage = "Requesting a sign-in code…"
+        let generation = UUID()
+        authenticationGeneration = generation
+        refreshTask?.cancel()
+        refreshTask = nil
+        isAuthorizing = true
+        activeAuthorization = nil
         lastError = nil
-
-        let authorization = try await post(
-            path: "/oauth/device/code",
-            body: ["client_id": normalizedID],
-            clientID: normalizedID,
-            bearerToken: nil,
-            acceptsPendingAuthorization: false
-        ) as TraktDeviceAuthorization
-
-        activeAuthorization = authorization
-        statusMessage = "Enter the code on Trakt to authorize CineNex."
-        return authorization
+        statusMessage = "Requesting a Trakt sign-in code…"
+        deviceLoginTask = Task { await performDeviceSignIn(generation: generation) }
     }
 
-    func completeDeviceAuthorization(_ authorization: TraktDeviceAuthorization) async {
-        let clientID = savedClientID
-        var delay = max(authorization.interval, 1)
-        let deadline = Date().addingTimeInterval(TimeInterval(authorization.expiresIn))
-        statusMessage = "Waiting for Trakt authorization…"
+    func cancelDeviceSignIn() {
+        guard deviceLoginTask != nil else { return }
+        authenticationGeneration = UUID()
+        deviceLoginTask?.cancel()
+        deviceLoginTask = nil
+        activeAuthorization = nil
+        isAuthorizing = false
         lastError = nil
+        statusMessage = isConnected ? "Trakt account connected" : "Sign-in cancelled"
+    }
 
-        while !Task.isCancelled && Date() < deadline {
-            do {
-                try await Task.sleep(for: .seconds(delay))
-                guard !Task.isCancelled else { return }
-                let token: TraktTokenResponse = try await post(
-                    path: "/oauth/device/token",
-                    body: [
-                        "code": authorization.deviceCode,
-                        "client_id": clientID
-                    ],
-                    clientID: clientID,
-                    bearerToken: nil,
-                    acceptsPendingAuthorization: true
-                )
-                try tokenStore.save(token)
-                tokens = token
-                isConnected = true
+    private func performDeviceSignIn(generation: UUID) async {
+        defer {
+            if authenticationGeneration == generation {
+                isAuthorizing = false
                 activeAuthorization = nil
-                statusMessage = "Trakt account connected"
-                lastError = nil
-                return
-            } catch let error as DeviceAuthorizationPendingError {
-                if error.slowDown {
-                    delay += 5
-                }
-            } catch {
-                lastError = error.localizedDescription
-                statusMessage = "Trakt connection failed"
-                activeAuthorization = nil
-                return
+                deviceLoginTask = nil
             }
         }
-
-        if !Task.isCancelled {
-            lastError = "The sign-in code expired. Start the connection again to get a new code."
-            statusMessage = "Authorization expired"
-            activeAuthorization = nil
+        do {
+            let clientID = savedClientID
+            let authorization: TraktDeviceAuthorization = try await post(
+                path: "/oauth/device/code", body: ["client_id": clientID], clientID: clientID,
+                bearerToken: nil, acceptsPendingAuthorization: false)
+            try Task.checkCancellation()
+            guard authenticationGeneration == generation else { return }
+            guard TraktOAuthPolicy.validDeviceAuthorization(authorization) else {
+                throw IntegrationError.message("Trakt returned an invalid sign-in code or verification address.")
+            }
+            activeAuthorization = authorization
+            statusMessage = "Open Trakt, enter the code, then return here."
+            var delay = authorization.interval
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(authorization.expiresIn))
+            while clock.now < deadline {
+                try await Task.sleep(for: min(.seconds(delay), clock.now.duration(to: deadline)))
+                try Task.checkCancellation()
+                guard authenticationGeneration == generation else { return }
+                guard clock.now < deadline else { break }
+                do {
+                    let token: TraktTokenResponse = try await post(
+                        path: "/oauth/device/token", body: ["code": authorization.deviceCode, "client_id": clientID],
+                        clientID: clientID, bearerToken: nil, acceptsPendingAuthorization: true)
+                    try Task.checkCancellation()
+                    guard authenticationGeneration == generation else { return }
+                    guard clock.now < deadline else { break }
+                    guard !token.accessToken.isEmpty, !token.refreshToken.isEmpty, token.expiresIn > 0 else {
+                        throw IntegrationError.message("Trakt returned an invalid session.")
+                    }
+                    try tokenStore.save(token)
+                    tokens = token
+                    isConnected = true
+                    statusMessage = "Trakt account connected"
+                    return
+                } catch let error as DeviceAuthorizationPendingError {
+                    if error.slowDown { delay = min(delay + 5, 86_400) }
+                }
+            }
+            throw IntegrationError.message("The sign-in code expired. Start sign-in again for a new code.")
+        } catch {
+            guard authenticationGeneration == generation else { return }
+            if Task.isCancelled || error is CancellationError {
+                statusMessage = "Sign-in cancelled"
+            } else {
+                lastError = error.localizedDescription
+                statusMessage = "Trakt sign-in did not finish"
+            }
         }
     }
 
@@ -219,6 +241,7 @@ final class TraktIntegration: ObservableObject {
     }
 
     func disconnect() {
+        cancelDeviceSignIn()
         authenticationGeneration = UUID()
         refreshTask?.cancel()
         refreshTask = nil
@@ -365,8 +388,8 @@ final class TraktIntegration: ObservableObject {
         request.setValue("2", forHTTPHeaderField: "trakt-api-version")
         request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
+        let (data, response) = try await browserTokenSession.data(for: request, delegate: AccountNoRedirectDelegate())
+        guard let http = response as? HTTPURLResponse, data.count < 5_000_000 else {
             throw IntegrationError.message("Trakt returned an invalid network response.")
         }
         guard (200..<300).contains(http.statusCode) else {
@@ -389,6 +412,7 @@ final class TraktIntegration: ObservableObject {
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = 20
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(clientID, forHTTPHeaderField: "trakt-api-key")
@@ -398,22 +422,24 @@ final class TraktIntegration: ObservableObject {
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
+        let (data, response) = try await browserTokenSession.data(for: request, delegate: AccountNoRedirectDelegate())
+        guard let http = response as? HTTPURLResponse, data.count < 5_000_000 else {
             throw IntegrationError.message("Trakt returned an invalid network response.")
         }
         guard (200..<300).contains(http.statusCode) else {
-            let responseText = String(data: data, encoding: .utf8) ?? ""
-            if acceptsPendingAuthorization, http.statusCode == 400 {
+            if acceptsPendingAuthorization {
                 let errorName = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
-                if errorName == "authorization_pending" {
-                    throw DeviceAuthorizationPendingError(slowDown: false)
-                }
-                if errorName == "slow_down" {
-                    throw DeviceAuthorizationPendingError(slowDown: true)
+                switch TraktOAuthPolicy.devicePollAction(status: http.statusCode, error: errorName) {
+                case .pending: throw DeviceAuthorizationPendingError(slowDown: false)
+                case .slowDown: throw DeviceAuthorizationPendingError(slowDown: true)
+                case .denied: throw IntegrationError.message("Trakt sign-in was declined. You can try again when ready.")
+                case .expired: throw IntegrationError.message("The sign-in code expired. Start sign-in again.")
+                case .invalidCode: throw IntegrationError.message("Trakt did not recognize this code. Start sign-in again.")
+                case .alreadyUsed: throw IntegrationError.message("This code has already been used. Start sign-in again.")
+                case .failed: break
                 }
             }
-            throw TraktAPIError(statusCode: http.statusCode, responseText: responseText)
+            throw TraktAPIError(statusCode: http.statusCode, responseText: "Try again later.")
         }
         if Response.self == EmptyResponse.self {
             return EmptyResponse() as! Response

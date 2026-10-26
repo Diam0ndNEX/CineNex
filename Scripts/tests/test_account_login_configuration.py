@@ -13,8 +13,12 @@ class AccountConfigurationTests(unittest.TestCase):
         self.assertEqual(entitlements['com.apple.developer.associated-domains'], ['applinks:login.example.test'])
     def test_empty_config_does_not_invent_credentials_or_domains(self):
         text, entitlements = module.build_configuration({})
-        self.assertEqual(entitlements['com.apple.developer.associated-domains'], [])
+        self.assertEqual(entitlements, {})
         self.assertNotIn('client_secret', text)
+    def test_device_login_client_id_does_not_require_a_signing_domain(self):
+        text, entitlements = module.build_configuration({'CINENEX_TRAKT_CLIENT_ID': 'registered-public-id'})
+        self.assertIn('CINENEX_TRAKT_CLIENT_ID = registered-public-id', text)
+        self.assertEqual(entitlements, {})
     def test_invalid_settings_cannot_inject_build_configuration(self):
         for values in [{'CINENEX_MAL_CLIENT_ID': 'id\nCODE_SIGNING_ALLOWED=NO'},
                        {module.REDIRECT_KEY: 'http://example.test/callback'},

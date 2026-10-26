@@ -31,7 +31,7 @@ def build_configuration(values):
     # xcconfig treats // as a comment; the empty expansion preserves the HTTPS separator.
     lines = ['// Generated public OAuth application settings. No client secrets.']
     lines += [key + ' = ' + value.replace('://', ':/$()/') for key, value in cleaned.items()]
-    return '\n'.join(lines) + '\n', {'com.apple.developer.associated-domains': domains}
+    return '\n'.join(lines) + '\n', ({'com.apple.developer.associated-domains': domains} if domains else {})
 
 def main():
     root = Path(__file__).resolve().parent.parent
@@ -49,11 +49,10 @@ def main():
         if not re.fullmatch(r'[A-Z0-9]{10}', team):
             raise ValueError('Invalid signing team ID')
         redirect = values.get(REDIRECT_KEY, '')
-        if not redirect:
-            raise ValueError('A Trakt HTTPS redirect is required for an association file')
-        association = {'applinks': {'details': [{'appIDs': [team + '.com.diam0ndnex.cinenex'],
-                         'components': [{'/': urlsplit(redirect).path}]}]}}
-        (generated / 'apple-app-site-association').write_text(json.dumps(association, indent=2))
+        if redirect:
+            association = {'applinks': {'details': [{'appIDs': [team + '.com.diam0ndnex.cinenex'],
+                             'components': [{'/': urlsplit(redirect).path}]}]}}
+            (generated / 'apple-app-site-association').write_text(json.dumps(association, indent=2))
     print('Prepared public account-login build configuration; no credentials printed.')
 
 if __name__ == '__main__':
