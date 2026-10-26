@@ -896,7 +896,7 @@ struct WatchHubView: View {
         }
         let providerSummary = statuses.map(\.summary).joined(separator: "\n")
         if !providerSummary.isEmpty {
-            addonSearchMessage = [addonSearchMessage, providerSummary].joined(separator: "\n")
+            addonSearchMessage = [addonSearchMessage, providerSummary].compactMap { $0 }.joined(separator: "\n")
         }
     }
 
