@@ -12,6 +12,7 @@ struct PlayerView: View {
     @State private var subtitleGroup: AVMediaSelectionGroup?
     @State private var audioOptions: [AVMediaSelectionOption] = []
     @State private var subtitleOptions: [AVMediaSelectionOption] = []
+    @State private var nowPlayingController: NowPlayingController?
 
     var body: some View {
         ZStack {
@@ -105,6 +106,8 @@ struct PlayerView: View {
                 )
             }
             player.pause()
+            nowPlayingController?.end()
+            nowPlayingController = nil
             if let timeObserver {
                 player.removeTimeObserver(timeObserver)
                 self.timeObserver = nil
@@ -160,6 +163,7 @@ struct PlayerView: View {
                     duration: duration.isFinite ? duration : 0,
                     item: item
                 )
+                nowPlayingController?.refresh()
             }
         }
 
@@ -175,6 +179,13 @@ struct PlayerView: View {
                         await player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
                     }
                     player.play()
+                    if nowPlayingController == nil {
+                        let controller = NowPlayingController()
+                        controller.begin(player: player, title: item.title, artworkURL: item.posterURL)
+                        nowPlayingController = controller
+                    } else {
+                        nowPlayingController?.refresh()
+                    }
                     Task { await TraktIntegration.shared.scrobbleStart(for: item) }
                     return
                 case .failed:
