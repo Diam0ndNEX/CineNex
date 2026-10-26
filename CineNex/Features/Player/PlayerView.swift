@@ -13,6 +13,7 @@ struct PlayerView: View {
     @State private var playbackError: String?
     @State private var timeObserver: Any?
     @State private var progressTask: Task<Void, Never>?
+    @State private var vlcStateTask: Task<Void, Never>?
     @State private var vlcPositionSeconds: Double = 0
     @State private var vlcDurationSeconds: Double = 0
     @State private var audioGroup: AVMediaSelectionGroup?
@@ -150,6 +151,8 @@ struct PlayerView: View {
             }
             progressTask?.cancel()
             progressTask = nil
+            vlcStateTask?.cancel()
+            vlcStateTask = nil
             player.pause()
             vlcPlayer.stop()
             if let timeObserver {
@@ -199,6 +202,8 @@ struct PlayerView: View {
         playbackError = nil
         progressTask?.cancel()
         progressTask = nil
+        vlcStateTask?.cancel()
+        vlcStateTask = nil
         if let timeObserver {
             player.removeTimeObserver(timeObserver)
             self.timeObserver = nil
@@ -217,6 +222,7 @@ struct PlayerView: View {
             vlcPositionSeconds = seconds(vlcPlayer.currentTime)
             vlcDurationSeconds = vlcPlayer.duration.map(seconds) ?? 0
             startVLCProgressTracking()
+            monitorVLCPlayback(for: url)
             Task { @MainActor in
                 for _ in 0..<40 {
                     guard isUsingVLC, !Task.isCancelled else { return }
@@ -234,6 +240,28 @@ struct PlayerView: View {
         } catch {
             isUsingVLC = false
             startNativePlayback(url: url)
+        }
+    }
+
+    private func monitorVLCPlayback(for url: URL) {
+        vlcStateTask?.cancel()
+        vlcStateTask = Task { @MainActor in
+            var hasEnteredActivePlayback = false
+            for await state in vlcPlayer.stateTransitions {
+                guard !Task.isCancelled, isUsingVLC else { return }
+                switch state {
+                case .opening, .buffering, .playing:
+                    hasEnteredActivePlayback = true
+                case .error where hasEnteredActivePlayback:
+                    saveCurrentProgress()
+                    vlcStateTask = nil
+                    vlcPlayer.stop()
+                    startNativePlayback(url: url)
+                    return
+                default:
+                    break
+                }
+            }
         }
     }
 
@@ -258,6 +286,8 @@ struct PlayerView: View {
         isUsingVLC = false
         progressTask?.cancel()
         progressTask = nil
+        vlcStateTask?.cancel()
+        vlcStateTask = nil
         vlcPositionSeconds = 0
         vlcDurationSeconds = 0
         player.pause()
@@ -320,6 +350,8 @@ struct PlayerView: View {
     private func switchToVLC() {
         guard let url = item.streamURL else { return }
         saveCurrentProgress()
+        vlcStateTask?.cancel()
+        vlcStateTask = nil
         if let timeObserver {
             player.removeTimeObserver(timeObserver)
             self.timeObserver = nil
@@ -330,6 +362,7 @@ struct PlayerView: View {
             try vlcPlayer.play(url: url)
             isUsingVLC = true
             startVLCProgressTracking()
+            monitorVLCPlayback(for: url)
             let position = progressStore.progress(for: item.id)?.position ?? 0
             if position > 5 {
                 Task { @MainActor in
