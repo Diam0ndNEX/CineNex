@@ -325,6 +325,7 @@ struct PlayerView: View {
             self.timeObserver = nil
         }
         player.pause()
+        player.replaceCurrentItem(with: nil)
         do {
             try vlcPlayer.play(url: url)
             isUsingVLC = true
@@ -342,14 +343,15 @@ struct PlayerView: View {
                 }
             }
         } catch {
-            playbackError = "VLC could not start this source: \(error.localizedDescription)"
+            isUsingVLC = false
+            startNativePlayback(url: url)
         }
     }
 
     private func switchToNative() {
         guard let url = item.streamURL else { return }
         saveCurrentProgress()
-        vlcPlayer.pause()
+        vlcPlayer.stop()
         startNativePlayback(url: url)
     }
 
