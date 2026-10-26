@@ -2,6 +2,7 @@ import AVKit
 import SwiftUI
 import SwiftVLC
 
+@MainActor
 struct PlayerView: View {
     let item: MediaItem
     @ObservedObject var progressStore: PlaybackProgressStore
