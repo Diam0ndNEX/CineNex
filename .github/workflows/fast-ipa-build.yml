@@ -37,7 +37,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: Thirdparty/LibTorrent-Swift/Build
-          key: native-v2-${{ runner.os }}-${{ runner.arch }}-device-${{ steps.native-key.outputs.fingerprint }}-${{ hashFiles('Scripts/patch_xitrix_piece_priority.py', 'Scripts/build_native_frameworks.sh') }}
+          key: native-v2-${{ runner.os }}-${{ runner.arch }}-device-${{ steps.native-key.outputs.fingerprint }}-${{ hashFiles('Scripts/patch_xitrix_piece_priority.py', 'Scripts/patch_xitrix_session_startup.py', 'Scripts/build_native_frameworks.sh') }}
 
       - name: Install native build tools
         run: brew install xcodegen
@@ -47,7 +47,9 @@ jobs:
         run: brew install cmake boost
 
       - name: Apply native wrapper bridge
-        run: python3 Scripts/patch_xitrix_piece_priority.py Thirdparty/LibTorrent-Swift
+        run: |
+          python3 Scripts/patch_xitrix_piece_priority.py Thirdparty/LibTorrent-Swift
+          python3 Scripts/patch_xitrix_session_startup.py Thirdparty/LibTorrent-Swift
 
       - name: Build native iOS frameworks
         if: steps.native-cache.outputs.cache-hit != 'true'
@@ -91,6 +93,7 @@ jobs:
             -clonedSourcePackagesDirPath SourcePackages \
             -destination 'generic/platform=iOS' \
             -derivedDataPath DerivedDataDevice \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             CODE_SIGNING_ALLOWED=NO \
             build
 

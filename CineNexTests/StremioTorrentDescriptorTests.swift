@@ -65,6 +65,7 @@ final class StremioTorrentDescriptorTests: XCTestCase {
         let descriptor = try XCTUnwrap(StremioTorrentDescriptor(stream: stream))
         XCTAssertEqual(descriptor.infoHash, validHash)
         XCTAssertEqual(descriptor.fileIndex, 3)
+        XCTAssertEqual(descriptor.title, "Ghost Torrents · 1080p")
         XCTAssertEqual(descriptor.trackers.map(\.absoluteString), ["udp://tracker.example.test:80/announce"])
         let magnet = try XCTUnwrap(URLComponents(url: descriptor.magnetURL, resolvingAgainstBaseURL: false))
         XCTAssertEqual(magnet.queryItems?.filter { $0.name == "tr" }.compactMap(\.value), ["udp://tracker.example.test:80/announce"])

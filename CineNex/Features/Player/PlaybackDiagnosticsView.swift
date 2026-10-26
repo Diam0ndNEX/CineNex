@@ -1,31 +1,39 @@
 import SwiftUI
 
 struct PlaybackDiagnosticsView: View {
-    @State private var events = PlaybackDiagnostics.events
+    @State private var report = PlaybackDiagnostics.report
 
     var body: some View {
-        List {
-            Section {
-                Text("If the app closes during playback, these startup stages remain available after reopening it. They identify how far startup reached; they are not an iOS crash report.")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Startup and provider report")
+                    .font(.title2.bold())
+                Text("Includes native settings conversion, session construction, memory usage and provider response counts. Reopen this screen after an unexpected exit. A process crash or system termination may leave only the last completed checkpoint; this report does not replace an iOS crash report.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                if events.isEmpty {
-                    Text("No playback attempts recorded.")
-                } else {
-                    Text(events.reversed().joined(separator: "\n\n"))
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
+                HStack {
+                    ShareLink("Share report", item: report)
+                    Spacer()
+                    Button("Refresh") { report = PlaybackDiagnostics.report }
+                }
+                Text(report)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Clear report", role: .destructive) {
+                    PlaybackDiagnostics.clear()
+                    report = PlaybackDiagnostics.report
                 }
             }
-            Section {
-                ShareLink("Share startup diagnostics", item: events.joined(separator: "\n"))
-                Button("Refresh") { events = PlaybackDiagnostics.events }
-                Button("Clear", role: .destructive) {
-                    UserDefaults.standard.removeObject(forKey: PlaybackDiagnostics.storageKey)
-                    events = []
-                }
-            }
+            .padding(20)
         }
         .navigationTitle("Playback diagnostics")
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                report = PlaybackDiagnostics.report
+            }
+        }
     }
 }

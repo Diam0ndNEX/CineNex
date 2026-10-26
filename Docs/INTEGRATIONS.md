@@ -45,3 +45,41 @@ The Watch Hub VLC player ports SceneBox's `ChromeVisibility`, `PlaybackFormattin
 VLC uses an eight-second cache for local torrent HTTP streams and a 1.5-second cache with HTTP reconnect for remote streams. Frozen playback shows a buffering indicator after three half-second samples. Retry ends the previous lock-screen controller before registering new commands and resets subtitle discovery.
 
 Movie progress is saved every five seconds and on close using CineNex's existing local progress store; resume waits for a seekable stream with a known duration. Series playback deliberately does not store episode positions under the series-level movie-progress key. Episode-aware resume and next-episode autoplay need a separate episode progress contract before being ported. These changes require simulator CI and real-device playback verification; static inspection is not evidence of working provider playback.
+
+## Native startup diagnostics v2
+
+Repeated attempts stopping at `Creating libtorrent session` narrow the failure to the native initializer. The pinned XITRIX settings initializer leaves interface NSString values unset; settings conversion passed their null UTF-8 pointers to libtorrent's `std::string` parameter. CineNex now supplies explicit outgoing/listening interfaces and patches every settings string conversion through a null-safe helper. Native constructor exceptions return a recoverable initialization failure; this cannot recover from OS termination or arbitrary memory faults.
+
+Both build workflows apply `Scripts/patch_xitrix_session_startup.py` before compilation, and its hash invalidates old native caches. The native initializer appends bounded JSON-lines checkpoints, synchronously flushed at each step, covering settings conversion, session construction, persistence restoration and the alerts thread. Records include attempt ID, uptime, thread and resident memory. Swift diagnostics add attempt-relative timing, errors, metadata peer/rate snapshots, selected-file size/type and piece wait ranges. No source URL, manifest configuration path, movie title, credentials or magnet hash is intentionally recorded; URL-shaped values in error details are redacted. The report is local and shared only through the user's Share action.
+
+Provider diagnostics distinguish manifest and stream requests, HTTP status/bytes/timing, parsed hash/direct counts and final displayed counts per provider. Legacy generic ElfHosted-only configurations also query Midnight; custom configured MediaFusion paths are preserved. App version/build are included so a report identifies its installed artifact.
+
+## Comparison with SceneBox's native startup
+
+Reference: `Diam0ndNEX/scenebox` commit `865bd5acb5a1e31e19756f18d742e248b1b186c0`, specifically `LibTorrent/LibTorrentEngine/TorrentEngine.mm` and `WatchBox/Core/TorrentEngine/LibtorrentSession.swift`.
+
+SceneBox uses a separate Objective-C++ `TorrentEngine` API and one process-wide `LTSharedSession`; CineNex uses the XITRIX framework and per-selection sessions. SceneBox supplies listen/outgoing strings directly as C++ literals and thus avoids the XITRIX null-NSString conversion defect. CineNex's startup patch supplies the same interface values and checks every returned UTF-8 pointer.
+
+The patch also adapts SceneBox's explicit TCP/discovery profile: 150 connection limit, named DHT bootstrap routers, all-tier/all-tracker announcing and peer/handshake timeouts. Swift disables uTP, UPnP and NAT-PMP to match that profile. SceneBox's default tracker list is added after each descriptor's trackers, preserving descriptor identity and the existing validation/deduplication limit.
+
+CineNex does not claim to share SceneBox's native session implementation. Its wrapper now exposes an explicit shutdown: pause the session, cancel the alert thread and let its loop exit instead of keeping a per-selection session alive forever. The Swift engine invokes it during teardown. This avoids an independently confirmed lifecycle leak; it is not evidence that this leak caused the reported first-start crash.
+
+The header/tail buffering and piece-read implementations remain distinct. They execute after session creation and therefore cannot explain the supplied logs stopping during session settings initialization. A device retry remains necessary after the native fix.
+
+
+## PR 121 device replay and diagnostics v3
+
+The supplied 1.3.0 (3) device report reaches `session.ready` and the user confirms Torrentio playback. The MediaFusion attempt in that report ends in cancellation after 21.6 seconds; only its first snapshot is retained (zero peers and no metadata). This does not establish that its hash/file selection is wrong or that waiting longer would succeed. The earlier attempt's very low instantaneous transfer rate also does not prove a stall: available pieces were being served while the logger incorrectly labeled them as waits.
+
+Diagnostics v3 samples only unavailable-piece waits at most once per five seconds per stage/attempt, keeps telemetry in a separate bounded ring, and preserves provider/lifecycle/error history. Metadata polling records slow native snapshots and configured tracker counts, and measures its 60-second polling budget using monotonic elapsed time. A native synchronous snapshot itself remains non-interruptible; the UI's cancel request completes after that call returns. Player state changes and explicit user/screen cancellation reasons are recorded. Native tracker error enumeration is deliberately omitted: the pinned wrapper reads a shared tracker-status map without synchronization, so exposing it would introduce a race.
+
+Discovery now retains all parsed torrent releases rather than applying a 48-item display cap. Provider menus show per-instance counts, and diagnostics record received versus displayed counts. Counts vary by episode, provider configuration, and current upstream results. Opaque hexadecimal filenames with media extensions no longer override readable stream names. Preparation has visible peer status, elapsed time and cancellation; VLC buffering has a return-to-release action. Discovery re-entry while preparing or presenting a player is ignored to avoid stopping that session.
+
+
+## Cold-start responsiveness and transfer scope follow-up
+
+Build 4's replay confirms upstream counts (7/22 MediaFusion versus 46/81 Torrentio), not a client display cap. Successful MediaFusion preparation took about 15.5 seconds and VLC reached playing around 19.1 seconds. Slow synchronous native snapshot calls remain observable; cancellation cannot interrupt an already-running native call.
+
+Discovery now publishes each provider group's results immediately and reports completed groups with a labeled progress bar. Home pins its experience selector outside scrolling artwork. Poster decoding runs on a serial background actor with bounded thumbnails and geometry-bounded views. Catalog progress shows completed preparation checkpoints rather than invented download percentages; duplicate movie refreshes are suppressed.
+
+Previously selected-file low priority allowed the entire movie to download beyond the playback window. The selected file now starts at don't-download priority, with explicit startup/head/tail and moving-window piece promotions; expired non-startup pieces return to priority zero. Metadata polling is reduced from four times per second to once per second. Battery improvement, cold-start responsiveness and windowed playback require a fresh device replay; thermal state 1 in the supplied report alone cannot measure energy consumption.

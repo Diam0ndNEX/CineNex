@@ -158,10 +158,14 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
                 }
             }
             if isBuffering {
-                ProgressView("Buffering…")
-                    .padding(20)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-                    .allowsHitTesting(false)
+                VStack(spacing: 12) {
+                    ProgressView("Buffering…")
+                    Text("Waiting for video data. If this continues, choose another release.")
+                        .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Button("Choose another release", action: onClose).buttonStyle(.bordered)
+                }
+                .padding(20).frame(maxWidth: 300)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
             }
         }
         .foregroundStyle(.white)
@@ -280,6 +284,7 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
         monitorTask = Task { @MainActor in
             for await state in player.stateTransitions {
                 guard !Task.isCancelled else { return }
+                PlaybackDiagnostics.record("player.state", details: ["state": String(describing: state), "position_seconds": String(positionSeconds)])
                 if state == .error {
                     failure = "The source could not be decoded or stopped responding. Retry or select another source."
                     chrome.reveal(autoHide: false)
