@@ -2,12 +2,16 @@ name: CineNex
 options:
   bundleIdPrefix: com.diam0ndnex
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "18.0"
   createIntermediateGroups: true
+packages:
+  SwiftVLC:
+    url: https://github.com/harflabs/SwiftVLC.git
+    branch: main
 settings:
   base:
-    SWIFT_VERSION: "5.10"
-    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    SWIFT_VERSION: "6.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
     TARGETED_DEVICE_FAMILY: "1"
     GENERATE_INFOPLIST_FILE: YES
     INFOPLIST_KEY_CFBundleDisplayName: CineNex
@@ -22,6 +26,8 @@ targets:
     sources:
       - path: CineNex
     dependencies:
+      - package: SwiftVLC
+        product: SwiftVLC
       - framework: Thirdparty/LibTorrent-Swift/Build/LibTorrent.xcframework
         embed: true
       - framework: Thirdparty/LibTorrent-Swift/Build/OpenSSL.xcframework
