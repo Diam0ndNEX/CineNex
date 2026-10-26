@@ -12,12 +12,14 @@ struct PlayerView: View {
     @State private var subtitleGroup: AVMediaSelectionGroup?
     @State private var audioOptions: [AVMediaSelectionOption] = []
     @State private var subtitleOptions: [AVMediaSelectionOption] = []
+    @State private var isSettingsPresented = false
+    @State private var videoGravity: AVLayerVideoGravity = .resizeAspect
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if item.streamURL != nil {
-                NativePlaybackView(player: player)
+                NativePlaybackView(player: player, videoGravity: $videoGravity)
                     .ignoresSafeArea()
                     .accessibilityLabel("Video player for \(item.title)")
             } else {
@@ -48,6 +50,17 @@ struct PlayerView: View {
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity)
+
+                    Button {
+                        isSettingsPresented = true
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(.black.opacity(0.55), in: Circle())
+                    }
+                    .accessibilityLabel("Playback settings")
 
                     if audioOptions.count > 1, let audioGroup {
                         Menu {
@@ -93,6 +106,19 @@ struct PlayerView: View {
         }
         .statusBarHidden()
         .onAppear(perform: startPlayback)
+        .sheet(isPresented: $isSettingsPresented) {
+            PlaybackSettingsPanel(
+                player: player,
+                audioOptions: audioOptions,
+                subtitleOptions: subtitleOptions,
+                audioGroup: audioGroup,
+                subtitleGroup: subtitleGroup,
+                videoGravity: $videoGravity,
+                onClose: { isSettingsPresented = false }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         .onDisappear {
             saveCurrentProgress()
             let position = player.currentTime().seconds
@@ -105,6 +131,7 @@ struct PlayerView: View {
                 )
             }
             player.pause()
+            PlaybackAudioSession.deactivate()
             if let timeObserver {
                 player.removeTimeObserver(timeObserver)
                 self.timeObserver = nil
@@ -173,6 +200,16 @@ struct PlayerView: View {
                     let position = progressStore.progress(for: item.id)?.position ?? 0
                     if position > 5 {
                         await player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
+                    }
+                    do {
+                        try await PlaybackAudioSession.activate()
+                    } catch {
+                        playbackError = "Audio playback could not be initialized: \\(error.localizedDescription)"
+                        return
+                    }
+                    guard player.currentItem === playerItem else {
+                        PlaybackAudioSession.deactivate()
+                        return
                     }
                     player.play()
                     Task { await TraktIntegration.shared.scrobbleStart(for: item) }
