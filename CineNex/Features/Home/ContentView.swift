@@ -10,6 +10,10 @@ struct ContentView: View {
     @AppStorage("cinenex.home.showWatchlist") private var showWatchlist = true
     @AppStorage("cinenex.home.showRated") private var showRated = true
     @AppStorage("cinenex.home.showGenres") private var showGenres = true
+    @AppStorage("cinenex.home.featuredCount") private var featuredCount = 5
+    @AppStorage("cinenex.home.shelfLayout") private var shelfLayout = "posters"
+    @AppStorage("cinenex.home.continueLayout") private var continueLayout = "cards"
+    @AppStorage("cinenex.navigationHaptics") private var navigationHaptics = true
     @State private var initialTabApplied = false
     @AppStorage("cinenex.canvasStyle") private var canvasStyle = "midnight"
     @AppStorage("cinenex.posterDensity") private var posterDensity = "comfortable"
@@ -268,6 +272,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Main navigation")
+        .sensoryFeedback(.selection, trigger: selectedTab) { _, _ in navigationHaptics }
     }
 
     private func dockButton(_ tab: AppTab, title: String, symbol: String) -> some View {
@@ -375,36 +380,22 @@ struct ContentView: View {
                         .buttonStyle(.borderedProminent)
                 }
             } else {
-                if showContinue && !continueWatchingItems.isEmpty {
-                    continueWatchingSection
-                }
-                homeEditorialHeader
+                if !showFeatured { homeEditorialHeader }
                 homeLanePicker
                 if homeLaneItems.isEmpty {
                     ContentUnavailableView("No titles in this lane", systemImage: "film.stack",
                                            description: Text(homeLane == .saved ? "Add titles to your watchlist to see them here." : "Try another lane or refresh the catalog."))
                 } else {
                     if showFeatured {
-                    ScrollView(.horizontal) {
-                        LazyHStack(alignment: .top, spacing: 16) {
-                            ForEach(featuredLaneItems) { item in
-                                CatalogFeatureCard(item: item, saved: favorites.contains(item.id),
-                                                   onDetails: { selectedItem = item },
-                                                   onPlay: { watchHubItem = item },
-                                                   onSave: { toggleFavorite(item) })
-                                    .containerRelativeFrame(.horizontal) { width, _ in min(width - 40, 500) }
-                            }
-                        }
-                        .scrollTargetLayout()
-                        .padding(.horizontal, 20)
-                    }
-                    .scrollTargetBehavior(.viewAligned)
-                    .scrollIndicators(.hidden)
+                        CatalogHeroCarousel(items: featuredLaneItems, savedIDs: favorites,
+                                            onDetails: { selectedItem = $0 },
+                                            onPlay: { watchHubItem = $0 }, onSave: { toggleFavorite($0) })
                     }
                     if homeLane != .all {
                         mediaSection(title: homeLane.rawValue, subtitle: "\(homeLaneItems.count) titles to explore", items: homeLaneItems)
                     }
                 }
+                if showContinue && !continueWatchingItems.isEmpty { continueWatchingSection }
                 browseDestinations
                 if let catalogError {
                     Label(catalogError, systemImage: "wifi.exclamationmark")
@@ -471,7 +462,7 @@ struct ContentView: View {
         let items = homeLaneItems
         guard !items.isEmpty else { return [] }
         let offset = shuffleOffset % items.count
-        return Array((Array(items[offset...]) + Array(items[..<offset])).prefix(5))
+        return Array((Array(items[offset...]) + Array(items[..<offset])).prefix(min(max(featuredCount, 3), 7)))
     }
 
     private var homeEditorialHeader: some View {
@@ -574,25 +565,38 @@ struct ContentView: View {
     }
 
     private var continueWatchingSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("Continue watching").font(.title2.bold())
                 Spacer()
-                Button("See all") {
-                    libraryShowsProgress = true
-                    selectedTab = .library
-                }.font(.subheadline.weight(.semibold))
-            }
-            ForEach(Array(continueWatchingItems.prefix(2))) { item in
-                CatalogLibraryRow(item: item, progress: playbackProgressStore.progress(for: item.id),
-                                  onDetails: { selectedItem = item }, onPlay: { play(item) })
-                    .contextMenu {
-                        Button("Remove progress", systemImage: "xmark.circle", role: .destructive) {
-                            playbackProgressStore.remove(itemID: item.id)
+                Button("See all") { libraryShowsProgress = true; selectedTab = .library }
+                    .font(.subheadline.weight(.semibold))
+            }.padding(.horizontal, 20)
+            if continueLayout == "rows" {
+                ForEach(Array(continueWatchingItems.prefix(3))) { item in
+                    CatalogLibraryRow(item: item, progress: playbackProgressStore.progress(for: item.id),
+                                      onDetails: { selectedItem = item }, onPlay: { play(item) })
+                        .padding(.horizontal, 20)
+                        .contextMenu { removeProgressAction(item) }
+                }
+            } else {
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 16) {
+                        ForEach(Array(continueWatchingItems.prefix(12))) { item in
+                            CatalogContinueCard(item: item, progress: playbackProgressStore.progress(for: item.id),
+                                                onDetails: { selectedItem = item }, onPlay: { play(item) })
+                                .frame(width: 250).contextMenu { removeProgressAction(item) }
                         }
-                    }
+                    }.padding(.horizontal, 20)
+                }.scrollIndicators(.hidden)
             }
-        }.padding(.horizontal, 20)
+        }
+    }
+
+    private func removeProgressAction(_ item: MediaItem) -> some View {
+        Button("Remove progress", systemImage: "xmark.circle", role: .destructive) {
+            playbackProgressStore.remove(itemID: item.id)
+        }
     }
 
     private var animeVisibleCatalog: [AnimeTitle] {
@@ -981,7 +985,12 @@ struct ContentView: View {
                 LazyHStack(alignment: .top, spacing: 14) {
                     ForEach(Array(items.prefix(20))) { item in
                         VStack(alignment: .leading, spacing: 8) {
-                            MediaPosterCard(item: item) { selectedItem = item }.frame(width: 148)
+                            if shelfLayout == "landscape" {
+                                Button { selectedItem = item } label: { CatalogLandscapeTile(item: item) }
+                                    .buttonStyle(.plain)
+                            } else {
+                                MediaPosterCard(item: item) { selectedItem = item }
+                            }
                             if showProgress, let progress = playbackProgressStore.progress(for: item.id) {
                                 ProgressView(value: progress.completionFraction ?? 0).tint(Color.cineNexAccent)
                                 Button {
@@ -992,7 +1001,7 @@ struct ContentView: View {
                                 }.buttonStyle(.plain)
                             }
                         }
-                        .frame(width: 148)
+                        .frame(width: shelfLayout == "landscape" ? 235 : 148)
                         .contextMenu {
                             if showProgress {
                                 Button("Remove from continue watching", systemImage: "xmark.circle", role: .destructive) {
@@ -1358,6 +1367,7 @@ private struct MediaDetailView: View {
     @State private var detailsError: String?
     @State private var selectedSeason: TMDBTitleSeason?
     @State private var synopsisExpanded = false
+    @AppStorage("cinenex.detailActionPlacement") private var detailActionPlacement = "inline"
     @AppStorage("cinenex.showRatings") private var showRatings = true
     @AppStorage("cinenex.reduceMotion") private var reduceMotion = false
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -1366,6 +1376,7 @@ private struct MediaDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 CatalogDetailHero(item: item)
+                if detailActionPlacement != "pinned" { detailActions }
 
                 VStack(alignment: .leading, spacing: 12) {
                     if let tagline = extendedDetails?.tagline,
@@ -1581,7 +1592,9 @@ private struct MediaDetailView: View {
         .background(Color.cineNexBackground.ignoresSafeArea())
         .navigationTitle(item.title)
         .navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .bottom) { detailActions }
+        .safeAreaInset(edge: .bottom) {
+            if detailActionPlacement == "pinned" { detailActions }
+        }
         .task(id: item.id) {
             await loadExtendedDetails()
         }
@@ -1628,7 +1641,7 @@ private struct MediaDetailView: View {
         .buttonStyle(.plain)
         .padding(10)
         .cineNexGlass(in: RoundedRectangle(cornerRadius: 24), interactive: false)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, detailActionPlacement == "pinned" ? 16 : 0)
         .padding(.vertical, 8)
     }
 

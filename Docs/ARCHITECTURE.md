@@ -4,7 +4,7 @@ CineNex is an iPhone media catalog and playback client. Catalog metadata and pla
 
 ## Navigation and catalog
 
-`ContentView` owns Home, Discover, Search, Library and Settings navigation, Cinema/Anime selection, title routes and paginated catalog state. A compact floating Liquid Glass dock uses native iOS26 glass, thin-material support on iOS18 and an opaque Reduce Transparency fallback. System sans-serif headings follow Dynamic Type. `CatalogPresentation` contains artwork, collection and discovery components; `CatalogFilterState` applies only metadata actually supplied by a provider. `AppearanceSettingsView` persists working layout, shelf, density, motion and navigation choices.
+`ContentView` owns Home, Discover, Search, Library and Settings navigation, Cinema/Anime selection, title routes and paginated catalog state. A compact floating Liquid Glass dock uses native iOS26 glass, thin-material support on iOS18 and an opaque Reduce Transparency fallback. System sans-serif headings follow Dynamic Type. `CatalogPresentation` contains artwork, collection and discovery components; `CatalogFilterState` applies only metadata actually supplied by a provider. `AppearanceSettingsView` persists working layout, shelf, density, motion and navigation choices. `HomePresentation` provides a manually paged hero, wide resume cards and landscape shelves; no automatic hero timers or trailers run. `EpisodeNavigatorPolicy` supplies season search, sorting and next-unwatched selection; `EpisodeNavigatorHistory` stores explicitly manual local watched marks, separate from movie resume and remote lists.
 
 TMDB and Cinemeta supply movie/series metadata; AniList supplies anime metadata. `CatalogCacheStore` restores catalog snapshots, while `ArtworkDiskCache` coalesces artwork requests and bounds memory/disk storage. Library snapshots, favorites and movie/anime playback progress remain local and retain their existing storage keys.
 
@@ -16,7 +16,7 @@ TMDB and Cinemeta supply movie/series metadata; AniList supplies anime metadata.
 
 ## Selection and playback
 
-`SmartPlaybackSelection` ranks distinct release/file candidates, applies preferences, checks readiness sequentially and bounds attempts. Direct-link HEAD checks establish a media response only; torrent preparation waits for verified opening and index pieces. These checks do not guarantee decoder compatibility or the availability of all later movie data. Manual source selection remains available.
+`SmartPlaybackSelection` ranks distinct release/file candidates, applies preferences, checks readiness sequentially and bounds attempts. Direct-link HEAD checks establish a media response only; torrent preparation waits for verified opening and index pieces. These checks do not guarantee decoder compatibility or the availability of all later movie data. Manual source selection remains available. Provider pins reorder the source-picker chips only; `SourceProviderPins` does not alter automatic playback ranking. `ReleaseTechnicalLabels` presents bounded release-name hints, without claiming decoder support.
 
 `XITRIXTorrentPlaybackEngine` owns the patched libtorrent bridge, selected-file priority, bounded byte lookahead and piece deadlines. `TorrentPlaybackProvider` serves verified local bytes through a loopback HTTP server. `TorrentPlaybackSessionRegistry` owns prepared providers until playback closes or preparation is discarded. `TorrentCacheMaintenance` protects active roots and bounds retained inactive transfers.
 
@@ -29,3 +29,5 @@ Trakt uses device authorization with a bundled registered public Client ID, Keyc
 The primary AppIcon is a bundled opaque 1024px asset; its editable vector source lives in `Design/AppIcon.svg`. Account keys are explicitly expanded into the target Info.plist properties, and `Scripts/verify_built_app.py` checks the actual device app before IPA packaging.
 
 Build settings and package pins live in `project.yml`. `Scripts/ci_build_plan.py` and `.github/workflows/ios-build.yml` are authoritative for change-aware validation; preserve them. Run `python3 -m unittest discover -s Scripts/tests -v`, then the selected Xcode simulator checks. Fast IPA packaging is separate from full regression validation. `Docs/EXPERIENCE_3.md` lists the physical-device and visual checks that Linux cannot execute.
+
+The owner-supplied Nuvio reference and the original SwiftUI adaptations are mapped in `Docs/NUVIO_ADAPTATION.md`.

@@ -32,6 +32,9 @@ struct WatchHubView: View {
     @AppStorage("cinenex.smartPreferredQuality") private var smartPreferredQuality = "1080p"
     @AppStorage("cinenex.smartMaximumSizeGB") private var smartMaximumSizeGB = 0.0
     @AppStorage("cinenex.hideKnownDeadReleases") private var hideKnownDeadReleases = false
+    @AppStorage("cinenex.pinnedSourceProviders") private var pinnedProvidersText = "[]"
+    @AppStorage("cinenex.sourceCardDensity") private var sourceCardDensity = "comfortable"
+    @AppStorage("cinenex.showSourceTechnicalLabels") private var showSourceTechnicalLabels = true
     @State private var releaseQuery = ""
     @State private var minimumSeeders = 0
     @State private var releaseFailures: [String: String] = [:]
@@ -332,10 +335,12 @@ struct WatchHubView: View {
     }
 
     private var providerSection: some View {
-        LazyVStack(alignment: .leading, spacing: 18) {
+        let pinned = Set(SourceProviderPins.decode(pinnedProvidersText))
+        return LazyVStack(alignment: .leading, spacing: 18) {
             discoveryStatus
             sourceTypePicker
             if selectedSourceFilter == "All" || selectedSourceFilter == "Torrent" {
+                providerChips
                 releaseControls
             }
             HStack(alignment: .firstTextBaseline) {
@@ -355,6 +360,8 @@ struct WatchHubView: View {
                         isPreparing: preparingTorrentDescriptorID == descriptor.id,
                         isDisabled: preparingTorrentDescriptorID != nil,
                         statusMessage: releaseFailures[descriptor.id],
+                        isPinned: pinned.contains(descriptor.providerName),
+                        onTogglePin: { pinnedProvidersText = SourceProviderPins.toggled(descriptor.providerName, in: pinnedProvidersText) },
                         onPlay: { startTorrentPlayback(for: descriptor) }
                     )
                 }
@@ -421,11 +428,13 @@ struct WatchHubView: View {
 
     private var sourceTypePicker: some View {
         ScrollView(.horizontal) {
+            CineNexGlassGroup(spacing: 8) {
             HStack(spacing: 8) {
                 sourceTypeButton("All", title: "All streams", symbol: "square.grid.2x2")
                 sourceTypeButton("Torrent", title: "Torrents", symbol: "arrow.down.circle")
                 sourceTypeButton("Direct", title: "Direct", symbol: "play.rectangle")
                 sourceTypeButton("Web", title: "Web players", symbol: "globe")
+            }
             }
         }
         .scrollIndicators(.hidden)
@@ -437,11 +446,48 @@ struct WatchHubView: View {
                 .font(.caption.weight(.semibold))
                 .padding(.horizontal, 13)
                 .padding(.vertical, 10)
-                .foregroundStyle(selectedSourceFilter == value ? .white : .secondary)
-                .background(selectedSourceFilter == value ? Color.cineNexAccent : Color.cineNexSurface, in: Capsule())
+                .foregroundStyle(selectedSourceFilter == value ? Color.cineNexAccent : Color.primary)
+                .cineNexGlass(in: Capsule(), prominent: selectedSourceFilter == value)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selectedSourceFilter == value ? .isSelected : [])
+    }
+
+    private var providerChips: some View {
+        let counts = Dictionary(grouping: discoveredTorrentDescriptors, by: \.providerName).mapValues(\.count)
+        let pins = SourceProviderPins.decode(pinnedProvidersText)
+        let providers = SourceProviderPins.ordered(Array(counts.keys), pinned: pins)
+        return ScrollView(.horizontal) {
+            CineNexGlassGroup(spacing: 8) {
+                HStack(spacing: 8) {
+                    providerChip("All providers", count: discoveredTorrentDescriptors.count, pinned: false)
+                    ForEach(providers, id: \.self) { provider in
+                        providerChip(provider, count: counts[provider] ?? 0, pinned: pins.contains(provider))
+                            .contextMenu {
+                                Button(pins.contains(provider) ? "Unpin provider" : "Pin provider", systemImage: "pin") {
+                                    pinnedProvidersText = SourceProviderPins.toggled(provider, in: pinnedProvidersText)
+                                }
+                            }
+                    }
+                }
+            }.padding(.vertical, 4)
+        }.scrollIndicators(.hidden)
+    }
+
+    private func providerChip(_ provider: String, count: Int, pinned: Bool) -> some View {
+        Button { selectedTorrentProvider = provider } label: {
+            HStack(spacing: 6) {
+                if pinned { Image(systemName: "pin.fill") }
+                Text(provider)
+                Text(String(count)).monospacedDigit().foregroundStyle(.secondary)
+            }
+            .font(.caption.weight(.semibold)).padding(.horizontal, 13).frame(minHeight: 44)
+            .foregroundStyle(selectedTorrentProvider == provider ? Color.cineNexAccent : Color.primary)
+            .cineNexGlass(in: Capsule(), prominent: selectedTorrentProvider == provider)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selectedTorrentProvider == provider ? .isSelected : [])
+        .accessibilityHint(provider == "All providers" ? "Show all torrent releases" : "Filter this provider; use the pin button on a release to keep the provider first")
     }
 
     private var releaseControls: some View {
@@ -452,7 +498,10 @@ struct WatchHubView: View {
                     .font(.subheadline).textInputAutocapitalization(.never).autocorrectionDisabled()
                 if !releaseQuery.isEmpty { Button("Clear", systemImage: "xmark.circle.fill") { releaseQuery = "" }.labelStyle(.iconOnly) }
             }.padding(12).background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 12))
-            ScrollView(.horizontal) { HStack(spacing: 8) { filterMenus } }.scrollIndicators(.hidden)
+            ScrollView(.horizontal) {
+                CineNexGlassGroup(spacing: 8) { HStack(spacing: 8) { filterMenus } }
+                    .padding(.vertical, 4)
+            }.scrollIndicators(.hidden)
         }
     }
 
@@ -493,6 +542,15 @@ struct WatchHubView: View {
             filterLabel(minimumSeeders > 0 ? "\(minimumSeeders)+ seeders" : "More filters", symbol: "line.3.horizontal.decrease")
         }
         Menu {
+            Picker("Release cards", selection: $sourceCardDensity) {
+                Text("Comfortable").tag("comfortable")
+                Text("Compact").tag("compact")
+            }
+            Toggle("Show codec, HDR and audio labels", isOn: $showSourceTechnicalLabels)
+        } label: {
+            filterLabel("Display", symbol: "rectangle.grid.1x2")
+        }
+        Menu {
             Picker("Sort releases", selection: $releaseSort) {
                 ForEach(SourceReleaseSort.allCases) { order in Text(order.rawValue).tag(order) }
             }
@@ -507,7 +565,7 @@ struct WatchHubView: View {
             .lineLimit(1)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 10))
+            .cineNexGlass(in: Capsule())
     }
 
     private func directSourceRow(title: String, subtitle: String, quality: String?, action: @escaping () -> Void) -> some View {

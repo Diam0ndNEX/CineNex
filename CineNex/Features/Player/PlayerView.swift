@@ -375,9 +375,9 @@ private struct LoadedPlayerView: View {
             queue: .main
         ) { time in
             let position = time.seconds
-            let duration = player.currentItem?.duration.seconds ?? 0
             guard position.isFinite else { return }
             Task { @MainActor in
+                let duration = player.currentItem?.duration.seconds ?? 0
                 progressStore.record(
                     itemID: item.id,
                     position: position,

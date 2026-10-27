@@ -17,6 +17,11 @@ struct AppearanceSettingsView: View {
     @AppStorage("cinenex.home.showWatchlist") private var showWatchlist = true
     @AppStorage("cinenex.home.showRated") private var showRated = true
     @AppStorage("cinenex.home.showGenres") private var showGenres = true
+    @AppStorage("cinenex.home.featuredCount") private var featuredCount = 5
+    @AppStorage("cinenex.home.shelfLayout") private var shelfLayout = "posters"
+    @AppStorage("cinenex.home.continueLayout") private var continueLayout = "cards"
+    @AppStorage("cinenex.detailActionPlacement") private var detailActionPlacement = "inline"
+    @AppStorage("cinenex.navigationHaptics") private var navigationHaptics = true
     private let accents = ["amber", "blue", "rose", "teal", "violet", "lime"]
 
     var body: some View {
@@ -30,6 +35,7 @@ struct AppearanceSettingsView: View {
                             Text("Midnight").tag("midnight")
                             Text("Graphite").tag("graphite")
                             Text("Ocean").tag("ocean")
+                            Text("OLED").tag("oled")
                         }.pickerStyle(.segmented)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 70))], spacing: 18) {
                             ForEach(accents, id: \.self) { value in
@@ -52,23 +58,48 @@ struct AppearanceSettingsView: View {
                             Text("Library").tag("library")
                         }
                         Toggle("Navigation button labels", isOn: $navigationLabels)
+                        Toggle("Navigation haptics", isOn: $navigationHaptics)
                         Text("The floating navigation dock uses Liquid Glass, with an opaque Reduce Transparency fallback. Changing the launch screen applies the next time CineNex starts.").font(.caption).foregroundStyle(.secondary)
                     }
                     CineNexPreferenceCard(title: "Your Home", symbol: "house") {
                         Toggle("Featured spotlight", isOn: $showFeatured)
                         if showFeatured {
                             Picker("Spotlight layout", selection: $featuredStyle) {
-                                Text("Immersive").tag("immersive")
+                                Text("Edge to edge").tag("fullBleed")
+                                Text("Artwork card").tag("immersive")
                                 Text("Compact").tag("compact")
                             }.pickerStyle(.segmented)
+                            Picker("Featured titles", selection: $featuredCount) {
+                                ForEach([3, 5, 7], id: \.self) { Text("\($0) titles").tag($0) }
+                            }
                             Toggle("Spotlight story preview", isOn: $featuredSynopsis)
+                            Text("Swipe or use the arrows to change the featured title. No automatic carousel or video playback runs in the background.")
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                         Divider()
                         Toggle("Continue watching", isOn: $showContinue)
+                        if showContinue {
+                            Picker("Resume layout", selection: $continueLayout) {
+                                Text("Wide cards").tag("cards")
+                                Text("Compact rows").tag("rows")
+                            }.pickerStyle(.segmented)
+                        }
+                        Picker("Catalog shelf artwork", selection: $shelfLayout) {
+                            Text("Posters").tag("posters")
+                            Text("Landscape crops").tag("landscape")
+                        }.pickerStyle(.segmented)
                         Toggle("Saved watchlist shelf", isOn: $showWatchlist)
                         Toggle("Highly rated shelf", isOn: $showRated)
                         Toggle("Genre shortcuts", isOn: $showGenres)
                         Text("Movie and series shelves remain available. Empty shelves are automatically hidden.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    CineNexPreferenceCard(title: "Title details", symbol: "info.circle") {
+                        Picker("Play & save buttons", selection: $detailActionPlacement) {
+                            Text("Below the title").tag("inline")
+                            Text("Floating at bottom").tag("pinned")
+                        }
+                        Text("Keep actions beside the title artwork, or pin them while you scroll through cast and episodes.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                     CineNexPreferenceCard(title: "Posters & accessibility", symbol: "square.grid.2x2") {
                         Picker("Poster density", selection: $density) {

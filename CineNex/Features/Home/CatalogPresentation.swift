@@ -43,6 +43,8 @@ struct CatalogFeatureCard: View {
     let onDetails: () -> Void
     let onPlay: () -> Void
     let onSave: () -> Void
+    var presentationHeight: CGFloat = 440
+    var fullBleed = false
     @AppStorage("cinenex.showRatings") private var showRatings = true
     @AppStorage("cinenex.featuredStyle") private var featuredStyle = "immersive"
     @AppStorage("cinenex.featuredSynopsis") private var showSynopsis = true
@@ -55,7 +57,7 @@ struct CatalogFeatureCard: View {
                     CachedPosterImage(url: item.posterURL, fallbackSymbol: item.symbol, symbolSize: 66)
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: featuredStyle == "compact" ? 290 : 440).clipped().contentShape(Rectangle())
+                .frame(height: presentationHeight).clipped().contentShape(Rectangle())
             }.accessibilityLabel("Details for \(item.title)")
             LinearGradient(colors: [.clear, .black.opacity(0.20), .black.opacity(0.97)],
                            startPoint: .top, endPoint: .bottom).allowsHitTesting(false)
@@ -90,9 +92,9 @@ struct CatalogFeatureCard: View {
             }.padding(22)
         }
         .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, minHeight: featuredStyle == "compact" ? 290 : 440, alignment: .bottomLeading)
+        .frame(maxWidth: .infinity, minHeight: presentationHeight, alignment: .bottomLeading)
         .background(Color.cineNexSurface)
-        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .clipShape(RoundedRectangle(cornerRadius: fullBleed ? 0 : 24))
     }
 }
 
@@ -198,10 +200,16 @@ struct CatalogBrowserView: View {
                             .font(.caption.weight(.bold)).padding(.horizontal, 13).padding(.vertical, 10)
                             .cineNexGlass(in: Capsule())
                     }
-                    Button {
-                        layout = layout == "grid" ? "list" : "grid"
-                    } label: { Image(systemName: layout == "grid" ? "list.bullet" : "square.grid.2x2").frame(width: 36, height: 36) }
-                    .accessibilityLabel(layout == "grid" ? "Use list layout" : "Use poster layout")
+                    Menu {
+                        Picker("Catalog layout", selection: $layout) {
+                            Text("Posters").tag("grid")
+                            Text("Landscape crops").tag("landscape")
+                            Text("List").tag("list")
+                        }
+                    } label: {
+                        Image(systemName: layout == "list" ? "list.bullet" : "rectangle.grid.2x2")
+                            .frame(width: 44, height: 44).cineNexGlass(in: Circle())
+                    }.accessibilityLabel("Choose catalog layout")
                 }.buttonStyle(.plain)
                 HStack {
                     Text("\(results.count) of \(items.count) loaded titles").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -228,6 +236,12 @@ struct CatalogBrowserView: View {
                                 }.foregroundStyle(.primary).padding(.vertical, 10).contentShape(Rectangle())
                             }.buttonStyle(.plain).accessibilityLabel("Details for \(item.title)")
                             Divider().opacity(0.2)
+                        }
+                    }
+                } else if layout == "landscape" {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 235), spacing: 16)], alignment: .leading, spacing: 24) {
+                        ForEach(results) { item in
+                            Button { onSelect(item) } label: { CatalogLandscapeTile(item: item) }.buttonStyle(.plain)
                         }
                     }
                 } else {
@@ -356,23 +370,33 @@ struct CatalogDetailHero: View {
     }
 
     private var metadata: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(item.title).font(.largeTitle.bold())
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
+        VStack(spacing: 12) {
+            Text(item.title).font(.largeTitle.bold()).multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
             HStack(spacing: 10) {
-                if let year = item.yearLabel { Text(year) }
+                if let year = item.yearLabel { metadataBadge(year) }
+                metadataBadge(item.kind.rawValue)
                 if showRatings, let rating = item.rating, rating > 0 {
-                    Label(String(format: "%.1f", rating), systemImage: "star.fill").foregroundStyle(.yellow)
+                    Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                        .font(.caption.bold()).foregroundStyle(.yellow)
+                        .padding(.horizontal, 10).padding(.vertical, 7)
+                        .background(Color.cineNexSurface, in: Capsule())
                 }
-            }.font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            }
             if !item.runtime.isEmpty {
                 Label(item.runtime, systemImage: "clock").font(.caption).foregroundStyle(.secondary)
             }
-            Text(item.genre).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+            Text(item.genre).font(.subheadline).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+        }.frame(maxWidth: .infinity)
     }
+
+    private func metadataBadge(_ title: String) -> some View {
+        Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(Color.cineNexSurface, in: Capsule())
+    }
+
 }
 
 /// One request per visibility entry: adding pages never rekeys this view into an auto-fetch loop.
