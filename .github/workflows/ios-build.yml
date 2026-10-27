@@ -176,7 +176,7 @@ jobs:
               output.write(f"device_name={selected['name']}\n")
           PY
 
-      - name: Run unit tests on available iPhone simulator
+      - name: Run regression and navigation screenshot tests on available iPhone simulator
         if: needs.plan.outputs.tests == 'true'
         run: |
           xcodebuild -xcconfig Generated/OAuth.xcconfig \
@@ -188,11 +188,37 @@ jobs:
             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES EXCLUDED_ARCHS=x86_64 \
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGN_IDENTITY=- \
+            -resultBundlePath TestResults.xcresult \
             -parallel-testing-enabled NO \
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 60 \
             -maximum-test-execution-time-allowance 120 \
             test
+
+      - name: Export simulator screenshots
+        if: always() && needs.plan.outputs.tests == 'true' && hashFiles('TestResults.xcresult/Info.plist') != ''
+        run: |
+          xcrun xcresulttool export attachments --help
+          xcrun xcresulttool export attachments \
+            --path TestResults.xcresult --output-path UIScreenshots
+
+      - name: Upload simulator screenshots
+        if: always() && needs.plan.outputs.tests == 'true' && hashFiles('UIScreenshots/**/*.png') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: CineNex-simulator-screenshots
+          path: UIScreenshots
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload simulator test results
+        if: always() && needs.plan.outputs.tests == 'true' && hashFiles('TestResults.xcresult/Info.plist') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: CineNex-simulator-test-results
+          path: TestResults.xcresult
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Compile presentation changes
         if: needs.plan.outputs.tests != 'true' && needs.plan.outputs.ipa_only != 'true'

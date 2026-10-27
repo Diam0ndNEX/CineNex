@@ -8,7 +8,7 @@ struct TMDBExternalIDResolver: PlaybackExternalIDResolving, Sendable {
     private let readAccessToken: String
     private let session: URLSession
 
-    init(readAccessToken: String, session: URLSession = .shared) {
+    init(readAccessToken: String, session: URLSession = SourceDiscoveryNetworking.session) {
         self.readAccessToken = readAccessToken.trimmingCharacters(in: .whitespacesAndNewlines)
         self.session = session
     }
@@ -67,7 +67,7 @@ private struct TMDBExternalIDsResponse: Decodable {
 struct CinemetaExternalIDResolver: PlaybackExternalIDResolving, Sendable {
     private let session: URLSession
 
-    init(session: URLSession = .shared) {
+    init(session: URLSession = SourceDiscoveryNetworking.session) {
         self.session = session
     }
 
@@ -196,11 +196,11 @@ struct AutomaticExternalIDResolver: PlaybackExternalIDResolving, Sendable {
     private let session: URLSession
     private let identifierCache: SourceIdentifierCache?
 
-    init(tmdbReadAccessToken: String?, session: URLSession = .shared, identifierCache: SourceIdentifierCache? = nil) {
+    init(tmdbReadAccessToken: String?, session: URLSession = SourceDiscoveryNetworking.session, identifierCache: SourceIdentifierCache? = nil) {
         let token = tmdbReadAccessToken?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.tmdbReadAccessToken = token.flatMap { $0.isEmpty ? nil : $0 }
         self.session = session
-        self.identifierCache = identifierCache ?? (session === URLSession.shared ? .shared : nil)
+        self.identifierCache = identifierCache ?? (SourceDiscoveryNetworking.usesApplicationCache(session) ? .shared : nil)
     }
 
     func imdbID(for request: PlaybackSourceRequest) async throws -> String? {
@@ -274,7 +274,7 @@ struct StremioAddonPlaybackProvider: PlaybackSourceProvider, Sendable {
         priority: Int = 50,
         manifestURLs: [URL],
         externalIDResolver: any PlaybackExternalIDResolving,
-        session: URLSession = .shared
+        session: URLSession = SourceDiscoveryNetworking.session
     ) throws {
         guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {

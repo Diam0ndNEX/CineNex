@@ -6,7 +6,7 @@ extension Color {
         case "oled": return .black
         case "graphite": return Color(red: 0.065, green: 0.065, blue: 0.07)
         case "ocean": return Color(red: 0.025, green: 0.065, blue: 0.09)
-        default: return Color(red: 0.025, green: 0.027, blue: 0.045)
+        default: return .black
         }
     }
     static var cineNexSurface: Color {
@@ -14,7 +14,7 @@ extension Color {
         case "oled": return Color(white: 0.055)
         case "graphite": return Color(red: 0.12, green: 0.12, blue: 0.13)
         case "ocean": return Color(red: 0.055, green: 0.12, blue: 0.15)
-        default: return Color(red: 0.075, green: 0.08, blue: 0.12)
+        default: return Color(white: 0.10)
         }
     }
     static var cineNexAccent: Color {

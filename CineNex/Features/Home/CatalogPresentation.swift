@@ -59,6 +59,7 @@ struct CatalogFeatureCard: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: presentationHeight).clipped().contentShape(Rectangle())
             }.accessibilityLabel("Details for \(item.title)")
+                .accessibilityIdentifier("title.\(item.id)")
             LinearGradient(colors: [.clear, .black.opacity(0.20), .black.opacity(0.97)],
                            startPoint: .top, endPoint: .bottom).allowsHitTesting(false)
             VStack(alignment: .leading, spacing: 14) {
@@ -343,60 +344,99 @@ struct CatalogLoadingStatus: View {
     }
 }
 
+/// Genres stay independently actionable and retain their provider's display spelling.
+enum CatalogGenreTokens {
+    static func values(from value: String) -> [String] {
+        var seen = Set<String>()
+        return value.components(separatedBy: CharacterSet(charactersIn: ",•·|"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+    }
+}
+
 struct CatalogDetailHero: View {
     let item: MediaItem
-    @AppStorage("cinenex.showRatings") private var showRatings = true
+    var onGenreSelect: ((String) -> Void)? = nil
     @Environment(\.dynamicTypeSize) private var dynamicType
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            ZStack(alignment: .bottomLeading) {
-                CachedPosterImage(url: item.posterURL, fallbackSymbol: item.symbol, symbolSize: 68)
-                    .frame(maxWidth: .infinity).frame(height: dynamicType.isAccessibilitySize ? 230 : 340).clipped()
-                LinearGradient(colors: [.clear, .black.opacity(0.86)], startPoint: .center, endPoint: .bottom)
-                    .allowsHitTesting(false)
-                HStack {
-                    Label(item.kind == .movie ? "Movie" : "Series", systemImage: item.symbol)
-                        .font(.caption.weight(.semibold))
-                    Spacer()
-                    ShareLink(item: item.title) {
-                        Image(systemName: "square.and.arrow.up").frame(width: 40, height: 40).cineNexGlass(in: Circle())
-                    }.accessibilityLabel("Share title")
-                }.foregroundStyle(.white).padding(18)
-            }.clipShape(RoundedRectangle(cornerRadius: 22))
-            metadata
+        VStack(spacing: 8) {
+            GeometryReader { proxy in
+                ZStack(alignment: .bottom) {
+                    CachedPosterImage(url: item.posterURL, fallbackSymbol: item.symbol, symbolSize: 68)
+                        .frame(width: proxy.size.width, height: proxy.size.height).clipped()
+                    LinearGradient(stops: [
+                        .init(color: .clear, location: 0.40),
+                        .init(color: .black.opacity(0.35), location: 0.66),
+                        .init(color: .black, location: 1)
+                    ], startPoint: .top, endPoint: .bottom).allowsHitTesting(false)
+                    Text(item.title).font(.largeTitle.bold()).foregroundStyle(.white)
+                        .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 24).padding(.bottom, 18)
+                        .accessibilityAddTraits(.isHeader)
+                }
+            }
+            .aspectRatio(dynamicType.isAccessibilitySize ? 0.95 : 0.76, contentMode: .fit)
+            .frame(maxWidth: 620)
+            if !genres.isEmpty {
+                ViewThatFits(in: .horizontal) {
+                    genreButtons
+                    ScrollView(.horizontal) { genreButtons.padding(.horizontal, 20) }.scrollIndicators(.hidden)
+                }
+                .padding(.bottom, 8)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .background(.black)
+    }
+
+    private var genres: [String] { CatalogGenreTokens.values(from: item.genre) }
+
+    private var genreButtons: some View {
+        HStack(spacing: 6) {
+            ForEach(genres, id: \.self) { genre in
+                if let onGenreSelect {
+                    Button { onGenreSelect(genre) } label: {
+                        Text(genre).font(.subheadline).foregroundStyle(.secondary)
+                            .padding(.vertical, 12).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityLabel("Discover \(genre)")
+                        .accessibilityIdentifier("detail.genre.\(genre)")
+                } else {
+                    Text(genre).font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 12)
+                }
+                if genre != genres.last { Text("•").font(.caption).foregroundStyle(.secondary).accessibilityHidden(true) }
+            }
+        }
+    }
+}
+
+/// Placed after the primary actions so facts do not compete with the artwork.
+struct CatalogDetailFacts: View {
+    let item: MediaItem
+    @AppStorage("cinenex.showRatings") private var showRatings = true
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            facts
+            VStack(alignment: .leading, spacing: 10) { factContents }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var metadata: some View {
-        VStack(spacing: 12) {
-            Text(item.title).font(.largeTitle.bold()).multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
-            HStack(spacing: 10) {
-                if let year = item.yearLabel { metadataBadge(year) }
-                metadataBadge(item.kind.rawValue)
-                if showRatings, let rating = item.rating, rating > 0 {
-                    Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                        .font(.caption.bold()).foregroundStyle(.yellow)
-                        .padding(.horizontal, 10).padding(.vertical, 7)
-                        .background(Color.cineNexSurface, in: Capsule())
-                }
-            }
-            if !item.runtime.isEmpty {
-                Label(item.runtime, systemImage: "clock").font(.caption).foregroundStyle(.secondary)
-            }
-            Text(item.genre).font(.subheadline).foregroundStyle(.secondary)
-                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-        }.frame(maxWidth: .infinity)
+    private var facts: some View {
+        HStack(spacing: 14) { factContents }
     }
 
-    private func metadataBadge(_ title: String) -> some View {
-        Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(Color.cineNexSurface, in: Capsule())
+    @ViewBuilder private var factContents: some View {
+        Group {
+            if let year = item.yearLabel { Text(year).font(.headline) }
+            if !item.runtime.isEmpty { Text(item.runtime).font(.headline) }
+            if showRatings, let rating = item.rating, rating.isFinite, rating > 0 {
+                Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                    .font(.headline).foregroundStyle(.yellow)
+            }
+        }.foregroundStyle(.primary)
     }
-
 }
 
 /// One request per visibility entry: adding pages never rekeys this view into an auto-fetch loop.

@@ -61,7 +61,19 @@ struct CinemetaCatalogProvider: Sendable {
         return Self.uniqueItems(movies + series)
     }
 
+    /// Genre-scoped, token-free pages use the raw response count, not the number of mapped titles,
+    /// to decide whether another skip=100 page exists (Stremio catalog pagination contract).
+    func catalogPage(type: String, genre: String? = nil, skip: Int = 0) async throws -> CinemetaCatalogPage {
+        guard skip >= 0, skip <= 50_000, skip.isMultiple(of: 100) else { throw CinemetaCatalogError.invalidRequest }
+        return try await fetchMetadataPage(type: type, query: nil, genre: genre, skip: skip)
+    }
+
     private func fetchMetadata(type: String, query: String?, genre: String? = nil) async throws -> [MediaItem] {
+        try await fetchMetadataPage(type: type, query: query, genre: genre, skip: nil).items
+    }
+
+    private func fetchMetadataPage(type: String, query: String?, genre: String? = nil, skip: Int?) async throws -> CinemetaCatalogPage {
+
         guard type == "movie" || type == "series" else {
             throw CinemetaCatalogError.invalidRequest
         }
@@ -84,7 +96,8 @@ struct CinemetaCatalogProvider: Sendable {
         } else {
             searchPath = ""
         }
-        guard let url = URL(string: "https://v3-cinemeta.strem.io/catalog/\(type)/top\(genrePath)\(searchPath).json"),
+        let skipPath = skip.map { (genrePath.isEmpty && searchPath.isEmpty ? "/" : "&") + "skip=\($0)" } ?? ""
+        guard let url = URL(string: "https://v3-cinemeta.strem.io/catalog/\(type)/top\(genrePath)\(searchPath)\(skipPath).json"),
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               components.scheme == "https",
               components.host == "v3-cinemeta.strem.io" else {
@@ -122,7 +135,7 @@ struct CinemetaCatalogProvider: Sendable {
             throw CinemetaCatalogError.invalidResponse
         }
 
-        return decoded.metas.compactMap { meta in
+        let items = decoded.metas.compactMap { meta -> MediaItem? in
             guard meta.type == type,
                   let title = meta.name?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !title.isEmpty,
@@ -151,6 +164,7 @@ struct CinemetaCatalogProvider: Sendable {
                 metadataProvider: "cinemeta"
             )
         }
+        return CinemetaCatalogPage(items: items, skip: skip ?? 0, rawCount: decoded.metas.count)
     }
 
     private static func validImageURL(_ value: String) -> URL? {
@@ -234,4 +248,12 @@ enum CinemetaCatalogError: LocalizedError, Equatable {
             return "Cinemeta could not be reached: \(message)"
         }
     }
+}
+
+
+struct CinemetaCatalogPage: Sendable {
+    let items: [MediaItem]
+    let skip: Int
+    let rawCount: Int
+    var hasMore: Bool { rawCount >= 100 && skip < 50_000 }
 }

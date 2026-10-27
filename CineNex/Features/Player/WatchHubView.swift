@@ -25,6 +25,8 @@ struct WatchHubView: View {
     @State private var stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
     @State private var manifestStorageError: String?
     @State private var manifestConfigurationLoaded = false
+    @State private var loadingProviderSettings = false
+    @State private var sourceSearchTMDBToken: String?
     @State private var sourceSearchGeneration = UUID()
     @State private var sourceSearchTask: Task<Void, Never>?
     @State private var filteredTorrentDescriptors: [StremioTorrentDescriptor] = []
@@ -188,7 +190,8 @@ struct WatchHubView: View {
             }
             .task(id: request) {
                 if !manifestConfigurationLoaded {
-                    loadStoredManifestConfiguration()
+                    await loadStoredManifestConfiguration()
+                    guard !Task.isCancelled else { return }
                     manifestConfigurationLoaded = true
                 }
                 resolveSources()
@@ -379,12 +382,12 @@ struct WatchHubView: View {
             if selectedSourceFilter == "Web" || selectedSourceFilter == "All" {
                 webPlayers
             }
-            if !searchingAddonSources,
+            if !searchingAddonSources, !loadingProviderSettings,
                visibleTorrentSources.isEmpty, visibleDirectSources.isEmpty,
                !(showsDirectPlayback && item.streamURL != nil),
                selectedSourceFilter != "Web" {
                 emptySourceState
-            } else if selectedSourceFilter == "Web", visibleEmbeddedSources.isEmpty, !searchingAddonSources {
+            } else if selectedSourceFilter == "Web", visibleEmbeddedSources.isEmpty, !searchingAddonSources, !loadingProviderSettings {
                 ContentUnavailableView("No web alternatives", systemImage: "globe", description: Text("Choose All streams to return to native playback sources."))
             }
             providerStatusDetails
@@ -395,7 +398,7 @@ struct WatchHubView: View {
     private var discoveryStatus: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text(searchingAddonSources ? "Finding your streams" : (sourceSearchCancelled ? "Search stopped" : "Your sources"))
+                Text(loadingProviderSettings ? "Loading saved providers" : (searchingAddonSources ? "Finding your streams" : (sourceSearchCancelled ? "Search stopped" : "Your sources")))
                     .font(.headline)
                 Spacer()
                 if searchingAddonSources {
@@ -405,7 +408,11 @@ struct WatchHubView: View {
                     }
                 }
             }
-            if searchingAddonSources {
+            if loadingProviderSettings {
+                ProgressView().progressViewStyle(.linear).tint(Color.cineNexAccent)
+                Text("Reading saved provider configuration securely. Built-in providers start if storage is slow.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if searchingAddonSources {
                 Text(discoveryStage).font(.caption).foregroundStyle(.secondary)
                 ProgressView(value: Double(discoveryCompletedProviders), total: Double(max(discoveryExpectedProviders, 1)))
                     .tint(Color.cineNexAccent)
@@ -743,12 +750,16 @@ struct WatchHubView: View {
         }
         var seen = Set<String>()
         stremioAddonManifestURLs = lines.filter { seen.insert($0).inserted }.joined(separator: "\n")
-        do {
-            try StremioAddonConfigurationStore.save(stremioAddonManifestURLs)
-            manifestStorageError = nil
-            Task { await searchStremioAddonSources() }
-        } catch {
-            manifestStorageError = "The provider configuration could not be saved in Keychain."
+        let configuration = stremioAddonManifestURLs
+        Task {
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try StremioAddonConfigurationStore.save(configuration)
+                }.value
+                guard !Task.isCancelled else { return }
+                manifestStorageError = nil
+                await searchStremioAddonSources()
+            } catch { manifestStorageError = "The provider configuration could not be saved in Keychain." }
         }
     }
 
@@ -817,8 +828,10 @@ struct WatchHubView: View {
     @MainActor
     private func loadCatalogDetails() async {
         guard item.kind == .series else { return }
+        let settings = try? await SourceSecureSettingsLoader.shared.load()
+        guard !Task.isCancelled else { return }
         guard item.metadataProvider == "tmdb",
-              let token = TMDBTokenStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let token = (settings?.tmdbToken ?? sourceSearchTMDBToken)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !token.isEmpty else {
             episodeErrorMessage = item.metadataProvider == "tmdb"
                 ? "Connect TMDB in Settings to load episode details. You can also choose an episode manually."
@@ -851,7 +864,7 @@ struct WatchHubView: View {
     @MainActor
     private func loadEpisodes(for requestedSeason: Int, provider existingProvider: TMDBCatalogProvider? = nil, token existingToken: String? = nil) async {
         guard item.kind == .series else { return }
-        guard let token = existingToken ?? TMDBTokenStore.load()?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard let token = (existingToken ?? sourceSearchTMDBToken)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !token.isEmpty else {
             episodeErrorMessage = "Connect TMDB in Settings to load episode details."
             episodes = []
@@ -880,24 +893,26 @@ struct WatchHubView: View {
     }
 
     @MainActor
-    private func loadStoredManifestConfiguration() {
+    private func loadStoredManifestConfiguration() async {
+        loadingProviderSettings = true
+        defer { loadingProviderSettings = false }
         do {
-            let storedManifestURLs = try StremioAddonConfigurationStore.load()
-            let normalizedManifestURLs = storedManifestURLs?
-                .split(whereSeparator: \.isNewline)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .joined(separator: "\n")
-            if let normalizedManifestURLs,
-               !normalizedManifestURLs.isEmpty,
-               !Self.legacyDefaultStremioAddonManifestURLTexts.contains(normalizedManifestURLs) {
-                stremioAddonManifestURLs = normalizedManifestURLs
-            } else {
-                stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText
-            }
-            try StremioAddonConfigurationStore.save(stremioAddonManifestURLs)
-            manifestStorageError = nil
-        } catch {
-            manifestStorageError = "Secure storage is unavailable. Your add-on URLs could not be saved to the iOS Keychain."
+            let settings = try await SourceSecureSettingsLoader.shared.load()
+            try Task.checkCancellation()
+            sourceSearchTMDBToken = settings.tmdbToken
+            let normalized = settings.manifestText?.split(whereSeparator: \.isNewline)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.joined(separator: "\n")
+            if let normalized, !normalized.isEmpty, !Self.legacyDefaultStremioAddonManifestURLTexts.contains(normalized) {
+                stremioAddonManifestURLs = normalized
+            } else { stremioAddonManifestURLs = Self.defaultStremioAddonManifestURLText }
+            manifestStorageError = settings.manifestStorageUnavailable
+                ? "Saved provider settings could not be read. Built-in providers remain available." : nil
+            // Do not rewrite Keychain on every source-screen appearance. Explicit provider edits
+            // still persist in saveProviderConfiguration; legacy migration happens in the store.
+        } catch is CancellationError { return }
+        catch {
+            guard !Task.isCancelled else { return }
+            manifestStorageError = error.localizedDescription
         }
     }
 
@@ -927,7 +942,11 @@ struct WatchHubView: View {
         let entryGeneration = UUID()
         sourceSearchGeneration = entryGeneration
         sourceSearchTask?.cancel()
-        if forceRefresh { await SourceDiscoveryCache.shared.clearPlaybackResponses() }
+        if forceRefresh {
+            await loadStoredManifestConfiguration()
+            guard !Task.isCancelled, sourceSearchGeneration == entryGeneration else { return }
+            await SourceDiscoveryCache.shared.clearPlaybackResponses()
+        }
         guard !Task.isCancelled, sourceSearchGeneration == entryGeneration, activePlaybackSheet == nil else { return }
         let task = Task { await performSourceSearch() }
         sourceSearchTask = task
@@ -980,7 +999,7 @@ struct WatchHubView: View {
             }
         }
 
-        let resolver = AutomaticExternalIDResolver(tmdbReadAccessToken: TMDBTokenStore.load())
+        let resolver = AutomaticExternalIDResolver(tmdbReadAccessToken: sourceSearchTMDBToken)
         var addonManifestURLs = manifestURLs.filter {
             !($0.host?.lowercased().contains("torrentio") ?? false)
         }

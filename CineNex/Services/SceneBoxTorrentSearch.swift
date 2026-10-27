@@ -12,7 +12,7 @@ struct SceneBoxTorrentSearch: Sendable {
             "https://torrentio.strem.fun/qualityfilter=unknown,other,cam,scr",
             "https://torrentio.strem.fun"
         ],
-        session: URLSession = .shared,
+        session: URLSession = SourceDiscoveryNetworking.session,
         cache: SourceDiscoveryCache? = nil,
         endpointTimeout: TimeInterval = 6,
         fallbackDelay: TimeInterval = 0.5
@@ -23,7 +23,7 @@ struct SceneBoxTorrentSearch: Sendable {
         var seenBases = Set<String>()
         self.sourceBases = normalizedBases.filter { seenBases.insert($0).inserted }
         self.session = session
-        self.cache = cache ?? (session === URLSession.shared ? .shared : nil)
+        self.cache = cache ?? (SourceDiscoveryNetworking.usesApplicationCache(session) ? .shared : nil)
         self.endpointTimeout = min(12, max(0.05, endpointTimeout.isFinite ? endpointTimeout : 6))
         self.fallbackDelay = min(2, max(0, fallbackDelay.isFinite ? fallbackDelay : 0.5))
     }

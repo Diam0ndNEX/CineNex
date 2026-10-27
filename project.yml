@@ -64,6 +64,7 @@ targets:
     scheme:
       testTargets:
         - CineNexTests
+        - CineNexUITests
   CineNexTests:
     type: bundle.unit-test
     platform: iOS
@@ -75,3 +76,15 @@ targets:
       base:
         CODE_SIGN_ENTITLEMENTS: Generated/CineNex.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.diam0ndnex.cinenex.tests
+
+  CineNexUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: CineNexUITests
+    dependencies:
+      - target: CineNex
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.diam0ndnex.cinenex.uitests
+        TEST_TARGET_NAME: CineNex

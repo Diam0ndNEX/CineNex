@@ -1,32 +1,128 @@
 import CryptoKit
 import Foundation
 
-/// Request.timeoutInterval limits idle time; this clock also bounds DNS, connection and a trickling body.
-/// The losing URLSession.data task is cancelled before the operation returns.
+/// Discovery has a separate connection pool so launch-time catalog/artwork requests cannot queue
+/// a title-ID lookup behind unrelated shared-session traffic. No cookies or credentials persist.
 enum SourceDiscoveryNetworking {
+    static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 8
+        configuration.timeoutIntervalForResource = 20
+        configuration.waitsForConnectivity = false
+        configuration.httpMaximumConnectionsPerHost = 4
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        return URLSession(configuration: configuration)
+    }()
+
+    static func usesApplicationCache(_ candidate: URLSession) -> Bool {
+        candidate === session || candidate === URLSession.shared
+    }
+
+    /// A task-group timeout still awaits the losing child after cancelAll(). A stalled transport
+    /// completion queue can therefore outlive that "deadline". This bridge completes the caller
+    /// exactly once at the deadline/cancel point and cancels the dataTask without awaiting its callback.
     static func data(for request: URLRequest, session: URLSession,
                      delegate: (any URLSessionTaskDelegate)? = nil,
                      timeout: TimeInterval) async throws -> (Data, URLResponse) {
         try Task.checkCancellation()
-        return try await withThrowingTaskGroup(of: Payload.self) { group in
-            group.addTask {
-                let (data, response) = try await session.data(for: request, delegate: delegate)
-                return Payload(data: data, response: response)
-            }
-            group.addTask {
-                try await Task.sleep(for: .seconds(max(0.01, timeout)))
-                throw URLError(.timedOut)
-            }
-            defer { group.cancelAll() }
-            guard let result = try await group.next() else { throw CancellationError() }
+        let requestID = String(UUID().uuidString.prefix(8))
+        let started = ProcessInfo.processInfo.systemUptime
+        let resource = request.url?.path.contains("/stream/") == true ? "streams"
+            : (request.url?.path.hasSuffix("manifest.json") == true ? "manifest" : "identifier")
+        let details = ["request": requestID, "host": request.url?.host ?? "unknown", "resource": resource]
+        PlaybackDiagnostics.record("discovery.http.start", details: details)
+        let gate = DiscoveryRequestCompletion()
+        do {
+            let payload: DiscoveryHTTPPayload = try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    gate.install(continuation, timeout: timeout)
+                    let task = session.dataTask(with: request) { data, response, error in
+                        if let error { gate.complete(.failure(error)) }
+                        else if let data, let response { gate.complete(.success(DiscoveryHTTPPayload(data: data, response: response))) }
+                        else { gate.complete(.failure(URLError(.badServerResponse))) }
+                    }
+                    task.delegate = delegate
+                    task.priority = URLSessionTask.highPriority
+                    gate.start(task)
+                }
+            } onCancel: { gate.complete(.failure(CancellationError()), cancellingTransport: true) }
             try Task.checkCancellation()
-            return (result.data, result.response)
+            PlaybackDiagnostics.record("discovery.http.end", details: details.merging([
+                "elapsed_ms": String(Int((ProcessInfo.processInfo.systemUptime - started) * 1_000)),
+                "bytes": String(payload.data.count), "outcome": "response"
+            ]) { _, new in new })
+            return (payload.data, payload.response)
+        } catch {
+            PlaybackDiagnostics.record("discovery.http.end", details: details.merging([
+                "elapsed_ms": String(Int((ProcessInfo.processInfo.systemUptime - started) * 1_000)),
+                "outcome": error is CancellationError ? "cancelled" : "error",
+                "code": String((error as NSError).code), "domain": (error as NSError).domain
+            ]) { _, new in new })
+            throw error
+        }
+    }
+}
+
+private struct DiscoveryHTTPPayload: Sendable {
+    let data: Data
+    let response: URLResponse
+}
+
+/// The only unchecked boundary is Foundation's callback API: the lock owns all mutable state,
+/// atomically removes the continuation/task/timer before invoking any of them, and ignores late
+/// callbacks. No network work, cancellation, or continuation resume occurs while the lock is held.
+/// Keep this bridge until URLSession provides a cancellation completion independent of its delegate queue.
+private final class DiscoveryRequestCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<DiscoveryHTTPPayload, Error>?
+    private var task: URLSessionDataTask?
+    private var timer: DispatchSourceTimer?
+    private var finished = false
+    private var earlyError: Error?
+
+    func install(_ continuation: CheckedContinuation<DiscoveryHTTPPayload, Error>, timeout: TimeInterval) {
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
+        timer.schedule(deadline: .now() + max(0.01, timeout.isFinite ? timeout : 12))
+        timer.setEventHandler { [weak self] in
+            self?.complete(.failure(URLError(.timedOut)), cancellingTransport: true)
+        }
+        lock.lock()
+        let wasFinished = finished
+        let error = earlyError
+        if !wasFinished { self.continuation = continuation; self.timer = timer }
+        lock.unlock()
+        timer.resume()
+        if wasFinished {
+            timer.cancel()
+            continuation.resume(throwing: error ?? CancellationError())
         }
     }
 
-    private struct Payload: Sendable {
-        let data: Data
-        let response: URLResponse
+    func start(_ task: URLSessionDataTask) {
+        lock.lock()
+        let wasFinished = finished
+        if !wasFinished { self.task = task }
+        lock.unlock()
+        if wasFinished { task.cancel() } else { task.resume() }
+    }
+
+    func complete(_ result: Result<DiscoveryHTTPPayload, Error>, cancellingTransport: Bool = false) {
+        lock.lock()
+        guard !finished else { lock.unlock(); return }
+        finished = true
+        if case .failure(let error) = result { earlyError = error }
+        let continuation = self.continuation
+        let task = self.task
+        let timer = self.timer
+        self.continuation = nil
+        self.task = nil
+        self.timer = nil
+        lock.unlock()
+        timer?.cancel()
+        continuation?.resume(with: result)
+        if cancellingTransport { task?.cancel() }
     }
 }
 

@@ -254,13 +254,13 @@ struct StremioAddonClient: Sendable {
     private let cache: SourceDiscoveryCache?
     private let requestTimeout: TimeInterval
 
-    init(manifestURL: URL, session: URLSession = .shared, cache: SourceDiscoveryCache? = nil, requestTimeout: TimeInterval = 12) throws {
+    init(manifestURL: URL, session: URLSession = SourceDiscoveryNetworking.session, cache: SourceDiscoveryCache? = nil, requestTimeout: TimeInterval = 12) throws {
         guard Self.isSafeHTTPSURL(manifestURL) else {
             throw StremioAddonClientError.invalidManifestURL
         }
         self.manifestURL = manifestURL
         self.session = session
-        self.cache = cache ?? (session === URLSession.shared ? .shared : nil)
+        self.cache = cache ?? (SourceDiscoveryNetworking.usesApplicationCache(session) ? .shared : nil)
         self.requestTimeout = min(20, max(0.05, requestTimeout.isFinite ? requestTimeout : 12))
     }
 

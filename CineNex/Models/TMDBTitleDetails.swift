@@ -262,6 +262,15 @@ struct TMDBTitleCastMember: Decodable, Equatable, Identifiable {
     let id: Int?
     let name: String?
     let character: String?
+    var profilePath: String? = nil
+    enum CodingKeys: String, CodingKey {
+        case id, name, character
+        case profilePath = "profile_path"
+    }
+    var profileURL: URL? {
+        guard let profilePath, profilePath.hasPrefix("/"), !profilePath.contains("://") else { return nil }
+        return URL(string: "https://image.tmdb.org/t/p/w185\(profilePath)")
+    }
 }
 
 struct TMDBTitleCrewMember: Decodable, Equatable {
