@@ -73,7 +73,6 @@ struct CatalogHeroCarousel: View {
                     }.accessibilityHidden(true)
                     Text("\(page + 1) / \(items.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                         .accessibilityLabel("Featured title \(page + 1) of \(items.count)")
-                        .accessibilityLiveRegion(.polite)
                     Spacer(minLength: 4)
                     pageButton(forward: true)
                 }.padding(.horizontal, 20)
@@ -95,6 +94,7 @@ struct CatalogHeroCarousel: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(forward ? "Next featured title" : "Previous featured title")
+        .accessibilityValue("Featured title \(page + 1) of \(items.count)")
     }
 }
 
