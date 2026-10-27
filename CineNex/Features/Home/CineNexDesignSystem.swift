@@ -39,8 +39,8 @@ struct CineNexPreferenceCard<Content: View>: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Label(title.uppercased(), systemImage: symbol)
-                .font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(Color.cineNexAccent)
+            Label(title, systemImage: symbol)
+                .font(.caption.weight(.bold)).foregroundStyle(Color.cineNexAccent)
             content
         }
         .padding(20).frame(maxWidth: .infinity, alignment: .leading)

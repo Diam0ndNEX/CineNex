@@ -182,7 +182,7 @@ struct ContentView: View {
             .toolbar {
                 if selectedTab == .home && selectedItem == nil {
                     ToolbarItem(placement: .topBarLeading) {
-                        Text("CINENEX").font(.system(size: 14, weight: .black)).tracking(3)
+                        Text("CineNex").font(.headline)
                             .foregroundStyle(Color.cineNexAccent)
                     }
                     ToolbarItem(placement: .topBarTrailing) {
@@ -261,9 +261,11 @@ struct ContentView: View {
             dockButton(.library, title: "Library", symbol: "bookmark")
             dockButton(.tracking, title: "Settings", symbol: "slider.horizontal.3")
         }
-        .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(Color.cineNexBackground)
-        .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1) }
+        .padding(7)
+        .frame(maxWidth: 440)
+        .cineNexGlass(in: RoundedRectangle(cornerRadius: 28), interactive: false)
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Main navigation")
     }
@@ -273,11 +275,14 @@ struct ContentView: View {
             selectedTab = tab
         } label: {
             VStack(spacing: 5) {
-                Image(systemName: symbol).font(.system(size: 19, weight: selectedTab == tab ? .bold : .medium))
-                if navigationLabels { Text(title).font(.system(size: 9, weight: .semibold)) }
+                Image(systemName: symbol).font(.title3.weight(selectedTab == tab ? .bold : .medium))
+                if navigationLabels {
+                    Text(title).font(.caption.weight(.semibold))
+                        .lineLimit(2).multilineTextAlignment(.center)
+                }
             }
-            .foregroundStyle(selectedTab == tab ? Color.cineNexAccent : Color.secondary)
-            .frame(maxWidth: .infinity, minHeight: navigationLabels ? 48 : 44)
+            .foregroundStyle(selectedTab == tab ? Color.cineNexAccent : Color.primary)
+            .frame(maxWidth: .infinity, minHeight: navigationLabels ? 50 : 44)
             .background(selectedTab == tab ? Color.cineNexAccent.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 14))
             .contentShape(Rectangle())
         }
@@ -286,10 +291,12 @@ struct ContentView: View {
     }
 
     private var experiencePicker: some View {
-        HStack(spacing: 8) {
-            experienceButton("Cinema", subtitle: "Movies & series", symbol: "film.stack", value: "moviesAndSeries")
-            experienceButton("Anime", subtitle: "Anime", symbol: "sparkles.tv", value: "anime")
-            Spacer(minLength: 0)
+        CineNexGlassGroup(spacing: 8) {
+            HStack(spacing: 8) {
+                experienceButton("Cinema", subtitle: "Movies & series", symbol: "film.stack", value: "moviesAndSeries")
+                experienceButton("Anime", subtitle: "Anime", symbol: "sparkles.tv", value: "anime")
+                Spacer(minLength: 0)
+            }
         }
         .padding(.horizontal, 20).padding(.vertical, 10)
     }
@@ -303,8 +310,8 @@ struct ContentView: View {
             Label(title, systemImage: symbol)
                 .font(.subheadline.weight(.bold))
                 .padding(.horizontal, 16).padding(.vertical, 11)
-                .foregroundStyle(selected ? Color.cineNexBackground : Color.primary)
-                .background(selected ? Color.cineNexAccent : Color.cineNexSurface, in: Capsule())
+                .foregroundStyle(selected ? Color.cineNexAccent : Color.primary)
+                .cineNexGlass(in: Capsule(), prominent: selected)
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -470,9 +477,9 @@ struct ContentView: View {
     private var homeEditorialHeader: some View {
         HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 7) {
-                Text(homeLane == .all ? "Tonight,\nyour way." : homeLane.rawValue)
-                    .font(.system(size: 38, weight: .black, design: .serif))
-                    .tracking(-1.3).fixedSize(horizontal: false, vertical: true)
+                Text(homeLane == .all ? "Discover" : homeLane.rawValue)
+                    .font(.largeTitle.bold())
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("Discover a story worth your time.")
                     .font(.subheadline).foregroundStyle(.secondary)
             }
@@ -491,6 +498,7 @@ struct ContentView: View {
 
     private var homeLanePicker: some View {
         ScrollView(.horizontal) {
+            CineNexGlassGroup(spacing: 9) {
             HStack(spacing: 9) {
                 ForEach(HomeDiscoveryLane.allCases) { lane in
                     Button {
@@ -499,8 +507,8 @@ struct ContentView: View {
                     } label: {
                         Text(lane.rawValue).font(.subheadline.weight(.semibold))
                             .padding(.horizontal, 16).padding(.vertical, 11)
-                            .foregroundStyle(homeLane == lane ? Color.cineNexAccent : Color.secondary)
-                            .background(homeLane == lane ? Color.cineNexAccent.opacity(0.10) : Color.clear, in: Capsule())
+                            .foregroundStyle(homeLane == lane ? Color.cineNexAccent : Color.primary)
+                            .cineNexGlass(in: Capsule(), prominent: homeLane == lane)
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(homeLane == lane ? .isSelected : [])
@@ -510,6 +518,7 @@ struct ContentView: View {
                     Image(systemName: "arrow.triangle.2.circlepath").frame(width: 42, height: 42)
                         .cineNexGlass(in: Circle())
                 }.buttonStyle(.plain).accessibilityLabel("Rotate featured picks")
+            }
             }.padding(.horizontal, 20)
         }.scrollIndicators(.hidden)
     }
@@ -596,8 +605,8 @@ struct ContentView: View {
     private var animeHomeContent: some View {
         Group {
             VStack(alignment: .leading, spacing: 8) {
-                Text("BEYOND THE ORDINARY").font(.system(size: 9, weight: .black)).tracking(2.5).foregroundStyle(Color.cineNexAccent)
-                Text("A whole\nother world.").font(.system(size: 38, weight: .black, design: .serif)).tracking(-1)
+                Text("Anime discovery").font(.caption.weight(.semibold)).foregroundStyle(Color.cineNexAccent)
+                Text("Anime").font(.largeTitle.bold())
                 Text("Find an anime to get lost in.").font(.subheadline).foregroundStyle(.secondary)
             }.padding(.horizontal, 20)
             if let animeError {
@@ -669,8 +678,8 @@ struct ContentView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("FIND YOUR NEXT FAVORITE").font(.system(size: 9, weight: .black)).tracking(2.5).foregroundStyle(Color.cineNexAccent)
-                    Text("What are you\nlooking for?").font(.system(size: 36, weight: .black, design: .serif))
+                    Text("Find a title").font(.caption.weight(.semibold)).foregroundStyle(Color.cineNexAccent)
+                    Text("Search").font(.largeTitle.bold())
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
                 HStack(spacing: 12) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -798,8 +807,8 @@ struct ContentView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("YOUR COLLECTION").font(.system(size: 9, weight: .black)).tracking(2.5).foregroundStyle(Color.cineNexAccent)
-                    Text("Keep the good ones.").font(.system(size: 34, weight: .black, design: .serif))
+                    Text("Saved and in progress").font(.caption.weight(.semibold)).foregroundStyle(Color.cineNexAccent)
+                    Text("Your library").font(.largeTitle.bold())
                     Text("Saved stories, recent watches, and downloads.").font(.subheadline).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
                 experiencePicker
@@ -837,8 +846,8 @@ struct ContentView: View {
                     }
                 } else {
                     HStack {
-                        Text(libraryShowsProgress ? "IN PROGRESS" : "SAVED FOR LATER")
-                            .font(.system(size: 10, weight: .heavy)).tracking(1.6).foregroundStyle(.secondary)
+                        Text(libraryShowsProgress ? "Continue watching" : "Watchlist")
+                            .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         Spacer()
                         Menu {
                             Picker("Type", selection: $libraryKind) {
@@ -923,7 +932,7 @@ struct ContentView: View {
         HStack(spacing: 11) {
             Image(systemName: symbol).font(.title3).foregroundStyle(Color.cineNexAccent)
             VStack(alignment: .leading, spacing: 4) {
-                Text(String(value)).font(.system(size: 25, weight: .black, design: .rounded))
+                Text(String(value)).font(.title2.bold()).monospacedDigit()
                 Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -1617,10 +1626,10 @@ private struct MediaDetailView: View {
             .accessibilityLabel(isFavorite ? "Remove from watchlist" : "Save to watchlist")
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(Color.cineNexBackground)
-        .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1) }
+        .padding(10)
+        .cineNexGlass(in: RoundedRectangle(cornerRadius: 24), interactive: false)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
     }
 
     private func detailRow(_ title: String, value: String, symbol: String) -> some View {

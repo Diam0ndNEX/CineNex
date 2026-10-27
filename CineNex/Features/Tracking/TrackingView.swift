@@ -72,7 +72,8 @@ struct TrackingView: View {
             .padding(20)
         }
         .background(Color.cineNexBackground.ignoresSafeArea())
-        .onDisappear { trakt.cancelDeviceSignIn() }
+        // The singleton owns device authorization across browser handoff and navigation.
+        // Only explicit cancellation, disconnect or the server deadline ends it.
         .navigationTitle("Tracking")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingPrivacyDetails) {
@@ -302,14 +303,19 @@ struct TrackingView: View {
                 }
                 .buttonStyle(.bordered)
             } else {
-                Button {
-                    trakt.startDeviceSignIn()
-                } label: {
-                    Label(trakt.isAuthorizing ? "Waiting for Trakt sign-in…" : "Sign in to Trakt", systemImage: "link")
-                        .frame(maxWidth: .infinity)
+                if trakt.loginAvailable {
+                    Button {
+                        trakt.startDeviceSignIn()
+                    } label: {
+                        Label(trakt.isAuthorizing ? "Waiting for Trakt sign-in…" : "Sign in to Trakt", systemImage: "link")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(trakt.isAuthorizing)
+                } else {
+                    Label("Sign-in unavailable in this build", systemImage: "info.circle")
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(!trakt.loginAvailable || trakt.isAuthorizing)
             }
         }
         .padding(18)

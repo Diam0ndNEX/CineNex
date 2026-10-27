@@ -123,9 +123,8 @@ struct SeasonEpisodesView: View {
                 .frame(width: 94, height: 140)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
             VStack(alignment: .leading, spacing: 9) {
-                Text(item.title.uppercased())
+                Text(item.title)
                     .font(.caption.weight(.bold))
-                    .tracking(1.5)
                     .foregroundStyle(Color.cineNexAccent)
                 Text(season.displayName)
                     .font(.title.weight(.bold))
@@ -218,9 +217,8 @@ struct SeasonEpisodesView: View {
                 .frame(height: 170)
                 .clipped()
                 .overlay(alignment: .bottomLeading) {
-                    Text("EPISODE \(episode.episodeNumber)")
+                    Text("Episode \(episode.episodeNumber)")
                         .font(.caption.weight(.bold))
-                        .tracking(1)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                         .background(.ultraThinMaterial, in: Capsule())

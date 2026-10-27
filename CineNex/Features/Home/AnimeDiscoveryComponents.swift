@@ -14,9 +14,9 @@ struct AnimeFeaturedBanner: View {
                 CachedPosterImage(url: anime.coverURL, fallbackSymbol: "sparkles", symbolSize: 64)
                 LinearGradient(colors: [.clear, .black.opacity(0.95)], startPoint: .top, endPoint: .bottom)
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("ANIME SPOTLIGHT").font(.system(size: 9, weight: .heavy)).tracking(2.4)
+                    Text("Featured anime").font(.caption.weight(.semibold))
                         .foregroundStyle(Color.cineNexAccent)
-                    Text(anime.title).font(.system(size: 31, weight: .black, design: .serif)).lineLimit(3)
+                    Text(anime.title).font(.title.bold()).lineLimit(3)
                     HStack(spacing: 9) {
                         Text([anime.seasonYear.map(String.init), anime.format?.replacingOccurrences(of: "_", with: " ")]
                             .compactMap { $0 }.joined(separator: " · "))
@@ -29,7 +29,7 @@ struct AnimeFeaturedBanner: View {
                         .foregroundStyle(.black).background(Color.cineNexAccent, in: Capsule())
                 }.padding(22).frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(height: featuredStyle == "compact" ? 290 : 410)
+            .frame(minHeight: featuredStyle == "compact" ? 290 : 410)
             .clipShape(RoundedRectangle(cornerRadius: 24)).contentShape(RoundedRectangle(cornerRadius: 24))
         }
         .buttonStyle(.plain).foregroundStyle(.white)
@@ -64,7 +64,7 @@ struct AnimePosterCard: View {
                     .clipShape(RoundedRectangle(cornerRadius: 15))
                     if showRatings, let rating = anime.averageRating {
                         Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 5)
@@ -173,7 +173,7 @@ struct AnimeDetailView: View {
 
                         VStack(alignment: .leading, spacing: 9) {
                             Text(anime.title)
-                                .font(.system(size: 29, weight: .black, design: .serif))
+                                .font(.title.bold())
                             if let nativeTitle = anime.nativeTitle, !nativeTitle.isEmpty {
                                 Text(nativeTitle)
                                     .font(.subheadline)
@@ -227,8 +227,8 @@ struct AnimeDetailView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
-                        Label("YOUR EPISODES", systemImage: "checkmark.circle")
-                            .font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(Color.cineNexAccent)
+                        Label("Episode progress", systemImage: "checkmark.circle")
+                            .font(.caption.weight(.bold)).foregroundStyle(Color.cineNexAccent)
                         Text(progressSummary)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)

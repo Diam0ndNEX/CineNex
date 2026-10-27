@@ -23,8 +23,8 @@ struct AppearanceSettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    Text("Make room\nfor your taste.").font(.system(size: 35, weight: .black, design: .serif))
-                    Text("Change the look, the layout, and what appears first.").font(.subheadline).foregroundStyle(.secondary)
+                    Text("Appearance & layout").font(.largeTitle.bold())
+                    Text("Choose colors, home sections, and navigation.").font(.subheadline).foregroundStyle(.secondary)
                     CineNexPreferenceCard(title: "Color & canvas", symbol: "paintpalette") {
                         Picker("Canvas", selection: $canvas) {
                             Text("Midnight").tag("midnight")
@@ -52,7 +52,7 @@ struct AppearanceSettingsView: View {
                             Text("Library").tag("library")
                         }
                         Toggle("Navigation button labels", isOn: $navigationLabels)
-                        Text("The navigation dock uses a solid canvas. Changing the launch screen applies the next time CineNex starts.").font(.caption).foregroundStyle(.secondary)
+                        Text("The floating navigation dock uses Liquid Glass, with an opaque Reduce Transparency fallback. Changing the launch screen applies the next time CineNex starts.").font(.caption).foregroundStyle(.secondary)
                     }
                     CineNexPreferenceCard(title: "Your Home", symbol: "house") {
                         Toggle("Featured spotlight", isOn: $showFeatured)

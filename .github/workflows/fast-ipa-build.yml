@@ -110,6 +110,7 @@ jobs:
         run: |
           rm -rf Payload CineNex-unsigned.ipa
           mkdir -p Payload
+          python3 Scripts/verify_built_app.py DerivedDataDevice/Build/Products/Debug-iphoneos/CineNex.app
           cp -R DerivedDataDevice/Build/Products/Debug-iphoneos/CineNex.app Payload/CineNex.app
           ditto -c -k --sequesterRsrc --keepParent Payload CineNex-unsigned.ipa
           rm -rf Payload

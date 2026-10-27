@@ -36,6 +36,10 @@ targets:
     info:
       path: Generated/CineNex-Info.plist
       properties:
+        CINENEX_ANILIST_CLIENT_ID: "$(CINENEX_ANILIST_CLIENT_ID)"
+        CINENEX_MAL_CLIENT_ID: "$(CINENEX_MAL_CLIENT_ID)"
+        CINENEX_TRAKT_CLIENT_ID: "$(CINENEX_TRAKT_CLIENT_ID)"
+        CINENEX_TRAKT_REDIRECT_URI: "$(CINENEX_TRAKT_REDIRECT_URI)"
         CFBundleURLTypes:
           - CFBundleURLName: com.diam0ndnex.cinenex.oauth
             CFBundleURLSchemes: [cinenex]
@@ -53,6 +57,7 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Generated/CineNex.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.diam0ndnex.cinenex
         PRODUCT_NAME: CineNex
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads: NO
         INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
         CODE_SIGN_STYLE: Automatic

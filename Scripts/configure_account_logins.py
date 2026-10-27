@@ -43,6 +43,9 @@ def main():
     generated = root / 'Generated'
     generated.mkdir(exist_ok=True)
     (generated / 'OAuth.xcconfig').write_text(config)
+    # Public expected values let CI verify the processed app, not just build inputs.
+    (generated / 'AccountApplications.json').write_text(json.dumps(
+        {key: values.get(key, '').strip() for key in (*CLIENT_KEYS, REDIRECT_KEY)}, indent=2))
     (generated / 'CineNex.entitlements').write_bytes(plistlib.dumps(entitlements))
     team = os.environ.get('CINENEX_APP_TEAM_ID', '').strip()
     if team:

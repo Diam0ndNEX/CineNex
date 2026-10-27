@@ -22,7 +22,7 @@ struct CatalogPosterTile: View {
                 Text(item.yearLabel ?? item.kind.rawValue)
                 if showRatings, let rating = item.rating, rating > 0 {
                     Text("·")
-                    Image(systemName: "star.fill").font(.system(size: 9))
+                    Image(systemName: "star.fill").font(.caption2)
                     Text(String(format: "%.1f", rating))
                 }
             }
@@ -60,11 +60,11 @@ struct CatalogFeatureCard: View {
             LinearGradient(colors: [.clear, .black.opacity(0.20), .black.opacity(0.97)],
                            startPoint: .top, endPoint: .bottom).allowsHitTesting(false)
             VStack(alignment: .leading, spacing: 14) {
-                Label(item.kind == .movie ? "FEATURE FILM" : "SERIES SPOTLIGHT", systemImage: "sparkle")
-                    .font(.system(size: 9, weight: .heavy)).tracking(2).foregroundStyle(Color.cineNexAccent)
+                Label(item.kind == .movie ? "Featured movie" : "Featured series", systemImage: "sparkle")
+                    .font(.caption.weight(.semibold)).foregroundStyle(Color.cineNexAccent)
                 Button(action: onDetails) {
-                    Text(item.title).font(.system(size: 31, weight: .black, design: .serif))
-                        .tracking(-0.7).multilineTextAlignment(.leading).lineLimit(3)
+                    Text(item.title).font(.title.bold())
+                        .multilineTextAlignment(.leading).lineLimit(3)
                 }.foregroundStyle(.white)
                 HStack(spacing: 10) {
                     if let year = item.yearLabel { Text(year) }
@@ -170,8 +170,8 @@ struct CatalogBrowserView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("YOUR NEXT STORY").font(.system(size: 9, weight: .black)).tracking(2.5).foregroundStyle(Color.cineNexAccent)
-                    Text(title == "Browse" ? "Discover" : title).font(.system(size: 34, weight: .black, design: .serif))
+                    Text("Movies and series").font(.caption.weight(.semibold)).foregroundStyle(Color.cineNexAccent)
+                    Text(title == "Browse" ? "Discover" : title).font(.largeTitle.bold())
                     Text("Explore the catalog. Refine what catches your eye.").font(.subheadline).foregroundStyle(.secondary)
                 }
                 HStack(spacing: 12) {
@@ -179,10 +179,12 @@ struct CatalogBrowserView: View {
                     TextField("Filter loaded titles", text: $filters.query).submitLabel(.search).autocorrectionDisabled()
                     if !filters.query.isEmpty { Button("Clear search", systemImage: "xmark.circle.fill") { filters.query = "" }.labelStyle(.iconOnly) }
                 }.padding(15).background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 14))
-                HStack(spacing: 7) {
-                    kindButton("Everything", value: "all")
-                    kindButton("Movies", value: "movies")
-                    kindButton("Series", value: "series")
+                CineNexGlassGroup(spacing: 7) {
+                    HStack(spacing: 7) {
+                        kindButton("Everything", value: "all")
+                        kindButton("Movies", value: "movies")
+                        kindButton("Series", value: "series")
+                    }
                 }
                 HStack(spacing: 12) {
                     Menu {
@@ -194,7 +196,7 @@ struct CatalogBrowserView: View {
                     Button { showingFilters = true } label: {
                         Label(filters.activeCount == 0 ? "Refine" : "Refine · \(filters.activeCount)", systemImage: "slider.horizontal.3")
                             .font(.caption.weight(.bold)).padding(.horizontal, 13).padding(.vertical, 10)
-                            .background(Color.cineNexAccent.opacity(0.12), in: Capsule())
+                            .cineNexGlass(in: Capsule())
                     }
                     Button {
                         layout = layout == "grid" ? "list" : "grid"
@@ -247,8 +249,8 @@ struct CatalogBrowserView: View {
     private func kindButton(_ title: String, value: String) -> some View {
         Button { filters.kind = value } label: {
             Text(title).font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 12)
-                .foregroundStyle(filters.kind == value ? Color.cineNexBackground : Color.secondary)
-                .background(filters.kind == value ? Color.cineNexAccent : Color.cineNexSurface, in: Capsule())
+                .foregroundStyle(filters.kind == value ? Color.cineNexAccent : Color.primary)
+                .cineNexGlass(in: Capsule(), prominent: filters.kind == value)
         }.buttonStyle(.plain).accessibilityAddTraits(filters.kind == value ? .isSelected : [])
     }
 
@@ -340,8 +342,8 @@ struct CatalogDetailHero: View {
                 LinearGradient(colors: [.clear, .black.opacity(0.86)], startPoint: .center, endPoint: .bottom)
                     .allowsHitTesting(false)
                 HStack {
-                    Label(item.kind == .movie ? "FEATURE FILM" : "SERIES", systemImage: item.symbol)
-                        .font(.system(size: 10, weight: .heavy)).tracking(1.6)
+                    Label(item.kind == .movie ? "Movie" : "Series", systemImage: item.symbol)
+                        .font(.caption.weight(.semibold))
                     Spacer()
                     ShareLink(item: item.title) {
                         Image(systemName: "square.and.arrow.up").frame(width: 40, height: 40).cineNexGlass(in: Circle())
@@ -355,8 +357,8 @@ struct CatalogDetailHero: View {
 
     private var metadata: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(item.title).font(.system(size: 35, weight: .black, design: .serif))
-                .tracking(-0.7).fixedSize(horizontal: false, vertical: true)
+            Text(item.title).font(.largeTitle.bold())
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             HStack(spacing: 10) {
                 if let year = item.yearLabel { Text(year) }

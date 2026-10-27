@@ -25,9 +25,9 @@ struct CineNexSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("PERSONALIZE YOUR EXPERIENCE").font(.system(size: 9, weight: .black)).tracking(2.5).foregroundStyle(Color.cineNexAccent)
-                    Text("Settings").font(.system(size: 38, weight: .black, design: .serif))
-                    Text("Your layout. Your playback. Your rules.").font(.subheadline).foregroundStyle(.secondary)
+                    Text("Personalize CineNex").font(.caption.weight(.semibold)).foregroundStyle(Color.cineNexAccent)
+                    Text("Settings").font(.largeTitle.bold())
+                    Text("Appearance, playback, providers, and accounts.").font(.subheadline).foregroundStyle(.secondary)
                 }.padding(.vertical, 20)
                 CineNexPreferenceCard(title: "Appearance & layout", symbol: "paintpalette.fill") {
                     Button { showingAppearance = true } label: {

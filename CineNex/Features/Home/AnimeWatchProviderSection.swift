@@ -51,9 +51,9 @@ struct AnimeWatchProviderSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Label("WATCH ROOM", systemImage: "play.rectangle.fill")
-                .font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(Color.cineNexAccent)
-            Text("Choose your destination.").font(.title3.bold())
+            Label("Watch options", systemImage: "play.rectangle.fill")
+                .font(.caption.weight(.bold)).foregroundStyle(Color.cineNexAccent)
+            Text("Choose a website").font(.title3.bold())
             Text("Search this anime on a website, then choose the matching season, episode and server there.")
                 .font(.caption).foregroundStyle(.secondary)
             ForEach(AnimeWebsiteProvider.supported) { provider in

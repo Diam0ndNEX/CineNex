@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+ <defs>
+  <radialGradient id="night" cx="25%" cy="12%" r="110%"><stop stop-color="#2a2453"/><stop offset=".65" stop-color="#100f24"/><stop offset="1" stop-color="#080b17"/></radialGradient>
+  <linearGradient id="prism" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#c6acff"/><stop offset=".42" stop-color="#9a6cff"/><stop offset="1" stop-color="#55d9eb"/></linearGradient>
+  <linearGradient id="light" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#fff"/><stop offset="1" stop-color="#d5d8ff"/></linearGradient>
+ </defs>
+ <rect width="1024" height="1024" fill="url(#night)"/>
+ <path d="M 715 290 A 294 294 0 1 0 715 734" fill="none" stroke="#070914" stroke-width="108" stroke-linecap="round" transform="translate(0 18)"/>
+ <path d="M 715 278 A 294 294 0 1 0 715 746" fill="none" stroke="url(#prism)" stroke-width="100" stroke-linecap="round"/>
+ <path d="M 710 252 A 320 320 0 0 0 235 418" fill="none" stroke="#fff" stroke-opacity=".27" stroke-width="3" stroke-linecap="round"/>
+ <path d="M 472 377 Q 455 367 455 389 L 455 635 Q 455 657 474 647 L 684 527 Q 706 514 684 501 Z" fill="#080b17" opacity=".5" transform="translate(0 12)"/>
+ <path d="M 472 365 Q 455 355 455 377 L 455 623 Q 455 645 474 635 L 684 515 Q 706 502 684 489 Z" fill="url(#light)"/>
+</svg>

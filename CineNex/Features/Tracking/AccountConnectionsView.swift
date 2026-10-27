@@ -32,10 +32,13 @@ private struct AnimeAccountCard: View {
             } else {
                 Text("Sign in on \(provider.title) to view your anime list. Your password is entered only on the service's website.")
                     .font(.subheadline).foregroundStyle(.secondary)
-                Button("Sign in to \(provider.title)") { Task { await account.signIn() } }
-                    .buttonStyle(.borderedProminent).disabled(account.isWorking || !account.isConfigured)
-                if !account.isConfigured {
-                    Text("Login is not enabled in this build. CineNex's developer must register this service once; you do not need an API key.")
+                if account.isConfigured {
+                    Button("Sign in to \(provider.title)") { Task { await account.signIn() } }
+                        .buttonStyle(.borderedProminent).disabled(account.isWorking)
+                } else {
+                    Label("Sign-in unavailable in this build", systemImage: "info.circle")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                    Text("CineNex's \(provider.title) application registration is not complete. No API key is required from you. Login will be available in a build that includes the registered application.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
