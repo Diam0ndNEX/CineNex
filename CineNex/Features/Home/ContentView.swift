@@ -1186,7 +1186,7 @@ struct ContentView: View {
             let page = try await TMDBCatalogProvider(readAccessToken: token).catalogPage(page: nextPage)
             guard !Task.isCancelled, catalogGeneration == generation, !catalogLoading else { return }
             let activeToken = (try? await SourceSecureSettingsLoader.shared.load())?.tmdbToken?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard activeToken == token else {
+            guard !Task.isCancelled, catalogGeneration == generation, activeToken == token else {
                 catalogMoreError = "Your catalog connection changed. Pull down to refresh."
                 return
             }
