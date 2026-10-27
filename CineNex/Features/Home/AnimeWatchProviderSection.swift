@@ -50,50 +50,34 @@ struct AnimeWatchProviderSection: View {
     let onSelect: (AnimeWebsiteProvider) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Watch anime")
-                    .font(.title3.bold())
-                Spacer()
-                Text("WEB SOURCES")
-                    .font(.caption2.weight(.bold))
-                    .tracking(1)
-                    .foregroundStyle(.secondary)
-            }
-
-            Text("Choose a site, then select the matching season, episode, and available server on that site.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(AnimeWebsiteProvider.supported) { provider in
-                        Button {
-                            onSelect(provider)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "play.rectangle.fill")
-                                    .font(.subheadline)
-                                Text(provider.name)
-                                    .font(.subheadline.weight(.semibold))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(Color.cineNexSurface, in: Capsule())
-                            .overlay {
-                                Capsule().strokeBorder(Color.cineNexAccent.opacity(0.65), lineWidth: 1)
-                            }
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Watch options", systemImage: "play.rectangle.fill")
+                .font(.caption.weight(.bold)).foregroundStyle(Color.cineNexAccent)
+            Text("Choose a website").font(.title3.bold())
+            Text("Search this anime on a website, then choose the matching season, episode and server there.")
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(AnimeWebsiteProvider.supported) { provider in
+                Button { onSelect(provider) } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: "play.fill").font(.subheadline)
+                            .frame(width: 42, height: 42)
+                            .background(Color.cineNexAccent.opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(provider.name).font(.headline).foregroundStyle(.primary)
+                            Text("Open title search").font(.caption).foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityHint("Opens the anime search on \\(provider.name)")
-                    }
-                }
+                        Spacer()
+                        Image(systemName: "arrow.up.right").font(.caption.bold())
+                    }.foregroundStyle(Color.cineNexAccent)
+                        .padding(12).background(Color.cineNexBackground.opacity(0.7), in: RoundedRectangle(cornerRadius: 18))
+                }.buttonStyle(.plain)
+                    .accessibilityHint("Opens the anime search on \(provider.name)")
             }
+            Label("Website playback and account requirements vary by provider.", systemImage: "info.circle")
+                .font(.caption2).foregroundStyle(.secondary)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.cineNexSurface.opacity(0.65), in: RoundedRectangle(cornerRadius: 18))
+        .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 24))
     }
 }
 

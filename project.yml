@@ -10,7 +10,7 @@ packages:
     revision: 0ec31e4ecd31d08189b5aa64f86dc00f1434c978
 settings:
   base:
-    MARKETING_VERSION: "1.3.0"
+    MARKETING_VERSION: "3.0.0"
     CURRENT_PROJECT_VERSION: "1"
     INFOPLIST_KEY_CFBundleShortVersionString: "$(MARKETING_VERSION)"
     INFOPLIST_KEY_CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
@@ -25,10 +25,24 @@ settings:
     INFOPLIST_KEY_NSLocalNetworkUsageDescription: CineNex connects to peers and its local streaming server for torrent playback.
     OTHER_LDFLAGS: "$(inherited) -ObjC"
     SWIFT_EMIT_LOC_STRINGS: YES
+    INFOPLIST_KEY_CINENEX_ANILIST_CLIENT_ID: "$(CINENEX_ANILIST_CLIENT_ID)"
+    INFOPLIST_KEY_CINENEX_MAL_CLIENT_ID: "$(CINENEX_MAL_CLIENT_ID)"
+    INFOPLIST_KEY_CINENEX_TRAKT_CLIENT_ID: "$(CINENEX_TRAKT_CLIENT_ID)"
+    INFOPLIST_KEY_CINENEX_TRAKT_REDIRECT_URI: "$(CINENEX_TRAKT_REDIRECT_URI)"
 targets:
   CineNex:
     type: application
     platform: iOS
+    info:
+      path: Generated/CineNex-Info.plist
+      properties:
+        CINENEX_ANILIST_CLIENT_ID: "$(CINENEX_ANILIST_CLIENT_ID)"
+        CINENEX_MAL_CLIENT_ID: "$(CINENEX_MAL_CLIENT_ID)"
+        CINENEX_TRAKT_CLIENT_ID: "$(CINENEX_TRAKT_CLIENT_ID)"
+        CINENEX_TRAKT_REDIRECT_URI: "$(CINENEX_TRAKT_REDIRECT_URI)"
+        CFBundleURLTypes:
+          - CFBundleURLName: com.diam0ndnex.cinenex.oauth
+            CFBundleURLSchemes: [cinenex]
     sources:
       - path: CineNex
     dependencies:
@@ -40,14 +54,17 @@ targets:
         embed: true
     settings:
       base:
+        CODE_SIGN_ENTITLEMENTS: Generated/CineNex.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.diam0ndnex.cinenex
         PRODUCT_NAME: CineNex
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads: NO
         INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
         CODE_SIGN_STYLE: Automatic
     scheme:
       testTargets:
         - CineNexTests
+        - CineNexUITests
   CineNexTests:
     type: bundle.unit-test
     platform: iOS
@@ -57,4 +74,17 @@ targets:
       - target: CineNex
     settings:
       base:
+        CODE_SIGN_ENTITLEMENTS: Generated/CineNex.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.diam0ndnex.cinenex.tests
+
+  CineNexUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: CineNexUITests
+    dependencies:
+      - target: CineNex
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.diam0ndnex.cinenex.uitests
+        TEST_TARGET_NAME: CineNex

@@ -41,6 +41,12 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
     @State private var isSettingsPresented = false
     @State private var positionSeconds = 0.0
     @State private var durationSeconds = 0.0
+    @AppStorage("cinenex.resumePlayback") private var resumePlayback = true
+    @AppStorage("cinenex.defaultPlaybackSpeed") private var defaultPlaybackSpeed = 1.0
+    @AppStorage("cinenex.bufferStrategy") private var bufferStrategy = "balanced"
+    @AppStorage("cinenex.playerControlsDelay") private var controlsDelay = 5
+    @AppStorage("cinenex.showTransferHUD") private var showTransferHUD = false
+    @State private var sleepDeadline: Date?
     @State private var failure: String?
     @State private var playbackTask: Task<Void, Never>?
     @State private var monitorTask: Task<Void, Never>?
@@ -64,30 +70,23 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
             .ignoresSafeArea()
             .accessibilityLabel(chrome.isVisible ? "Hide playback controls" : "Show playback controls")
 
-            LinearGradient(
-                colors: [.black.opacity(0.78), .clear, .clear, .black.opacity(0.82)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-            .opacity(chrome.isVisible ? 1 : 0)
-
             VStack(spacing: 0) {
+                CineNexGlassGroup(spacing: 12) {
                 HStack(spacing: 12) {
                     Button(action: onClose) {
                         Image(systemName: "xmark")
                             .font(.headline.weight(.bold))
                             .frame(width: 44, height: 44)
-                            .background(.ultraThinMaterial, in: Circle())
+                            .cineNexGlass(in: Circle())
                     }
                     .accessibilityLabel("Close player")
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(source.title)
+                        Text(item.title)
                             .font(.headline.weight(.semibold))
+                            .shadow(color: .black, radius: 3, y: 1)
                             .lineLimit(1)
-                        Text(source.providerName)
+                        Text(item.kind == .series ? "S\(seasonNumber) · E\(episodeNumber)  /  \(source.providerName)" : source.providerName)
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.72))
                             .lineLimit(1)
@@ -95,23 +94,48 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
 
                     Spacer(minLength: 8)
 
-                    Button {
-                        isSettingsPresented = true
+                    Menu {
+                        ForEach([15, 30, 60], id: \.self) { minutes in
+                            Button("Pause in \(minutes) minutes") { sleepDeadline = Date().addingTimeInterval(Double(minutes * 60)) }
+                        }
+                        if sleepDeadline != nil { Button("Cancel sleep timer", role: .cancel) { sleepDeadline = nil } }
+                    } label: {
+                        Image(systemName: sleepDeadline == nil ? "moon.zzz" : "moon.zzz.fill")
+                            .frame(width: 44, height: 44).cineNexGlass(in: Circle())
+                    }.accessibilityLabel("Sleep timer")
+                    Menu {
+                        Button("Audio, subtitles and playback speed") { isSettingsPresented = true }
+                        Toggle("Show transfer information", isOn: $showTransferHUD)
+                        Picker("Hide controls after", selection: $controlsDelay) {
+                            ForEach([3, 5, 8], id: \.self) { delay in Text("\(delay) seconds").tag(delay) }
+                        }
+                        Picker("Buffer strategy · next playback", selection: $bufferStrategy) {
+                            ForEach(TorrentPlaybackTuning.BufferStrategy.allCases) { strategy in
+                                Text(strategy.title).tag(strategy.rawValue)
+                            }
+                        }
                     } label: {
                         Image(systemName: "slider.horizontal.3")
                             .font(.headline.weight(.semibold))
                             .frame(width: 44, height: 44)
-                            .background(.ultraThinMaterial, in: Circle())
+                            .cineNexGlass(in: Circle())
                     }
                     .accessibilityLabel("Playback settings")
+                }
                 }
                 .padding(.horizontal, 18)
                 .padding(.top, 12)
                 .opacity(chrome.isVisible || failure != nil ? 1 : 0)
                 .allowsHitTesting(chrome.isVisible || failure != nil)
 
-                Spacer()
-
+                if showTransferHUD && isTorrentSource && chrome.isVisible {
+                    TorrentTransferBadge().padding(.horizontal, 18).padding(.top, 12)
+                }
+                if let sleepDeadline {
+                    Text("Sleep timer · pauses at \(sleepDeadline.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption).foregroundStyle(.white.opacity(0.7)).padding(.top, 10)
+                        .opacity(chrome.isVisible ? 1 : 0)
+                }
                 if let failure {
                     VStack(spacing: 14) {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -135,7 +159,7 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
                     }
                     .padding(24)
                     .frame(maxWidth: 360)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22))
+                    .background(Color.black.opacity(0.86), in: RoundedRectangle(cornerRadius: 22))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     SceneBoxTransportControls(
@@ -159,13 +183,25 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
             }
             if isBuffering {
                 VStack(spacing: 12) {
-                    ProgressView("Buffering…")
-                    Text("Waiting for video data. If this continues, choose another release.")
-                        .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    Button("Choose another release", action: onClose).buttonStyle(.bordered)
+                    if isTorrentSource {
+                        TorrentBufferingStatusView(playerBufferFraction: Double(player.bufferFill), compact: true)
+                    } else {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(player.state == .opening ? "Opening video" : "Buffering video").font(.headline)
+                            ProgressView(value: min(1, max(0, Double(player.bufferFill))))
+                                .tint(Color.cineNexAccent)
+                            Text("Player buffer · \(Int((max(0, min(1, player.bufferFill)) * 100).rounded()))%")
+                                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            Text("Receiving media from \(source.providerName). Transfer speed is unavailable for this source.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(20).background(Color.cineNexSurface.opacity(0.96), in: RoundedRectangle(cornerRadius: 22))
+                    }
+                    Button("Choose another release", action: onClose)
+                        .buttonStyle(.bordered).controlSize(.small)
                 }
-                .padding(20).frame(maxWidth: 300)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                .frame(maxWidth: 370)
+                .padding(.horizontal, 20)
             }
         }
         .foregroundStyle(.white)
@@ -184,6 +220,14 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
             subtitles.syncEmbedded(on: player)
         }
         .task(id: chrome.autoHideID) { await chrome.autoHide() }
+        .task(id: sleepDeadline) {
+            guard let deadline = sleepDeadline else { return }
+            do { try await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow))) } catch { return }
+            guard !Task.isCancelled else { return }
+            player.pause()
+            sleepDeadline = nil
+            chrome.reveal(autoHide: false)
+        }
         .onChange(of: isSettingsPresented) { _, open in
             if open {
                 chrome.holdVisible()
@@ -245,7 +289,7 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
         durationSeconds = 0
         isStalled = false
         didSeekToStart = false
-        resumePosition = item.kind == .movie
+        resumePosition = resumePlayback && item.kind == .movie
             ? PlaybackProgressStore.shared.progress(for: item.id)?.position ?? 0 : 0
         subtitles = SubtitlesController()
         chrome.reveal(autoHide: false)
@@ -258,11 +302,13 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
                 let media = try Media(url: source.url)
                 if !source.url.isFileURL {
                     let isTorrent = source.url.host == "127.0.0.1" || source.url.host == "localhost"
-                    media.addOption(":network-caching=\(isTorrent ? 8000 : 1500)")
+                    let cache = isTorrent ? TorrentPlaybackTuning.strategy(bufferStrategy).playerCacheMilliseconds : 1_500
+                    media.addOption(":network-caching=\(cache)")
                     if !isTorrent { media.addOption(":http-reconnect") }
                 }
                 PlaybackDiagnostics.record("Starting VLC media")
                 try player.play(media)
+                try? player.setPlaybackRate(PlaybackRate(PlaybackPreferences.speed(defaultPlaybackSpeed)))
                 loadSubtitlesIfAvailable()
                 let controller = SceneBoxNowPlayingController(player: player, title: item.title)
                 controller.begin(artworkURL: item.posterURL)
@@ -320,6 +366,10 @@ private struct LoadedSceneBoxStreamPlaybackView: View {
                 nowPlayingController?.refresh()
             }
         }
+    }
+
+    private var isTorrentSource: Bool {
+        source.url.host == "127.0.0.1" || source.url.host == "localhost"
     }
 
     private var isBuffering: Bool {
@@ -380,24 +430,29 @@ private struct SceneBoxTransportControls: View {
     let onEditingChanged: (Bool) -> Void
     let onInteraction: () -> Void
     @State private var scrubPosition: Double?
+    @AppStorage("cinenex.skipSeconds") private var storedSkipSeconds = 10
+    private var skipSeconds: Int { PlaybackPreferences.skipSeconds(storedSkipSeconds) }
 
     private var sliderPosition: Double {
         min(max(scrubPosition ?? positionSeconds, 0), max(durationSeconds, 1))
     }
 
     var body: some View {
-        VStack(spacing: 14) {
-            HStack(spacing: 42) {
+        CineNexGlassGroup(spacing: 18) {
+        VStack(spacing: 0) {
+            Spacer(minLength: 16)
+            HStack(spacing: 24) {
                 Button {
-                    try? player.seek(by: .seconds(-10), fast: true)
+                    try? player.seek(by: .seconds(-Double(skipSeconds)), fast: true)
                     onInteraction()
                 } label: {
-                    Image(systemName: "gobackward.10")
+                    Image(systemName: "gobackward.\(skipSeconds)")
                         .font(.system(size: 27, weight: .medium))
-                        .frame(width: 48, height: 48)
+                        .frame(width: 52, height: 52)
+                        .cineNexGlass(in: Circle())
                 }
                 .disabled(!player.isSeekable)
-                .accessibilityLabel("Back 10 seconds")
+                .accessibilityLabel("Back \(skipSeconds) seconds")
 
                 Button {
                     player.togglePlayPause()
@@ -405,23 +460,25 @@ private struct SceneBoxTransportControls: View {
                 } label: {
                     Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 28, weight: .semibold))
-                        .frame(width: 62, height: 62)
-                        .background(.ultraThinMaterial, in: Circle())
+                        .frame(width: 70, height: 70)
+                        .cineNexGlass(in: Circle(), prominent: true)
                 }
                 .accessibilityLabel(player.isPlaying ? "Pause playback" : "Resume playback")
 
                 Button {
-                    try? player.seek(by: .seconds(10), fast: true)
+                    try? player.seek(by: .seconds(Double(skipSeconds)), fast: true)
                     onInteraction()
                 } label: {
-                    Image(systemName: "goforward.10")
+                    Image(systemName: "goforward.\(skipSeconds)")
                         .font(.system(size: 27, weight: .medium))
-                        .frame(width: 48, height: 48)
+                        .frame(width: 52, height: 52)
+                        .cineNexGlass(in: Circle())
                 }
                 .disabled(!player.isSeekable)
-                .accessibilityLabel("Forward 10 seconds")
+                .accessibilityLabel("Forward \(skipSeconds) seconds")
             }
             .buttonStyle(.plain)
+            Spacer(minLength: 20)
 
             HStack(spacing: 10) {
                 Text(timecode(scrubPosition ?? positionSeconds))
@@ -446,14 +503,17 @@ private struct SceneBoxTransportControls: View {
                 .disabled(!player.isSeekable || durationSeconds <= 0)
                 .accessibilityLabel("Playback position")
 
-                Text(timecode(durationSeconds))
+                Text("−" + timecode(max(0, durationSeconds - (scrubPosition ?? positionSeconds))))
                     .font(.caption.monospacedDigit())
                     .frame(minWidth: 42, alignment: .trailing)
             }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 4)
+            .shadow(color: .black.opacity(0.85), radius: 4, y: 1)
         }
         .foregroundStyle(.white)
-        .padding(18)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22))
+        .frame(maxWidth: 620, maxHeight: .infinity)
+        }
     }
 
     private func timecode(_ seconds: Double) -> String {

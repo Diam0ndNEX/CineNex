@@ -61,7 +61,7 @@ struct TorrentStartupPiecePriorityPlan: Equatable {
         pieceLength: Int64,
         pieceCount: Int64,
         headBytes: Int64 = 2 * 1_024 * 1_024,
-        tailBytes: Int64 = 16 * 1_024 * 1_024,
+        tailBytes: Int64 = 1 * 1_024 * 1_024,
         headPriority: Int = 7,
         tailPriority: Int = 5
     ) -> TorrentStartupPiecePriorityPlan? {
@@ -177,10 +177,18 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
     private var preparedFile: TorrentPreparedFile?
     private var prioritizedPieces = Set<Int64>()
     private var startupPiecePriorities: [Int64: Int] = [:]
+    private var activePieceLength: Int64 = 0
     private var deadlinePieces = Set<Int64>()
     private var lifecycleGeneration: UInt64 = 0
     private var isStopping = false
     private var lastSnapshotRefresh = -Double.infinity
+    private let monitorOwner = UUID()
+    private var monitorTask: Task<Void, Never>?
+    private var monitorStarted = ProcessInfo.processInfo.systemUptime
+    private var lastTelemetryUpdate = -Double.infinity
+    private var lastFailure: String?
+    private var pendingPieceRequests: [UUID: Set<Int64>] = [:]
+    private var waitingBufferPieces: Set<Int64> { pendingPieceRequests.values.reduce(into: Set<Int64>()) { $0.formUnion($1) } }
     private var stopWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(descriptor: StremioTorrentDescriptor, onPreparationUpdate: @escaping @Sendable (String) -> Void = { _ in }) {
@@ -190,10 +198,14 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
 
     func prepareFiles(for request: PlaybackSourceRequest) async throws -> [TorrentPreparedFile] {
         await waitForStopCompletion()
+        try Task.checkCancellation()
         guard request.isValid else { throw TorrentStreamingError.invalidRequest }
         if let preparedFile { return [preparedFile] }
 
         let generation = lifecycleGeneration
+        monitorStarted = ProcessInfo.processInfo.systemUptime
+        lastFailure = nil
+        await TorrentPlaybackMonitor.shared.begin(owner: monitorOwner)
         do {
             let files = try await prepareFilesInternal(for: request, generation: generation)
             try ensureCurrentLifecycle(generation)
@@ -201,6 +213,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         } catch {
             PlaybackDiagnostics.record("torrent.prepare.error", details: ["domain": (error as NSError).domain, "code": String((error as NSError).code), "reason": error.localizedDescription])
             if lifecycleGeneration == generation {
+                lastFailure = error is CancellationError ? nil : error.localizedDescription
                 await stop()
             }
             throw error
@@ -223,6 +236,10 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
             .appendingPathComponent("CineNex", isDirectory: true)
             .appendingPathComponent("Torrents", isDirectory: true)
             .appendingPathComponent(descriptor.infoHash, isDirectory: true)
+        self.downloadRoot = root
+        await TorrentCacheMaintenance.shared.register(root)
+        await TorrentCacheMaintenance.shared.trim()
+        try ensureCurrentLifecycle(generation)
         let torrentsDirectory = root.appendingPathComponent("metadata", isDirectory: true)
         let resumeDirectory = root.appendingPathComponent("resume", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -231,6 +248,9 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
 
         let settings = Session.Settings()
         settings.agentName = "CineNex"
+        let profile = TorrentTransferProfile(rawValue: UserDefaults.standard.string(forKey: "cinenex.transferProfile") ?? "balanced") ?? .balanced
+        settings.maxDownloadSpeed = numericCast(profile.downloadBytesPerSecond)
+        settings.maxUploadSpeed = numericCast(profile.uploadBytesPerSecond)
         settings.outgoingInterfaces = ""
         settings.listenInterfaces = "0.0.0.0:0,[::]:0"
         settings.maxActiveTorrents = 1
@@ -327,7 +347,8 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
                 fileStartOffset: Int64(selectedFile.fileOffset),
                 fileLength: Int64(selectedFile.size),
                 pieceLength: Int64(snapshot.pieceLength),
-                pieceCount: Int64(pieceStates.count)
+                pieceCount: Int64(pieceStates.count),
+                headBytes: TorrentPlaybackTuning.strategy(UserDefaults.standard.string(forKey: "cinenex.bufferStrategy")).openingBytes
               ) else {
             throw TorrentStreamingError.invalidTorrentLayout
         }
@@ -337,7 +358,18 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
                 throw TorrentStreamingError.invalidTorrentLayout
             }
         }
+        activePieceLength = Int64(snapshot.pieceLength)
         startupPiecePriorities = startupPlan.priorities
+        // A sparse file existing is not evidence this release can start. Verify actual startup
+        // pieces before advertising the loopback URL, so automatic selection can reject dead swarms.
+        let startupPieces = Set(startupPlan.priorities.keys)
+        for piece in startupPieces.sorted() {
+            guard handle.setPieceDeadline(0, at: Int(piece)) else {
+                throw TorrentStreamingError.invalidTorrentLayout
+            }
+        }
+        deadlinePieces = startupPieces
+        try await waitForStartupBuffer(pieces: startupPieces, on: handle, generation: generation)
 
         try await waitForFile(at: fileURL, expectedLength: Int64(selectedFile.size), generation: generation)
         try ensureCurrentLifecycle(generation)
@@ -369,6 +401,9 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         PlaybackDiagnostics.record("torrent.file.prepared", details: ["file_index": String(selectedFile.index), "bytes": String(selectedFile.size), "piece_length": String(snapshot.pieceLength), "content_type": contentType])
         self.reader = reader
         self.preparedFile = prepared
+        await publishTelemetry(handle.snapshot, stage: .ready, detail: "Opening buffer verified. Starting the player…", required: Set(startupPiecePriorities.keys), force: true)
+        try ensureCurrentLifecycle(generation)
+        startTelemetryMonitoring(generation: generation)
         return [prepared]
     }
 
@@ -388,7 +423,9 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
               pieces.upperBound <= pieceCount,
               let expandedRange = TorrentPiecePriorityWindow.expandedRange(
                 for: pieces,
-                pieceCount: pieceCount
+                pieceCount: pieceCount,
+                lookBehind: min(2, (2 * 1_024 * 1_024) / max(1, activePieceLength)),
+                lookAhead: min(24, max(1, (8 * 1_024 * 1_024) / max(1, activePieceLength)))
               ) else {
             throw TorrentStreamingError.invalidTorrentLayout
         }
@@ -443,7 +480,10 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
               pieces.allSatisfy({ $0 >= 0 && $0 < Int64(initialPieceStates.count) }) else {
             throw TorrentStreamingError.invalidTorrentLayout
         }
-        for tick in 0..<360 {
+        let readID = UUID()
+        defer { pendingPieceRequests.removeValue(forKey: readID) }
+        let started = ProcessInfo.processInfo.systemUptime
+        while ProcessInfo.processInfo.systemUptime - started < 30 {
             try Task.checkCancellation()
             try ensureCurrentLifecycle(generation)
             refreshSnapshot(handle)
@@ -453,17 +493,87 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
                 index < Int64(availablePieces.count) &&
                 availablePieces[Int(index)].boolValue
             }) {
+                if pendingPieceRequests.removeValue(forKey: readID) != nil {
+                    let remaining = waitingBufferPieces
+                    await publishTelemetry(handle.snapshot, stage: remaining.isEmpty ? .ready : .buffering,
+                                           detail: remaining.isEmpty ? "Requested video data is ready." : "Downloading video ranges requested by the player.",
+                                           required: remaining.isEmpty ? Set(pieces) : remaining, force: true)
+                }
                 return
             }
+            pendingPieceRequests[readID] = Set(pieces)
+            await publishTelemetry(handle.snapshot, stage: .buffering, detail: "Downloading video ranges requested by the player.", required: waitingBufferPieces)
             PlaybackDiagnostics.sample("torrent.pieces.wait", details: [
                 "from": String(pieces.lowerBound), "to_exclusive": String(pieces.upperBound),
-                "wait_seconds": String(tick / 4), "download_bytes_per_second": String(handle.snapshot.downloadRate),
+                "wait_seconds": String(Int(ProcessInfo.processInfo.systemUptime - started)), "download_bytes_per_second": String(handle.snapshot.downloadRate),
                 "peers": String(handle.snapshot.numberOfPeers), "seeds": String(handle.snapshot.numberOfSeeds)
             ])
             try await Task.sleep(for: .milliseconds(250))
         }
         PlaybackDiagnostics.record("torrent.pieces.timeout")
         throw TorrentStreamingError.pieceAvailabilityTimeout
+    }
+
+    private func waitForStartupBuffer(pieces: Set<Int64>, on handle: TorrentHandle, generation: UInt64) async throws {
+        guard !pieces.isEmpty else { throw TorrentStreamingError.invalidTorrentLayout }
+        let started = ProcessInfo.processInfo.systemUptime
+        onPreparationUpdate("Downloading the opening buffer…")
+        while ProcessInfo.processInfo.systemUptime - started < 20 {
+            try ensureCurrentLifecycle(generation)
+            refreshSnapshot(handle)
+            let snapshot = handle.snapshot
+            guard ProcessInfo.processInfo.systemUptime - started < 20 else { break }
+            let states = (snapshot.pieces ?? []).map(\.boolValue)
+            let counts = TorrentStartupReadiness.counts(required: pieces, available: states)
+            await publishTelemetry(snapshot, stage: .initialBuffer,
+                                   detail: "Verifying the opening and container index pieces before playback.", required: pieces)
+            if counts.ready == counts.total {
+                PlaybackDiagnostics.record("torrent.startup.ready", details: ["pieces": String(counts.total), "elapsed_seconds": String(ProcessInfo.processInfo.systemUptime - started)])
+                return
+            }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        PlaybackDiagnostics.record("torrent.startup.timeout", details: ["required_pieces": String(pieces.count)])
+        throw TorrentStreamingError.pieceAvailabilityTimeout
+    }
+
+    private func publishTelemetry(_ snapshot: TorrentHandle.Snapshot, stage: TorrentPlaybackSnapshot.Stage,
+                                  detail: String, required: Set<Int64> = [], force: Bool = false) async {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard force || now - lastTelemetryUpdate >= 0.75 else { return }
+        lastTelemetryUpdate = now
+        let counts = TorrentStartupReadiness.counts(required: required, available: (snapshot.pieces ?? []).map(\.boolValue))
+        let value = TorrentPlaybackSnapshot(stage: stage, detail: detail,
+            downloadBytesPerSecond: snapshot.downloadRate, downloadedBytes: snapshot.totalDownload,
+            peers: Int(clamping: snapshot.numberOfPeers), seeds: Int(clamping: snapshot.numberOfSeeds),
+            availablePieces: counts.ready, requiredPieces: counts.total,
+            elapsedSeconds: max(0, Int(now - monitorStarted)), sampleDate: Date())
+        await TorrentPlaybackMonitor.shared.publish(value, owner: monitorOwner)
+    }
+
+    private func startTelemetryMonitoring(generation: UInt64) {
+        monitorTask?.cancel()
+        monitorTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                guard let self else { return }
+                guard await self.samplePlaybackTelemetry(generation: generation) else { return }
+            }
+        }
+    }
+
+    private func samplePlaybackTelemetry(generation: UInt64) async -> Bool {
+        guard lifecycleGeneration == generation, !isStopping, let handle else { return false }
+        refreshSnapshot(handle)
+        let isWaiting = !waitingBufferPieces.isEmpty
+        await publishTelemetry(handle.snapshot, stage: isWaiting ? .buffering : .ready,
+                               detail: isWaiting ? "Downloading the video range requested by the player." : "Streaming verified torrent data to the player.",
+                               required: waitingBufferPieces)
+        return lifecycleGeneration == generation && !isStopping
+    }
+
+    private var retainPartialTransfers: Bool {
+        UserDefaults.standard.object(forKey: "cinenex.retainPartialTransfers") as? Bool ?? true
     }
 
     func stop() async {
@@ -473,6 +583,9 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         }
         isStopping = true
         lifecycleGeneration &+= 1
+        monitorTask?.cancel()
+        monitorTask = nil
+        await TorrentPlaybackMonitor.shared.finish(owner: monitorOwner, error: lastFailure)
         defer {
             isStopping = false
             let waiters = stopWaiters
@@ -484,17 +597,23 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         }
         if let handle, let session {
             handle.pause()
-            session.removeTorrent(handle, deleteFiles: true)
+            session.removeTorrent(handle, deleteFiles: false)
         }
         session?.shutdown()
         if let downloadRoot {
-            try? FileManager.default.removeItem(at: downloadRoot)
+            if retainPartialTransfers {
+                try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: downloadRoot.path)
+            }
+            await TorrentCacheMaintenance.shared.release(downloadRoot, removeIfUnused: !retainPartialTransfers)
+            await TorrentCacheMaintenance.shared.trim()
         }
         self.reader = nil
         self.preparedFile = nil
         self.prioritizedPieces.removeAll()
         self.startupPiecePriorities.removeAll()
+        self.activePieceLength = 0
         self.deadlinePieces.removeAll()
+        self.pendingPieceRequests.removeAll()
         self.handle = nil
         lastSnapshotRefresh = -Double.infinity
         self.session = nil
@@ -504,7 +623,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
     /// VLC makes many small byte reads. Reuse one snapshot per polling interval.
     private func refreshSnapshot(_ handle: TorrentHandle) {
         let now = ProcessInfo.processInfo.systemUptime
-        guard now - lastSnapshotRefresh >= 0.25 else { return }
+        guard now - lastSnapshotRefresh >= 0.5 else { return }
         handle.updateSnapshot()
         lastSnapshotRefresh = ProcessInfo.processInfo.systemUptime
     }
@@ -529,18 +648,21 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
     ) async throws -> TorrentHandle.Snapshot {
         let started = ProcessInfo.processInfo.systemUptime
         var lastUpdate = -Double.infinity
-        while ProcessInfo.processInfo.systemUptime - started < 60 {
+        while ProcessInfo.processInfo.systemUptime - started < 20 {
             try ensureCurrentLifecycle(generation)
             let snapshotStarted = ProcessInfo.processInfo.systemUptime
             PlaybackDiagnostics.sample("torrent.metadata.snapshot.begin", details: [:])
             refreshSnapshot(handle)
             let snapshot = handle.snapshot
             let now = ProcessInfo.processInfo.systemUptime
+            guard now - started < 20 else { break }
             let snapshotDuration = now - snapshotStarted
             if snapshotDuration > 1 {
                 PlaybackDiagnostics.record("torrent.metadata.snapshot.slow", details: ["seconds": String(format: "%.3f", snapshotDuration)])
             }
-            if now - lastUpdate >= 5 {
+            await publishTelemetry(snapshot, stage: snapshot.numberOfPeers == 0 ? .findingPeers : .metadata,
+                                   detail: snapshot.numberOfPeers == 0 ? "Contacting trackers and discovering peers." : "Peers connected. Receiving the torrent file list.")
+            if now - lastUpdate >= 2 {
                 lastUpdate = now
                 let peers = snapshot.numberOfPeers
                 onPreparationUpdate(peers == 0
@@ -567,7 +689,7 @@ actor XITRIXTorrentPlaybackEngine: TorrentPlaybackEngine, TorrentPieceAvailabili
         expectedLength: Int64,
         generation: UInt64
     ) async throws {
-        for _ in 0..<120 {
+        for _ in 0..<20 {
             try ensureCurrentLifecycle(generation)
             if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
                let size = attributes[.size] as? NSNumber,

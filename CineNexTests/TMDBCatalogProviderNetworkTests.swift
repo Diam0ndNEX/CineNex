@@ -96,6 +96,23 @@ final class TMDBCatalogProviderNetworkTests: XCTestCase {
         }
     }
 
+    func testCatalogPaginationUsesTypedDiscoveryEndpointsAndKeepsBothMediaKinds() async throws {
+        StubTMDBURLProtocol.handler = { request in
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+            XCTAssertEqual(components.queryItems?.first { $0.name == "page" }?.value, "2")
+            XCTAssertEqual(components.queryItems?.first { $0.name == "include_adult" }?.value, "false")
+            let isMovie = request.url!.path.hasSuffix("/movie")
+            XCTAssertTrue(isMovie || request.url!.path.hasSuffix("/tv"))
+            let result: [String: Any] = isMovie ? ["id": 7, "title": "Film"] : ["id": 7, "name": "Series"]
+            let data = try JSONSerialization.data(withJSONObject: ["page": 2, "total_pages": 4, "results": [result]])
+            return (self.response(for: request, statusCode: 200), data)
+        }
+        let page = try await TMDBCatalogProvider(readAccessToken: "test-token", session: makeSession()).catalogPage(page: 2)
+        XCTAssertEqual(Set(page.items.map(\.id)), ["tmdb-movie-7", "tmdb-tv-7"])
+        XCTAssertEqual(page.page, 2)
+        XCTAssertEqual(page.totalPages, 4)
+    }
+
     private func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [StubTMDBURLProtocol.self]

@@ -19,6 +19,17 @@ final class StremioAddonPlaybackProviderTests: XCTestCase {
         XCTAssertEqual(id, "tt1234567")
     }
 
+    func testAutomaticResolverSkipsTMDBWhenCatalogAlreadySuppliesIMDbID() async throws {
+        ProviderStubURLProtocol.handler = { _ in
+            XCTFail("A known IMDb ID must not wait for TMDB even when a token is configured.")
+            throw URLError(.badServerResponse)
+        }
+        let resolver = AutomaticExternalIDResolver(tmdbReadAccessToken: "fixture-token", session: makeSession())
+        let result = try await resolver.imdbID(for: PlaybackSourceRequest(title: "Example", mediaKind: .movie,
+                                                                        tmdbID: 42, imdbID: "tt1234567"))
+        XCTAssertEqual(result, "tt1234567")
+    }
+
     func testUsesExistingIMDbIDBeforeTitleLookup() async throws {
         ProviderStubURLProtocol.handler = { _ in
             XCTFail("A valid IMDb ID should be used directly without a network lookup.")
@@ -86,6 +97,44 @@ final class StremioAddonPlaybackProviderTests: XCTestCase {
         } catch {
             XCTFail("Expected CancellationError, received \(error).")
         }
+    }
+
+    func testManyConfiguredAddonsUseBoundedParallelRequests() async throws {
+        BoundedAddonURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [BoundedAddonURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let urls = (0..<12).map { URL(string: "https://addons.example.test/instance-\($0)/manifest.json")! }
+        let provider = try StremioAddonPlaybackProvider(
+            manifestURLs: urls,
+            externalIDResolver: StubExternalIDResolver(value: "tt1234567"),
+            session: session
+        )
+        let result = try await provider.discover(for: PlaybackSourceRequest(title: "Example", mediaKind: .movie))
+        let statistics = BoundedAddonURLProtocol.statistics()
+        XCTAssertEqual(result.providerStatuses.count, 12)
+        XCTAssertEqual(statistics.completed, 12)
+        XCTAssertLessThanOrEqual(statistics.maximum, 4)
+        XCTAssertGreaterThan(statistics.maximum, 1)
+    }
+
+    func testSeparateConfigurationsOnSameHostHaveIndependentCounts() async throws {
+        ProviderStubURLProtocol.handler = { request in
+            if request.url!.path.hasSuffix("manifest.json") {
+                return (self.response(request, 200), Data(#"{"id":"addon","version":"1","name":"Addon","resources":["stream"],"types":["movie"]}"#.utf8))
+            }
+            let body = request.url!.path.contains("first")
+                ? #"{"streams":[{"url":"https://media.example.test/movie.mp4"}]}"#
+                : #"{"streams":[]}"#
+            return (self.response(request, 200), Data(body.utf8))
+        }
+        let provider = try StremioAddonPlaybackProvider(
+            manifestURLs: [URL(string: "https://addons.example.test/first/manifest.json")!, URL(string: "https://addons.example.test/second/manifest.json")!],
+            externalIDResolver: StubExternalIDResolver(value: "tt1234567"), session: makeSession()
+        )
+        let result = try await provider.discover(for: PlaybackSourceRequest(title: "Example", mediaKind: .movie))
+        XCTAssertEqual(result.providerStatuses.map(\.outcome), [.found(directSourceCount: 1, torrentSourceCount: 0), .noSources])
     }
 
     override func tearDown() {
@@ -300,4 +349,90 @@ private final class ProviderStubURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+private final class BoundedAddonURLProtocol: URLProtocol {
+    // URLProtocol explicitly cannot conform to Sendable. Only this one-shot response crosses
+    // the task boundary; its lock arbitrates cancellation/delivery and owns the callback target.
+    // Keep this test-only bridge until URLProtocol has a concurrency-safe callback API.
+    private final class PendingResponse: @unchecked Sendable {
+        private let lock = NSLock()
+        private var target: BoundedAddonURLProtocol?
+        private var cancelled = false
+        func install(_ target: BoundedAddonURLProtocol) {
+            lock.lock()
+            defer { lock.unlock() }
+            if !cancelled { self.target = target }
+        }
+        func cancel() {
+            lock.lock()
+            defer { lock.unlock() }
+            cancelled = true
+            target = nil
+        }
+        func deliver() {
+            lock.lock()
+            let target = self.target
+            self.target = nil
+            lock.unlock()
+            target?.finish(#"{"streams":[]}"#)
+        }
+    }
+    private let pendingResponse = PendingResponse()
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var active = 0
+    nonisolated(unsafe) private static var maximum = 0
+    nonisolated(unsafe) private static var completed = 0
+
+    static func reset() {
+        lock.lock()
+        defer { lock.unlock() }
+        active = 0; maximum = 0; completed = 0
+    }
+
+    static func statistics() -> (maximum: Int, completed: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (maximum, completed)
+    }
+
+    private static func beganStream() {
+        lock.lock()
+        defer { lock.unlock() }
+        active += 1
+        maximum = max(maximum, active)
+    }
+
+    private static func endedStream() {
+        lock.lock()
+        defer { lock.unlock() }
+        active -= 1
+        completed += 1
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        if request.url!.path.hasSuffix("manifest.json") {
+            finish(#"{"id":"bounded","version":"1","name":"Bounded","resources":["stream"],"types":["movie"]}"#)
+        } else {
+            Self.beganStream()
+            let pending = pendingResponse
+            pending.install(self)
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + .milliseconds(50)) {
+                BoundedAddonURLProtocol.endedStream()
+                pending.deliver()
+            }
+        }
+    }
+
+    private func finish(_ json: String) {
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(json.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() { pendingResponse.cancel() }
 }

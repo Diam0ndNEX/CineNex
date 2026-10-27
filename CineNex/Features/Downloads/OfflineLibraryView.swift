@@ -69,56 +69,62 @@ struct OfflineLibraryView: View {
     }
 
     private var storageSummary: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "internaldrive")
-                .font(.title2)
-                .foregroundStyle(Color.cineNexAccent)
-                .frame(width: 44, height: 44)
-                .background(Color.cineNexAccent.opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Offline storage")
-                    .font(.headline)
-                Text("\(ByteCountFormatter.string(fromByteCount: store.storageUsageBytes, countStyle: .file)) used")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Label("ON THIS DEVICE", systemImage: "internaldrive")
+                    .font(.caption.weight(.bold)).tracking(1.4).foregroundStyle(Color.cineNexAccent)
+                Spacer()
+                Menu {
+                    Button("Pause active transfers", systemImage: "pause") {
+                        for download in store.downloads where download.status == .downloading { store.pause(id: download.id) }
+                    }
+                    Button("Resume paused transfers", systemImage: "play") {
+                        for download in store.downloads where download.status == .paused { store.resume(id: download.id) }
+                    }
+                    if completedDownloadCount > 0 {
+                        Button("Remove completed downloads", systemImage: "trash", role: .destructive) {
+                            showingRemoveCompletedConfirmation = true
+                        }
+                    }
+                } label: { Image(systemName: "ellipsis.circle").font(.title3) }
+                .accessibilityLabel("Download management")
             }
-
-            Spacer(minLength: 8)
-
-            Text("\(completedDownloadCount) saved")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.trailing)
+            Text(ByteCountFormatter.string(fromByteCount: store.storageUsageBytes, countStyle: .file))
+                .font(.system(size: 38, weight: .bold, design: .rounded)).monospacedDigit()
+            Text("Media stored locally").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                summaryButton("Ready", count: savedDownloadCount, filter: .saved)
+                summaryButton("Transfers", count: activeDownloadCount, filter: .active)
+                summaryButton("Attention", count: issueDownloadCount, filter: .issues)
+            }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 16))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Offline storage, \(ByteCountFormatter.string(fromByteCount: store.storageUsageBytes, countStyle: .file)) used, \(completedDownloadCount) saved downloads")
+        .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 26))
+    }
+
+    private func summaryButton(_ title: String, count: Int, filter: OfflineDownloadFilter) -> some View {
+        Button { selectedFilter = filter } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(String(count)).font(.title2.bold()).foregroundStyle(.primary)
+                Text(title).font(.caption2).foregroundStyle(.secondary)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                .background(Color.cineNexBackground.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
+        }.buttonStyle(.plain)
+        .accessibilityLabel("\(count) \(title) downloads")
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Downloads")
-                        .font(.largeTitle.bold())
-                    Text("Manage media saved on this device.")
+                    Text("YOUR OFFLINE CINEMA").font(.caption.weight(.bold)).tracking(2).foregroundStyle(Color.cineNexAccent)
+                    Text("Ready when you are.")
+                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                    Text("Manage transfers and keep your next watch close.")
                         .foregroundStyle(.secondary)
                 }
 
                 storageSummary
-
-                if completedDownloadCount > 0 {
-                    Button(role: .destructive) {
-                        showingRemoveCompletedConfirmation = true
-                    } label: {
-                        Label("Remove All Completed Downloads", systemImage: "trash")
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                    .buttonStyle(.bordered)
-                }
 
                 if store.downloads.isEmpty {
                     ContentUnavailableView(
@@ -209,7 +215,7 @@ struct OfflineLibraryView: View {
             .padding(20)
         }
         .background(Color.cineNexBackground.ignoresSafeArea())
-        .navigationTitle("Downloads")
+        .navigationTitle("Offline")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { store.refreshStoredState() }
         .alert("Could Not Retry Download", isPresented: $showingRetryError) {
@@ -276,8 +282,9 @@ private struct OfflineDownloadRow: View {
                     Text(download.title)
                         .font(.headline)
                         .lineLimit(2)
-                    Label(statusText, systemImage: statusSymbol)
-                        .font(.caption.weight(.medium))
+                    Label(statusText.uppercased(), systemImage: statusSymbol)
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.7)
                         .foregroundStyle(download.status == .failed ? .orange : .secondary)
                     if download.status == .downloading || download.status == .queued || download.status == .paused {
                         ProgressView(value: download.progress)
@@ -347,6 +354,7 @@ private struct OfflineDownloadRow: View {
             }
         }
         .padding(14)
-        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 16))
+        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 24))
+        .overlay { RoundedRectangle(cornerRadius: 24).strokeBorder(.white.opacity(0.05)) }
     }
 }

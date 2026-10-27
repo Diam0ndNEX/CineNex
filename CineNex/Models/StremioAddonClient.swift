@@ -117,6 +117,7 @@ struct StremioStreamEntry: Decodable, Equatable, Sendable, Identifiable {
     let sources: [String]?
     let description: String?
     let behaviorHints: StremioStreamBehaviorHints?
+    let seeders: Int?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -128,6 +129,7 @@ struct StremioStreamEntry: Decodable, Equatable, Sendable, Identifiable {
         case sources
         case description
         case behaviorHints
+        case seeders
     }
 
     init(from decoder: Decoder) throws {
@@ -142,6 +144,7 @@ struct StremioStreamEntry: Decodable, Equatable, Sendable, Identifiable {
         fileIndex = (try? container.decodeIfPresent(Int.self, forKey: .fileIndex)) ?? nil
         sources = (try? container.decodeIfPresent([String].self, forKey: .sources)) ?? nil
         description = (try? container.decodeIfPresent(String.self, forKey: .description)) ?? nil
+        seeders = (try? container.decodeIfPresent(Int.self, forKey: .seeders)) ?? nil
         behaviorHints = (try? container.decodeIfPresent(StremioStreamBehaviorHints.self, forKey: .behaviorHints)) ?? nil
     }
 
@@ -248,27 +251,38 @@ struct StremioStreamRequest: Equatable, Sendable {
 struct StremioAddonClient: Sendable {
     private let manifestURL: URL
     private let session: URLSession
-    private let decoder: JSONDecoder
+    private let cache: SourceDiscoveryCache?
+    private let requestTimeout: TimeInterval
 
-    init(manifestURL: URL, session: URLSession = .shared) throws {
+    init(manifestURL: URL, session: URLSession = SourceDiscoveryNetworking.session, cache: SourceDiscoveryCache? = nil, requestTimeout: TimeInterval = 12) throws {
         guard Self.isSafeHTTPSURL(manifestURL) else {
             throw StremioAddonClientError.invalidManifestURL
         }
         self.manifestURL = manifestURL
         self.session = session
-        self.decoder = JSONDecoder()
+        self.cache = cache ?? (SourceDiscoveryNetworking.usesApplicationCache(session) ? .shared : nil)
+        self.requestTimeout = min(20, max(0.05, requestTimeout.isFinite ? requestTimeout : 12))
     }
 
     func fetchManifest() async throws -> StremioAddonManifest {
         try Task.checkCancellation()
-        let data = try await fetchData(from: manifestURL)
-        try Task.checkCancellation()
-        let manifest: StremioAddonManifest
-        do {
-            manifest = try decoder.decode(StremioAddonManifest.self, from: data)
-        } catch {
-            throw StremioAddonClientError.invalidResponse
+        if let data = await cache?.data(for: manifestURL.absoluteString, resource: .manifest),
+           let manifest = try? Self.decodeManifest(data) {
+            try Task.checkCancellation()
+            PlaybackDiagnostics.record("addon.manifest.cache_hit", details: ["host": manifestURL.host ?? "unknown"])
+            return manifest
         }
+        let payload = try await fetchData(from: manifestURL)
+        try Task.checkCancellation()
+        let manifest = try Self.decodeManifest(payload.data)
+        if payload.cacheable { await cache?.store(payload.data, for: manifestURL.absoluteString, resource: .manifest, lifetime: 43_200) }
+        return manifest
+    }
+
+    private static func decodeManifest(_ data: Data) throws -> StremioAddonManifest {
+        let manifest: StremioAddonManifest
+        do { manifest = try JSONDecoder().decode(StremioAddonManifest.self, from: data) }
+        catch { throw StremioAddonClientError.invalidResponse }
         guard !manifest.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !manifest.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !manifest.version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -297,13 +311,19 @@ struct StremioAddonClient: Sendable {
         }
 
         try Task.checkCancellation()
-        let data = try await fetchData(from: streamURL)
+        if let data = await cache?.data(for: streamURL.absoluteString, resource: .streams),
+           let response = try? JSONDecoder().decode(StremioStreamResponse.self, from: data) {
+            try Task.checkCancellation()
+            PlaybackDiagnostics.record("addon.streams.cache_hit", details: ["host": manifestURL.host ?? "unknown", "entry_count": String(response.streams.count)])
+            return response.streams
+        }
+        let payload = try await fetchData(from: streamURL)
         try Task.checkCancellation()
         let response: StremioStreamResponse
-        do {
-            response = try decoder.decode(StremioStreamResponse.self, from: data)
-        } catch {
-            throw StremioAddonClientError.invalidResponse
+        do { response = try JSONDecoder().decode(StremioStreamResponse.self, from: payload.data) }
+        catch { throw StremioAddonClientError.invalidResponse }
+        if payload.cacheable {
+            await cache?.store(payload.data, for: streamURL.absoluteString, resource: .streams, lifetime: response.streams.isEmpty ? 10 : 120)
         }
         PlaybackDiagnostics.record("addon.streams.parsed", details: [
             "host": manifestURL.host ?? "unknown",
@@ -314,7 +334,7 @@ struct StremioAddonClient: Sendable {
         return response.streams
     }
 
-    private func fetchData(from url: URL) async throws -> Data {
+    private func fetchData(from url: URL) async throws -> (data: Data, cacheable: Bool) {
         let startedAt = Date()
         let host = url.host ?? "unknown"
         let resource = url.path.contains("/stream/") ? "stream" : "manifest"
@@ -322,11 +342,12 @@ struct StremioAddonClient: Sendable {
         try Task.checkCancellation()
         guard Self.isSafeHTTPSURL(url) else { throw StremioAddonClientError.invalidManifestURL }
         var request = URLRequest(url: url)
-        request.timeoutInterval = url.path.contains("/stream/") ? 25 : 12
+        let timeout = url.path.contains("/stream/") ? requestTimeout : min(6, requestTimeout)
+        request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let redirectDelegate = StremioHTTPSRedirectDelegate()
         do {
-            let (data, response) = try await session.data(for: request, delegate: redirectDelegate)
+            let (data, response) = try await SourceDiscoveryNetworking.data(for: request, session: session, delegate: redirectDelegate, timeout: timeout)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw StremioAddonClientError.invalidResponse
             }
@@ -346,7 +367,8 @@ struct StremioAddonClient: Sendable {
             guard data.count <= 2_000_000 else {
                 throw StremioAddonClientError.invalidResponse
             }
-            return data
+            let cacheControl = httpResponse.value(forHTTPHeaderField: "Cache-Control")?.lowercased() ?? ""
+            return (data, !cacheControl.contains("no-store") && !cacheControl.contains("no-cache"))
         } catch let error as StremioAddonClientError {
             PlaybackDiagnostics.record("addon.http.rejected", details: ["host": host, "resource": resource, "reason": error.localizedDescription])
             throw error

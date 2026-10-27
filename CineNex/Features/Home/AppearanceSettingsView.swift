@@ -1,160 +1,129 @@
 import SwiftUI
 
-private enum CineNexAccentPreset: String, CaseIterable, Identifiable {
-    case violet
-    case blue
-    case rose
-    case teal
-    case amber
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .violet: return "Violet"
-        case .blue: return "Blue"
-        case .rose: return "Rose"
-        case .teal: return "Teal"
-        case .amber: return "Amber"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .violet:
-            return Color(red: 0.58, green: 0.36, blue: 0.98)
-        case .blue:
-            return Color(red: 0.24, green: 0.52, blue: 1.0)
-        case .rose:
-            return Color(red: 0.95, green: 0.32, blue: 0.58)
-        case .teal:
-            return Color(red: 0.12, green: 0.72, blue: 0.68)
-        case .amber:
-            return Color(red: 1.0, green: 0.62, blue: 0.22)
-        }
-    }
-}
-
 struct AppearanceSettingsView: View {
-    @AppStorage("cinenex.accentPreset") private var selectedAccent = CineNexAccentPreset.violet.rawValue
-    @Environment(\.dismiss) private var dismiss
-
-    private var accent: CineNexAccentPreset {
-        CineNexAccentPreset(rawValue: selectedAccent) ?? .violet
-    }
+    @AppStorage("cinenex.accentPreset") private var accent = "amber"
+    @AppStorage("cinenex.canvasStyle") private var canvas = "midnight"
+    @AppStorage("cinenex.posterDensity") private var density = "comfortable"
+    @AppStorage("cinenex.showRatings") private var showRatings = true
+    @AppStorage("cinenex.posterMetadata") private var posterMetadata = true
+    @AppStorage("cinenex.reduceMotion") private var reduceMotion = false
+    @AppStorage("cinenex.navigationLabels") private var navigationLabels = true
+    @AppStorage("cinenex.startTab") private var startTab = "home"
+    @AppStorage("cinenex.featuredStyle") private var featuredStyle = "immersive"
+    @AppStorage("cinenex.featuredSynopsis") private var featuredSynopsis = true
+    @AppStorage("cinenex.home.showFeatured") private var showFeatured = true
+    @AppStorage("cinenex.home.showContinue") private var showContinue = true
+    @AppStorage("cinenex.home.showWatchlist") private var showWatchlist = true
+    @AppStorage("cinenex.home.showRated") private var showRated = true
+    @AppStorage("cinenex.home.showGenres") private var showGenres = true
+    @AppStorage("cinenex.home.featuredCount") private var featuredCount = 5
+    @AppStorage("cinenex.home.shelfLayout") private var shelfLayout = "posters"
+    @AppStorage("cinenex.home.continueLayout") private var continueLayout = "cards"
+    @AppStorage("cinenex.detailActionPlacement") private var detailActionPlacement = "inline"
+    @AppStorage("cinenex.navigationHaptics") private var navigationHaptics = true
+    private let accents = ["amber", "blue", "rose", "teal", "violet", "lime"]
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Make it yours")
-                            .font(.title2.bold())
-                        Text("Choose an accent that carries through buttons, selection states, and playback progress.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Accent color")
-                            .font(.headline)
-
-                        HStack(spacing: 0) {
-                            ForEach(CineNexAccentPreset.allCases) { preset in
-                                Button {
-                                    withAnimation(.easeInOut(duration: 0.18)) {
-                                        selectedAccent = preset.rawValue
-                                    }
-                                } label: {
-                                    VStack(spacing: 9) {
-                                        ZStack {
-                                            Circle()
-                                                .fill(preset.color)
-                                                .frame(width: 42, height: 42)
-                                            if selectedAccent == preset.rawValue {
-                                                Image(systemName: "checkmark")
-                                                    .font(.headline.weight(.bold))
-                                                    .foregroundStyle(.white)
-                                            }
-                                        }
-                                        .overlay {
-                                            Circle()
-                                                .strokeBorder(
-                                                    selectedAccent == preset.rawValue ? Color.primary.opacity(0.8) : Color.clear,
-                                                    lineWidth: 2
-                                                )
-                                                .padding(-4)
-                                        }
-
-                                        Text(preset.title)
-                                            .font(.caption.weight(selectedAccent == preset.rawValue ? .semibold : .regular))
-                                            .foregroundStyle(selectedAccent == preset.rawValue ? .primary : .secondary)
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("\(preset.title) accent")
-                                .accessibilityAddTraits(selectedAccent == preset.rawValue ? .isSelected : [])
-                            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                CineNexPreferenceCard(title: "Color & canvas", symbol: "paintpalette") {
+                    Picker("Canvas", selection: $canvas) {
+                        Text("Black").tag("midnight")
+                        Text("Graphite").tag("graphite")
+                        Text("Ocean").tag("ocean")
+                        Text("OLED").tag("oled")
+                    }.pickerStyle(.segmented)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 70))], spacing: 18) {
+                        ForEach(accents, id: \.self) { value in
+                            Button { accent = value } label: {
+                                VStack(spacing: 8) {
+                                    Circle().fill(accentColor(value)).frame(width: 36, height: 36)
+                                        .overlay { if accent == value { Image(systemName: "checkmark").bold().foregroundStyle(.black) } }
+                                    Text(value.capitalized).font(.caption).foregroundStyle(.primary)
+                                }.frame(maxWidth: .infinity)
+                            }.buttonStyle(.plain)
+                            .accessibilityLabel("\(value.capitalized) accent")
+                            .accessibilityAddTraits(accent == value ? .isSelected : [])
                         }
-                    }
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Preview")
-                            .font(.headline)
-
-                        HStack(spacing: 12) {
-                            Image(systemName: "play.rectangle.fill")
-                                .font(.title2)
-                                .foregroundStyle(accent.color)
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("CineNex")
-                                    .font(.headline)
-                                Text("Your next favorite is waiting")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.title2)
-                                .foregroundStyle(accent.color)
-                        }
-                        .padding(16)
-                        .background(Color.cineNexSurface, in: RoundedRectangle(cornerRadius: 16))
-
-                        Button {} label: {
-                            Label("Accent preview", systemImage: "sparkles")
-                                .font(.subheadline.weight(.semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 13)
-                                .background(accent.color, in: RoundedRectangle(cornerRadius: 14))
-                                .foregroundStyle(.white)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(true)
-                        .accessibilityLabel("Preview of the selected accent color")
                     }
                 }
-                .padding(20)
-            }
-            .background(Color.cineNexBackground.ignoresSafeArea())
-            .navigationTitle("Appearance")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                CineNexPreferenceCard(title: "Navigation", symbol: "rectangle.bottomthird.inset.filled") {
+                    Picker("Open on launch", selection: $startTab) {
+                        Text("Home").tag("home")
+                        Text("Discover").tag("browse")
+                        Text("Library").tag("library")
+                    }
+                    Toggle("Navigation button labels", isOn: $navigationLabels)
+                    Toggle("Navigation haptics", isOn: $navigationHaptics)
+                    Text("The floating navigation dock uses Liquid Glass, with an opaque Reduce Transparency fallback. Changing the launch screen applies the next time CineNex starts.").font(.caption).foregroundStyle(.secondary)
                 }
-            }
+                CineNexPreferenceCard(title: "Your Home", symbol: "house") {
+                    Toggle("Featured spotlight", isOn: $showFeatured)
+                    if showFeatured {
+                        Picker("Spotlight layout", selection: $featuredStyle) {
+                            Text("Edge to edge").tag("fullBleed")
+                            Text("Artwork card").tag("immersive")
+                            Text("Compact").tag("compact")
+                        }.pickerStyle(.segmented)
+                        Picker("Featured titles", selection: $featuredCount) {
+                            ForEach([3, 5, 7], id: \.self) { Text("\($0) titles").tag($0) }
+                        }
+                        Toggle("Spotlight story preview", isOn: $featuredSynopsis)
+                        Text("Swipe or use the arrows to change the featured title. No automatic carousel or video playback runs in the background.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Divider()
+                    Toggle("Continue watching", isOn: $showContinue)
+                    if showContinue {
+                        Picker("Resume layout", selection: $continueLayout) {
+                            Text("Wide cards").tag("cards")
+                            Text("Compact rows").tag("rows")
+                        }.pickerStyle(.segmented)
+                    }
+                    Picker("Catalog shelf artwork", selection: $shelfLayout) {
+                        Text("Posters").tag("posters")
+                        Text("Landscape crops").tag("landscape")
+                    }.pickerStyle(.segmented)
+                    Toggle("Saved watchlist shelf", isOn: $showWatchlist)
+                    Toggle("Highly rated shelf", isOn: $showRated)
+                    Toggle("Genre shortcuts", isOn: $showGenres)
+                    Text("Movie and series shelves remain available. Empty shelves are automatically hidden.").font(.caption).foregroundStyle(.secondary)
+                }
+                CineNexPreferenceCard(title: "Title details", symbol: "info.circle") {
+                    Picker("Play & save buttons", selection: $detailActionPlacement) {
+                        Text("Below the title").tag("inline")
+                        Text("Floating at bottom").tag("pinned")
+                    }
+                    Text("Keep actions beside the title artwork, or pin them while you scroll through cast and episodes.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                CineNexPreferenceCard(title: "Posters & accessibility", symbol: "square.grid.2x2") {
+                    Picker("Poster density", selection: $density) {
+                        Text("Comfortable").tag("comfortable")
+                        Text("Compact").tag("compact")
+                    }.pickerStyle(.segmented)
+                    Toggle("Poster year & rating labels", isOn: $posterMetadata)
+                    Toggle("Show ratings", isOn: $showRatings)
+                    Toggle("Reduce decorative motion", isOn: $reduceMotion)
+                    Text("System Reduce Motion and Reduce Transparency are also respected. Video playback continues normally.").font(.caption).foregroundStyle(.secondary)
+                }
+            }.padding(20)
         }
-        .tint(accent.color)
+        .background(Color.cineNexBackground.ignoresSafeArea())
+        .navigationTitle("Appearance & layout").navigationBarTitleDisplayMode(.inline)
+        .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
+        .toolbar(.visible, for: .navigationBar)
+        .tint(Color.cineNexAccent)
         .preferredColorScheme(.dark)
     }
-}
-
-#Preview {
-    AppearanceSettingsView()
+    private func accentColor(_ value: String) -> Color {
+        switch value {
+        case "blue": return Color(red: 0.24, green: 0.52, blue: 1)
+        case "rose": return Color(red: 0.95, green: 0.32, blue: 0.58)
+        case "teal": return Color(red: 0.12, green: 0.72, blue: 0.68)
+        case "amber": return Color(red: 1, green: 0.67, blue: 0.30)
+        case "lime": return Color(red: 0.65, green: 0.85, blue: 0.24)
+        default: return Color(red: 0.64, green: 0.49, blue: 1)
+        }
+    }
 }

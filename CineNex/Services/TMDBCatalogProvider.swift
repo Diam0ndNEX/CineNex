@@ -15,6 +15,42 @@ struct TMDBCatalogProvider: CatalogProvider {
         return try Self.mapResponse(await fetchData(from: url))
     }
 
+    /// User-requested pages, rather than eagerly fetching the entire catalog.
+    func catalogPage(page: Int) async throws -> TMDBSearchPage {
+        guard (1...500).contains(page) else { throw TMDBCatalogError.invalidURL }
+        async let moviePage = discoverPage(mediaType: "movie", page: page)
+        async let seriesPage = discoverPage(mediaType: "tv", page: page)
+        let (movies, series) = try await (moviePage, seriesPage)
+        var seen = Set<String>()
+        let items = (movies.items + series.items).filter { seen.insert($0.id).inserted }
+        return TMDBSearchPage(items: items, page: page, totalPages: min(500, min(movies.totalPages, series.totalPages)))
+    }
+
+    private func discoverPage(mediaType: String, page: Int) async throws -> TMDBSearchPage {
+        var components = URLComponents(string: "https://api.themoviedb.org/3/discover/\(mediaType)")
+        components?.queryItems = [URLQueryItem(name: "language", value: "en-US"),
+                                  URLQueryItem(name: "include_adult", value: "false"),
+                                  URLQueryItem(name: "sort_by", value: "popularity.desc"),
+                                  URLQueryItem(name: "page", value: String(page))]
+        guard let url = components?.url else { throw TMDBCatalogError.invalidURL }
+        return try Self.mapDiscoveryPage(await fetchData(from: url), mediaType: mediaType, requestedPage: page)
+    }
+
+    static func mapDiscoveryPage(_ data: Data, mediaType: String, requestedPage: Int) throws -> TMDBSearchPage {
+        guard ["movie", "tv"].contains(mediaType) else { throw TMDBCatalogError.invalidURL }
+        do {
+            guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let results = object["results"] as? [[String: Any]] else { throw TMDBCatalogError.invalidData }
+            object["results"] = results.map { result in
+                var typed = result
+                typed["media_type"] = mediaType
+                return typed
+            }
+            return try mapSearchPage(JSONSerialization.data(withJSONObject: object), requestedPage: requestedPage)
+        } catch let error as TMDBCatalogError { throw error }
+        catch { throw TMDBCatalogError.invalidData }
+    }
+
     func search(query: String) async throws -> [MediaItem] {
         let page = try await searchPage(query: query, page: 1)
         return page.items

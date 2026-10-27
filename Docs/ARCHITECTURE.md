@@ -1,42 +1,33 @@
-# CineNex Architecture
+# CineNex architecture
 
-## Product goal
+CineNex is an iPhone media catalog and playback client. Catalog metadata and playable sources remain separate. The deployment target is iOS18; native glass is gated to newer systems with accessible fallbacks.
 
-CineNex is an iPhone-first media discovery and playback app. It separates catalog metadata from playable media so supported providers can be integrated without coupling the interface to a specific service.
+## Navigation and catalog
 
-## Current implementation
+`ContentView` owns Home, Discover, Search, Library and Settings navigation, Cinema/Anime selection, title routes and paginated catalog state. A compact floating Liquid Glass dock uses native iOS26 glass, thin-material support on iOS18 and an opaque Reduce Transparency fallback. System sans-serif headings follow Dynamic Type. `CatalogPresentation` contains artwork, collection and discovery components; `CatalogFilterState` applies only metadata actually supplied by a provider. `AppearanceSettingsView` persists working layout, shelf, density, motion and navigation choices. `HomePresentation` provides a manually paged hero, wide resume cards and landscape shelves; no automatic hero timers or trailers run. `EpisodeNavigatorPolicy` supplies season search, sorting and next-unwatched selection; `EpisodeNavigatorHistory` stores explicitly manual local watched marks, separate from movie resume and remote lists.
 
-- SwiftUI provides Home, Search, My List, and Tracking tabs.
-- `MediaItem` represents a catalog entry and optional playable URL.
-- `CatalogProvider` defines the boundary for metadata providers.
-- `DemoCatalogProvider` supplies local sample entries when no live metadata provider is configured.
-- `TMDBCatalogProvider` fetches trending movie/TV metadata with a user-supplied TMDB Read Access Token and maps posters, descriptions, years, genres, ratings, and TMDB IDs; metadata results never include playable URLs.
-- `PlayerView` uses AVPlayer for compatible HTTPS media and records local progress.
-- `PlaybackProgressStore` persists resume positions in local UserDefaults.
-- `TraktIntegration` handles device authorization, secure token storage, refresh, and optional movie scrobbling.
-- The Tracking screen explains Letterboxd's API-access limitations and provides official links.
-- GitHub Actions generates the Xcode project with XcodeGen and builds/tests the iOS Simulator target.
+TMDB and Cinemeta supply movie/series metadata; AniList supplies anime metadata. `CatalogCacheStore` restores catalog snapshots, while `ArtworkDiskCache` coalesces artwork requests and bounds memory/disk storage. Library snapshots, favorites and movie/anime playback progress remain local and retain their existing storage keys.
 
-## Planned boundaries
+## Source discovery
 
-- Catalog providers: search, metadata, artwork, seasons, episodes, and external identifiers.
-- Media providers: embedded API clients that discover authorized or openly licensed playback URLs, validate formats and source metadata, and expose source-specific capabilities.
-- Playback services: AVPlayer lifecycle, playback state, track selection, and error reporting.
-- Tracking adapters: Trakt API and Letterboxd official data import/export.
-- Library persistence: favorites, recent playback, and progress.
-- Download manager: queueing, progress, storage limits, and offline availability.
+`WatchHubView` owns cancellable, generation-guarded source search and independent provider-result updates. `AutomaticExternalIDResolver` accepts existing IMDb IDs immediately and coalesces missing-ID resolution through `SourceIdentifierCache`. `SourceDiscoveryNetworking` applies cancellable wall-clock HTTP deadlines. `SourceDiscoveryCache` keeps bounded private metadata on disk and short-lived stream responses only in memory; explicit refresh clears stream responses.
 
-## Constraints and assumptions
+`SceneBoxTorrentSearch` staggers Torrentio fallbacks. `StremioAddonPlaybackProvider` bounds add-on concurrency and emits each completed client independently. `StremioAddonClient` validates manifests, stream requests, responses and HTTPS redirects. Discovery starts no torrent transfers.
 
-- Initial deployment target is iOS 17.
-- The app starts with local demo catalog data and can optionally load live TMDB trending metadata using a user-supplied Read Access Token.
-- A catalog listing is not proof of streaming or download rights.
-- Only media sources that permit access and playback should be integrated.
-- Playback progress is stored locally on the device and is not synced between devices.
-- Trakt credentials are per-user settings; OAuth tokens are stored in Keychain.
-- Letterboxd API access is request-only and its current published policy does not grant access to private/personal projects.
-- Some streaming formats, DRM systems, and subtitle formats require provider-specific support and cannot be assumed to work in AVPlayer.
+## Selection and playback
 
-## Validation
+`SmartPlaybackSelection` ranks distinct release/file candidates, applies preferences, checks readiness sequentially and bounds attempts. Direct-link HEAD checks establish a media response only; torrent preparation waits for verified opening and index pieces. These checks do not guarantee decoder compatibility or the availability of all later movie data. Manual source selection remains available. Provider pins reorder the source-picker chips only; `SourceProviderPins` does not alter automatic playback ranking. `ReleaseTechnicalLabels` presents bounded release-name hints, without claiming decoder support.
 
-Run `brew install xcodegen`, `xcodegen generate`, and then build/test the `CineNex` scheme in Xcode or with `xcodebuild`. The GitHub Actions workflow runs simulator build and unit tests on pushes and pull requests.
+`XITRIXTorrentPlaybackEngine` owns the patched libtorrent bridge, selected-file priority, bounded byte lookahead and piece deadlines. `TorrentPlaybackProvider` serves verified local bytes through a loopback HTTP server. `TorrentPlaybackSessionRegistry` owns prepared providers until playback closes or preparation is discarded. `TorrentCacheMaintenance` protects active roots and bounds retained inactive transfers.
+
+`TorrentPlaybackMonitor` publishes real rates, peers, seeds and required/available buffer pieces, guarded by attempt ownership. `TorrentBufferingStatusView` displays those values without inventing a download percentage. `SceneBoxStreamPlaybackView` provides VLC playback, floating controls, buffer state, subtitles and playback preferences. `PlayerView` retains offline/direct Apple/VLC playback. Native synchronous status and shutdown calls cannot be interrupted mid-call; surrounding time budgets are checked immediately after they return.
+
+## Accounts and validation
+
+Trakt uses device authorization with a bundled registered public Client ID, Keychain storage, refresh and optional movie scrobbling. Optional native PKCE remains disabled without a correctly associated callback. AniList/MAL browser login code and read-only profile/list adapters require their registered public IDs; see `Docs/ACCOUNT_LOGIN.md` for current setup status. Anime lists are not full two-way local-progress sync.
+
+The primary AppIcon is a bundled opaque 1024px asset; its editable vector source lives in `Design/AppIcon.svg`. Account keys are explicitly expanded into the target Info.plist properties, and `Scripts/verify_built_app.py` checks the actual device app before IPA packaging.
+
+Build settings and package pins live in `project.yml`. `Scripts/ci_build_plan.py` and `.github/workflows/ios-build.yml` are authoritative for change-aware validation; preserve them. Run `python3 -m unittest discover -s Scripts/tests -v`, then the selected Xcode simulator checks. Fast IPA packaging is separate from full regression validation. `Docs/EXPERIENCE_3.md` lists the physical-device and visual checks that Linux cannot execute.
+
+The owner-supplied Nuvio reference and the original SwiftUI adaptations are mapped in `Docs/NUVIO_ADAPTATION.md`.

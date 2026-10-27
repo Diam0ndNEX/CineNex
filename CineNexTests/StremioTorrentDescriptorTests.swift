@@ -3,6 +3,36 @@ import XCTest
 @testable import CineNex
 
 final class StremioTorrentDescriptorTests: XCTestCase {
+    func testMediaFusionMetadataSurvivesSeparateDescriptionAndName() throws {
+        let json = #"{"title":"Example release","description":"👤 1,234 💾 1.4 GB","name":"MediaFusion 1080p","infoHash":"0123456789abcdef0123456789abcdef01234567"}"#
+        let stream = try JSONDecoder().decode(StremioStreamEntry.self, from: Data(json.utf8))
+        let descriptor = try XCTUnwrap(StremioTorrentDescriptor(stream: stream, providerName: "MediaFusion"))
+        XCTAssertEqual(descriptor.title, "Example release")
+        XCTAssertEqual(SceneBoxStreamPicker.resolution(for: descriptor), "1080p")
+        XCTAssertEqual(SceneBoxStreamPicker.seeders(for: descriptor), 1234)
+        XCTAssertEqual(SceneBoxStreamPicker.size(for: descriptor), "1.4 GB")
+        XCTAssertEqual(SceneBoxStreamPicker.sizeBytes(for: descriptor), 1_400_000_000)
+    }
+
+    func testStructuredSizeAndSeederMetadataArePreserved() throws {
+        let json = #"{"title":"Example release","seeders":0,"infoHash":"0123456789abcdef0123456789abcdef01234567","behaviorHints":{"videoSize":2300000000}}"#
+        let stream = try JSONDecoder().decode(StremioStreamEntry.self, from: Data(json.utf8))
+        let descriptor = try XCTUnwrap(StremioTorrentDescriptor(stream: stream))
+        XCTAssertEqual(descriptor.reportedSeeders, 0)
+        XCTAssertEqual(descriptor.reportedSizeBytes, 2_300_000_000)
+        XCTAssertEqual(descriptor.sizeLabel, "2.30 GB")
+        XCTAssertNil(descriptor.resolutionLabel)
+    }
+
+    func testInvalidStructuredMetadataDoesNotInventValues() throws {
+        let json = #"{"title":"Example release","seeders":-2,"infoHash":"0123456789abcdef0123456789abcdef01234567","behaviorHints":{"videoSize":-1}}"#
+        let stream = try JSONDecoder().decode(StremioStreamEntry.self, from: Data(json.utf8))
+        let descriptor = try XCTUnwrap(StremioTorrentDescriptor(stream: stream))
+        XCTAssertNil(descriptor.reportedSeeders)
+        XCTAssertNil(descriptor.reportedSizeBytes)
+        XCTAssertNil(descriptor.sizeLabel)
+    }
+
     private let validHash = "0123456789abcdef0123456789abcdef01234567"
 
     func testNormalizesHashAndPreservesOptionalFileIndex() throws {
